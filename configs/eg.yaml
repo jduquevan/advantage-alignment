@@ -1,0 +1,68 @@
+seed: 42
+batch_size: 128
+
+hydra:
+  output_subdir: null
+  run:
+    dir: /network/scratch/j/juan.duque/hydra/
+
+lg:
+  _target_: src.algorithms.db.DB
+
+# Architecture hyperparameters
+network:
+  _target_: src.networks.gru_network.GruIPD
+  device: cuda
+
+gru_model:
+  _target_: src.models.models.GruModel
+  in_size: 15
+  device: cuda
+  hidden_size: 40
+  num_layers: 1
+
+mlp_model:
+  _target_: src.models.models.MLPModel
+  in_size: 40
+  device: cuda
+  hidden_size: 40
+
+policy:
+  _target_: src.agents.policies.NormalSigmoidPolicy
+  log_std_min: -10.0
+  log_std_max: 2.0
+  prop_max: 5 # item max quantity
+  device: cuda
+
+linear_model:
+  _target_: src.models.models.LinearModel
+  in_size: 40
+  out_size: 1
+  device: cuda
+
+optimizer_actor:
+  _target_: torch.optim.Adam
+  lr: 1e-3
+
+optimizer_critic:
+  _target_: torch.optim.Adam
+  lr: 1e-3
+
+agent:
+  _target_: src.agents.agents.AdvantageAlignmentAgent
+  device: cuda
+
+# Wandb settings
+wandb:
+  _target_: wandb.init
+  project: 'Advantage Alignment'
+  tags: [PD]
+  mode: disabled # Whether to use wandb
+
+training:
+  gamma: 0.99
+  tau: 0.005
+  max_traj_len: 50
+  batch_size: 512 # Training batch size
+  total_steps: 2500 # Number of optimization steps to train for
+  eval_every: 100 # Number of optimization steps before evaluation
