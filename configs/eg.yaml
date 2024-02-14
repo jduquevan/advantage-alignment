@@ -60,9 +60,11 @@ wandb:
   mode: disabled # Whether to use wandb
 
 training:
-  gamma: 0.99
+  gamma: 0.96
   tau: 0.005
   max_traj_len: 50
   batch_size: 512 # Training batch size
   total_steps: 2500 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
+  proximal: True
+  clip_range: 0.2

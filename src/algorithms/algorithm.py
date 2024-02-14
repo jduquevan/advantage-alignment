@@ -25,6 +25,9 @@ class TrainingAlgorithm(ABC):
         self.agent_1 = agent_1
         self.agent_2 = agent_2
         self.train_cfg =train_cfg
+        self.batch_size = (len(env.envs))
+        self.trajectory_len = train_cfg.max_traj_len
+
 
     def train_step(
         self,
@@ -33,12 +36,12 @@ class TrainingAlgorithm(ABC):
         is_first=True
     ):
         agent.critic_optimizer.zero_grad()
-        critic_loss = self.critic_loss(trajectory)
+        critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
         agent.critic_optimizer.step()
 
         agent.actor_optimizer.zero_grad()
-        actor_loss = self.actor_loss(trajectory)
+        actor_loss = self.actor_loss(trajectory, is_first)
         actor_loss.backward()
         agent.actor_optimizer.step()
 

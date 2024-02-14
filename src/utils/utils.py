@@ -20,6 +20,32 @@ def cat_observations(observations, device):
     ], dim=1)
     return observations_cat
 
+def compute_discounted_returns(gamma, rewards, agent):
+        batch_size, trajectory_len = rewards.shape
+        returns = torch.empty(
+            (batch_size, trajectory_len), 
+            device=agent.device, 
+            dtype=torch.float32
+        )
+        returns[:, -1] = rewards[:, -1]
+        for t in reversed(range(trajectory_len-1)):
+            returns[:, t] = rewards[:, t] + gamma * returns[:, t+1]
+        return returns
+
+def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
+    # Compute deltas
+    deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
+    
+    advantages = torch.empty_like(deltas)
+    advantage = 0
+    for t in reversed(range(deltas.size(1))):
+        advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
+    
+    # Normalize advantages
+    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    
+    return advantages
+
 def torchify_actions(action, device):
     action_torch = {}
     action_torch['term'] = torch.tensor(action['term'], device=device)
