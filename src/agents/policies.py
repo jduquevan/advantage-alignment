@@ -13,6 +13,10 @@ class NormalSigmoidPolicy(nn.Module):
 
         # Upper bound on each component of proposition
         self.prop_max = prop_max
+
+        self.utte_log_std = None
+        self.prop_log_std = None
+
         self.to(device)
 
     def forward(self, x, h_0=None):
@@ -22,6 +26,9 @@ class NormalSigmoidPolicy(nn.Module):
 
         utte_log_std = torch.clamp(utte_log_std, self.log_std_min, self.log_std_max)
         prop_log_std = torch.clamp(prop_log_std, self.log_std_min, self.log_std_max)
+
+        self.utte_log_std = utte_log_std
+        self.prop_log_std = prop_log_std
 
         # TODO: Check for batch support
         base_term_dist = D.Categorical(term_dist)

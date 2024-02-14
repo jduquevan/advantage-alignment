@@ -1,4 +1,5 @@
 import hydra
+import wandb
 from omegaconf import DictConfig
 
 from src.algorithms.advantage_alignment import AdvantageAlignment
@@ -14,6 +15,14 @@ def main(cfg: DictConfig) -> None:
     :return: None
     """
     seed_all(cfg['seed'])
+    wandb.init(
+        config=dict(cfg), 
+        project="Advantage Alignment",
+        dir=cfg["wandb_dir"], 
+        reinit=True, 
+        anonymous="allow",
+        mode=cfg["wandb"]
+    )
     env = make_vectorized_env(cfg['batch_size'])
     agent = instantiate_agent(cfg)
     algorithm = AdvantageAlignment(

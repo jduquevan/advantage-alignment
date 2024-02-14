@@ -1,4 +1,5 @@
 import hydra
+import math
 import numpy as np
 import random
 import torch
@@ -19,6 +20,20 @@ def cat_observations(observations, device):
         torch.tensor(observations['utte'], device=device)
     ], dim=1)
     return observations_cat
+
+def get_categorical_entropy(log_ps):
+    probs = torch.exp(log_ps)
+    return ((probs * torch.log(probs)).sum(dim=1)).mean()
+
+def get_gaussian_entropy(covariance_matrices):
+    """
+    Calculate entropy of a multivariate Gaussian distribution given its covariance matrix.
+    """
+    batch_size = covariance_matrices.size(0)
+    dimension = covariance_matrices.size(-1)
+    det_covariance = torch.det(covariance_matrices)
+    entropy = 0.5 * (dimension * (torch.log(2 * torch.tensor(math.pi)) + 1) + torch.log(det_covariance))
+    return entropy.mean()
 
 def compute_discounted_returns(gamma, rewards, agent):
         batch_size, trajectory_len = rewards.shape
@@ -73,9 +88,14 @@ def instantiate_agent(cfg: DictConfig):
         critic_optimizer=optimizer_critic,
         actor_optimizer=optimizer_actor
     )
-    # hydra.utils.instantiate(cfg.wandb)
     return agent
 
 def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
+
+def wandb_stats(trajectory):
+    stats = {}
+    stats['Average reward 1'] = trajectory.data['rewards_0'].mean().detach()
+    stats['Average reward 2'] = trajectory.data['rewards_1'].mean().detach()
+    return stats

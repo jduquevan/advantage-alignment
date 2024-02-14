@@ -8,7 +8,7 @@ import gym
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from src.agents.agents import Agent
-from src.utils.utils import update_target_network
+from src.utils.utils import update_target_network, wandb_stats
 from tqdm import tqdm
 from torch import nn
 from typing import List
@@ -41,12 +41,12 @@ class TrainingAlgorithm(ABC):
         agent.critic_optimizer.step()
 
         agent.actor_optimizer.zero_grad()
-        actor_loss = self.actor_loss(trajectory, is_first)
+        actor_loss, entropy = self.actor_loss(trajectory, is_first)
         actor_loss.backward()
         agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-        return critic_loss.detach(), actor_loss.detach()
+        return critic_loss.detach(), actor_loss.detach(), entropy.detach()
 
     def eval(self, step: int, start_time: float):
         eval_res = test_agent(
@@ -77,26 +77,36 @@ class TrainingAlgorithm(ABC):
 
             # Collect trajectories
             trajectory = self.gen()
+            wandb.log(wandb_stats(trajectory))
 
             # Train
-            critic_loss_1, actor_loss_1 = self.train_step(
+            critic_loss_1, actor_loss_1, entropy_1 = self.train_step(
                 trajectory=trajectory,
                 agent=self.agent_1,
                 is_first=True
             )
             print("Critic loss Agent 1: ", critic_loss_1)
             print("Actor loss Agent 1: ", actor_loss_1)
+            print("Entropy Agent 1: ", entropy_1)
             print()
 
-            critic_loss_2, actor_loss_2 = self.train_step(
+            critic_loss_2, actor_loss_2, entropy_2 = self.train_step(
                 trajectory=trajectory,
                 agent=self.agent_2,
                 is_first=False
             )
             print("Critic loss Agent 2: ", critic_loss_2)
             print("Actor loss Agent 2: ", actor_loss_2)
+            print("Entropy Agent 2: ", entropy_2)
             print()
-            # wandb.log({"loss": loss, "step": step})
+            wandb.log({
+                "Actor loss 1": actor_loss_1, 
+                "Critic loss 1": critic_loss_1,
+                "Actor loss 2": actor_loss_2,
+                "Critic loss 2": critic_loss_2,
+                "Entropy 1": entropy_1,
+                "Entropy 2": entropy_2,
+                })
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""

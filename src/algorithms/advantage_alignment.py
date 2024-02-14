@@ -8,9 +8,26 @@ from tqdm import tqdm
 
 from src.algorithms.algorithm import TrainingAlgorithm
 from src.data.trajectory import TrajectoryBatch
-from src.utils.utils import cat_observations, torchify_actions, compute_gae_advantages
+from src.utils.utils import (
+    cat_observations,
+    torchify_actions,
+    compute_gae_advantages,
+    get_categorical_entropy,
+    get_gaussian_entropy
+)
 
 class AdvantageAlignment(TrainingAlgorithm):
+
+    def get_entropy(self, term_dist, agent):
+        term_probs = term_dist.probs.squeeze(0)
+        utte_stds = torch.exp(agent.actor.utte_log_std.squeeze(0))
+        prop_stds = torch.exp(agent.actor.prop_log_std.squeeze(0))
+
+        term_ent = get_categorical_entropy(term_probs)
+        utte_ent = get_gaussian_entropy(torch.diag_embed(utte_stds))
+        prop_ent = get_gaussian_entropy(torch.diag_embed(prop_stds))
+
+        return term_ent + utte_ent + prop_ent
 
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
         log_ps = []
@@ -27,6 +44,12 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_1']
             uttes = trajectory.data['uttes_1']
 
+        entropies = torch.empty(
+            (self.trajectory_len), 
+            device=self.agent_1.device, 
+            dtype=torch.float32
+        )
+
         hidden = None
         for t in range(self.trajectory_len):
             hidden, term_dist, utte_dist, prop_dist = agent.actor(
@@ -35,13 +58,16 @@ class AdvantageAlignment(TrainingAlgorithm):
             )
             hidden = hidden.permute((1, 0, 2))
             
+            entropies[t] = self.get_entropy(term_dist, agent)
+            
             log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
             log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
             log_p_prop = prop_dist.log_prob(props[:, t]/prop_max).sum(dim=-1)
 
             log_p = log_p_term + log_p_utte + log_p_prop
             log_ps.append(log_p)
-        return torch.stack(log_ps).permute((1, 0))
+
+        return torch.stack(log_ps).permute((1, 0)), entropies.mean()
 
     def get_trajectory_values(self, agent, observation):
         values_c = torch.empty(
@@ -93,6 +119,7 @@ class AdvantageAlignment(TrainingAlgorithm):
     
     def actor_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
         gamma = self.train_cfg.gamma
+        vanilla = self.train_cfg.vanilla
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
 
@@ -114,7 +141,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
 
-        log_ps = self.get_trajectory_log_ps(agent, trajectory, is_first)
+        log_ps, entropy = self.get_trajectory_log_ps(agent, trajectory, is_first)
         
         A_1s = compute_gae_advantages(rewards_1, V_1s, gamma)
         A_2s = compute_gae_advantages(rewards_2, V_2s, gamma)
@@ -132,9 +159,12 @@ class AdvantageAlignment(TrainingAlgorithm):
         else:
             loss_1 = (gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
 
-        loss_2 = self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
+        if vanilla:
+            loss_2 = self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
+        else:
+            loss_2 = torch.zeros_like(loss_1)
         
-        return -1*(loss_1 + loss_2)
+        return -1*(loss_1 + loss_2), entropy
 
 
     def critic_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
