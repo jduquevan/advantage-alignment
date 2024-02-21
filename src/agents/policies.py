@@ -19,13 +19,23 @@ class NormalSigmoidPolicy(nn.Module):
 
         self.to(device)
 
-    def forward(self, x, h_0=None):
-        output, term_dist, utte, prop = self.model(x, h_0)
+    def forward(self, x, h_0=None, use_tranformer=False):
+        if use_tranformer:
+            output, term_dist, utte, prop = self.model(x, partial_forward=False)
+        else:
+            output, term_dist, utte, prop = self.model(x, h_0)
         utte_mean, utte_log_std = utte
         prop_mean, prop_log_std = prop
 
         utte_log_std = torch.clamp(utte_log_std, self.log_std_min, self.log_std_max)
         prop_log_std = torch.clamp(prop_log_std, self.log_std_min, self.log_std_max)
+
+        if use_tranformer:
+            term_dist = term_dist.permute((1, 0, 2))
+            utte_mean = utte_mean.permute((1, 0, 2))
+            prop_mean = prop_mean.permute((1, 0, 2))
+            utte_log_std = utte_log_std.permute((1, 0, 2))
+            prop_log_std = prop_log_std.permute((1, 0, 2))
 
         self.utte_log_std = utte_log_std
         self.prop_log_std = prop_log_std

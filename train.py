@@ -29,7 +29,8 @@ def main(cfg: DictConfig) -> None:
         env=env, 
         agent_1=agent, 
         agent_2=agent, 
-        train_cfg=cfg.training
+        train_cfg=cfg.training,
+        use_transformer=cfg['use_transformer'],
     )
     algorithm.train_loop()
 

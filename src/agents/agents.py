@@ -28,11 +28,19 @@ class AdvantageAlignmentAgent(Agent):
         self.critic = critic
         self.target = target
         self.critic_optimizer = critic_optimizer
-        self.actor_optimizer = actor_optimizer
+        self.actor_optimizer = actor_optimizer 
+    
+    def sample_action(self, observations, h_0=None, history=None, use_transformer=False):
+        observations = cat_observations(observations, self.device)
+        
+        if use_transformer:
+            observations = observations.unsqueeze(0)
+            history.append(observations)
+            observations = torch.cat(list(history), dim=0)
 
-    def sample_action(self, observations, h_0):
         if h_0 is not None:
             h_0 = torch.permute(h_0, (1, 0, 2))
-        observations_cat = cat_observations(observations, self.device)
-        return self.actor.sample_action(observations_cat, h_0)
+        
+        return self.actor.sample_action(observations, h_0)
+
 

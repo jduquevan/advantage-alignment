@@ -2,6 +2,7 @@ seed: 42
 batch_size: 128
 wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
+use_transformer: True
 
 hydra:
   output_subdir: null
@@ -20,12 +21,23 @@ gru_model:
   _target_: src.models.models.GruModel
   in_size: 15
   device: cuda
-  hidden_size: 40
+  hidden_size: 32
   num_layers: 1
+
+transformer_model:
+  _target_: src.models.models.StableTransformer
+  in_size: 15
+  d_model: 32
+  device: cuda
+  dim_feedforward: 64
+  num_layers: 1
+  nhead: 4
+  max_seq_len: 50
+  dropout: 0.1
 
 mlp_model:
   _target_: src.models.models.MLPModel
-  in_size: 40
+  in_size: 32
   device: cuda
   hidden_size: 40
 
@@ -38,17 +50,17 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
-  in_size: 40
+  in_size: 32
   out_size: 1
   device: cuda
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 5e-4
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 1e-2
 
 agent:
   _target_: src.agents.agents.AdvantageAlignmentAgent
@@ -63,4 +75,4 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.2
-  vanilla: False
+  vanilla: True

@@ -11,6 +11,7 @@ grandparent_folder = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 sys.path.append(grandparent_folder)
+from src.utils.utils import get_cosine_similarity
 from src.utils.format_utils import (
     empty_lists_in_nested_dict,
     t2a,
@@ -172,6 +173,7 @@ class ExchangeEnv(gym.Env):
             "item_max_quantity": self.item_max_quantity,
             "utility_max": self.utility_max,
             "done": False,
+            "utility_cos_sim": 0,
         }
         self.history = [self.info]
         self.obs = self._get_obs()
@@ -265,6 +267,9 @@ class ExchangeEnv(gym.Env):
         # update for the next round
         if not self.done:
             self.turn += 1
+
+        self.info["utility_cos_sim"] = get_cosine_similarity(self.utilities[0], self.utilities[1])
+
         self.old_prop = deepcopy(prop)
         self.old_utte = deepcopy(utte)
         self.history.append(self.info)

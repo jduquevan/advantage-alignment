@@ -3,6 +3,8 @@ import math
 import torch
 import torch.nn.functional as F
 
+from collections import deque
+
 from torch import nn
 from tqdm import tqdm
 
@@ -18,6 +20,21 @@ from src.utils.utils import (
 
 class AdvantageAlignment(TrainingAlgorithm):
 
+    def get_total_entropy(self, term_dist, agent):
+        term_probs = term_dist.probs.reshape((-1, term_dist.probs.size(2)))
+        utte_stds = torch.exp(
+            agent.actor.utte_log_std
+        ).reshape((-1, agent.actor.utte_log_std.size(2)))
+        prop_stds = torch.exp(
+            agent.actor.prop_log_std
+        ).reshape((-1, agent.actor.prop_log_std.size(2)))
+
+        term_ent = get_categorical_entropy(term_probs)
+        utte_ent = get_gaussian_entropy(torch.diag_embed(utte_stds))
+        prop_ent = get_gaussian_entropy(torch.diag_embed(prop_stds))
+
+        return term_ent + utte_ent + prop_ent
+
     def get_entropy(self, term_dist, agent):
         term_probs = term_dist.probs.squeeze(0)
         utte_stds = torch.exp(agent.actor.utte_log_std.squeeze(0))
@@ -30,7 +47,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return term_ent + utte_ent + prop_ent
 
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
-        log_ps = []
+        log_p_list = []
         prop_max = self.agent_1.actor.prop_max
 
         if is_first:
@@ -44,50 +61,75 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_1']
             uttes = trajectory.data['uttes_1']
 
-        entropies = torch.empty(
-            (self.trajectory_len), 
-            device=self.agent_1.device, 
-            dtype=torch.float32
-        )
-
-        hidden = None
-        for t in range(self.trajectory_len):
-            hidden, term_dist, utte_dist, prop_dist = agent.actor(
-                x=observation[:, t, :],
-                h_0=hidden
+        if self.use_transformer:
+            _, term_dist, utte_dist, prop_dist = agent.actor(
+                x=observation.permute((1, 0, 2)),
+                use_tranformer=self.use_transformer
             )
-            hidden = hidden.permute((1, 0, 2))
             
-            entropies[t] = self.get_entropy(term_dist, agent)
-            
-            log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
-            log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
-            log_p_prop = prop_dist.log_prob(props[:, t]/prop_max).sum(dim=-1)
+            log_ps_term = term_dist.log_prob(terms)
+            log_ps_utte = utte_dist.log_prob(uttes).sum(dim=-1)
+            log_ps_prop = prop_dist.log_prob(props/prop_max).sum(dim=-1)
 
-            log_p = log_p_term + log_p_utte + log_p_prop
-            log_ps.append(log_p)
+            log_ps = log_ps_term + log_ps_utte + log_ps_prop
+            entropy = self.get_total_entropy(term_dist, agent)
+        else:
+            entropies = torch.empty(
+                (self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
 
-        return torch.stack(log_ps).permute((1, 0)), entropies.mean()
+            hidden = None
+            for t in range(self.trajectory_len):
+                hidden, term_dist, utte_dist, prop_dist = agent.actor(
+                    x=observation[:, t, :],
+                    h_0=hidden
+                )
+                hidden = hidden.permute((1, 0, 2))
+                
+                entropies[t] = self.get_entropy(term_dist, agent)
+                
+                log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
+                log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
+                log_p_prop = prop_dist.log_prob(props[:, t]/prop_max).sum(dim=-1)
+
+                log_p = log_p_term + log_p_utte + log_p_prop
+                log_p_list.append(log_p)
+                log_ps = torch.stack(log_p_list).permute((1, 0))
+                entropy = entropies.mean()
+
+        return log_ps, entropy
 
     def get_trajectory_values(self, agent, observation):
-        values_c = torch.empty(
-            (self.batch_size, self.trajectory_len), 
-            device=self.agent_1.device, 
-            dtype=torch.float32
-        )
-        values_t = torch.empty(
-            (self.batch_size, self.trajectory_len), 
-            device=self.agent_1.device, 
-            dtype=torch.float32
-        )
-        hidden_c, hidden_t = None, None
-        for t in range(self.trajectory_len):
-            hidden_c, value_c = agent.critic(observation[:, t, :])
-            hidden_t, value_t = agent.target(observation[:, t, :])
-            values_c[:, t] = value_c.reshape(self.batch_size)
-            values_t[:, t] = value_t.reshape(self.batch_size)
-            hidden_c = hidden_c.permute((1, 0, 2))
-            hidden_t = hidden_t.permute((1, 0, 2))
+        if self.use_transformer:
+            values_c = agent.critic(
+                x=observation.permute((1, 0, 2)), 
+                partial_forward=False
+            )[1].permute((1, 0, 2)).squeeze(-1)
+            values_t = agent.target(
+                x=observation.permute((1, 0, 2)), 
+                partial_forward=False
+            )[1].permute((1, 0, 2)).squeeze(-1)
+        else:
+            values_c = torch.empty(
+                (self.batch_size, self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            values_t = torch.empty(
+                (self.batch_size, self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            hidden_c, hidden_t = None, None
+            for t in range(self.trajectory_len):
+                hidden_c, value_c = agent.critic(observation[:, t, :])
+                hidden_t, value_t = agent.target(observation[:, t, :])
+                values_c[:, t] = value_c.reshape(self.batch_size)
+                values_t[:, t] = value_t.reshape(self.batch_size)
+                hidden_c = hidden_c.permute((1, 0, 2))
+                hidden_t = hidden_t.permute((1, 0, 2))
         return values_c, values_t
 
     def linear_aa_loss(self, A_1s, A_2s, log_ps):
@@ -154,15 +196,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         if proximal:
             ratios = torch.exp(log_ps - log_ps.detach())
             surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            
             loss_1 = (A_1s * surrogates[:, :-1]).mean()
         else:
             loss_1 = (gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
 
-        if vanilla:
+        if not vanilla:
             loss_2 = self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
         else:
-            loss_2 = torch.zeros_like(loss_1)
+            loss_2 = torch.zeros(1, device=loss_1.device)
         
         return -1*(loss_1 + loss_2), entropy
 
@@ -190,34 +231,46 @@ class AdvantageAlignment(TrainingAlgorithm):
     def gen(self):
         observations, _ = self.env.reset()
         hidden_state_1, hidden_state_2 = None, None
+        history = None
         trajectory = TrajectoryBatch(
             batch_size=self.batch_size , 
             max_traj_len=self.trajectory_len,
             device=self.agent_1.device
         )
 
+        if self.use_transformer:
+            history = deque(maxlen=self.agent_1.actor.model.transformer.max_seq_len)
+
         for t in range(self.trajectory_len * 2):
             if t % 2 == 0:
                 hidden_state_1, action, log_p_1 = self.agent_1.sample_action(
                     observations=observations,
-                    h_0=hidden_state_1
+                    h_0=hidden_state_1,
+                    history=history,
+                    use_transformer=self.use_transformer
                 )
             else:
                 hidden_state_2, action, log_p_2 = self.agent_2.sample_action(
                     observations=observations,
-                    h_0=hidden_state_2
+                    h_0=hidden_state_2,
+                    history=history,
+                    use_transformer=self.use_transformer
                 )
-            observations, rewards, _, _, _ = self.env.step(action)
+            observations, rewards, done, _, info = self.env.step(action)
             trajectory.add_step(
                 action=torchify_actions(action, self.agent_1.device), 
                 observations=cat_observations(observations, self.agent_1.device), 
-                rewards=torch.tensor(rewards, device=self.agent_1.device), 
+                rewards=torch.tensor(rewards, device=self.agent_1.device),
+                done=torch.tensor(done, device=self.agent_1.device),
+                info=info,
                 t=t
             )
         trajectory.add_step(
             action=torchify_actions(action, self.agent_1.device), 
             observations=cat_observations(observations, self.agent_1.device), 
-            rewards=torch.tensor(rewards, device=self.agent_1.device), 
+            rewards=torch.tensor(rewards, device=self.agent_1.device),
+            done=torch.tensor(done, device=self.agent_1.device), 
+            info=info,
             t=t
         )
         return trajectory

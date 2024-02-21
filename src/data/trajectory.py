@@ -23,16 +23,16 @@ class TrajectoryBatch():
                 (batch_size, max_traj_len), device=device, dtype=torch.int32
             ),
             "props_0": torch.empty(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.int32
+                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
             "props_1": torch.empty(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.int32
+                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
             "uttes_0": torch.empty(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.int32
+                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
             "uttes_1": torch.empty(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.int32
+                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
             "rewards_0": torch.empty(
                 (batch_size, max_traj_len),
@@ -44,11 +44,23 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.float32,
             ),
+            "dones": torch.empty(
+                (batch_size, 2*max_traj_len),
+                device=device,
+                dtype=torch.bool,
+            ),
+            "cos_sims": torch.empty(
+                (batch_size, 2*max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
         }
     
-    def add_step(self, action, observations, rewards, t):
+    def add_step(self, action, observations, rewards, done, info, t):
         self.data[f'obs_{t%2}'][:, t//2, :] = observations
         self.data[f'terms_{t%2}'][:, t//2] = action['term']
         self.data[f'props_{t%2}'][:, t//2, :] = action['prop']
         self.data[f'uttes_{t%2}'][:, t//2, :] = action['utte']
         self.data[f'rewards_{t%2}'][:, t//2] = rewards
+        self.data[f'cos_sims'][:, t] = torch.tensor(info['utility_cos_sim'])
+        self.data[f'dones'][:, t] = done

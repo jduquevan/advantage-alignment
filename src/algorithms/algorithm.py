@@ -20,14 +20,15 @@ class TrainingAlgorithm(ABC):
         agent_1: Agent,
         agent_2: Agent,
         train_cfg: DictConfig,
+        use_transformer: bool,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
         self.agent_2 = agent_2
-        self.train_cfg =train_cfg
+        self.train_cfg = train_cfg
         self.batch_size = (len(env.envs))
         self.trajectory_len = train_cfg.max_traj_len
-
+        self.use_transformer = use_transformer
 
     def train_step(
         self,
@@ -88,6 +89,7 @@ class TrainingAlgorithm(ABC):
             print("Critic loss Agent 1: ", critic_loss_1)
             print("Actor loss Agent 1: ", actor_loss_1)
             print("Entropy Agent 1: ", entropy_1)
+            # print(trajectory.data['obs_0'][0, 0:20])
             print()
 
             critic_loss_2, actor_loss_2, entropy_2 = self.train_step(
@@ -98,6 +100,7 @@ class TrainingAlgorithm(ABC):
             print("Critic loss Agent 2: ", critic_loss_2)
             print("Actor loss Agent 2: ", actor_loss_2)
             print("Entropy Agent 2: ", entropy_2)
+            # print(trajectory.data['obs_1'][0, 0:20])
             print()
             wandb.log({
                 "Actor loss 1": actor_loss_1, 
