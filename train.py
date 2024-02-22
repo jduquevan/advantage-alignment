@@ -31,6 +31,7 @@ def main(cfg: DictConfig) -> None:
         agent_2=agent, 
         train_cfg=cfg.training,
         use_transformer=cfg['use_transformer'],
+        sum_rewards=cfg['sum_rewards'],
     )
     algorithm.train_loop()
 

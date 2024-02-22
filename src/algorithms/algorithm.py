@@ -21,6 +21,7 @@ class TrainingAlgorithm(ABC):
         agent_2: Agent,
         train_cfg: DictConfig,
         use_transformer: bool,
+        sum_rewards: bool,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
@@ -29,6 +30,7 @@ class TrainingAlgorithm(ABC):
         self.batch_size = (len(env.envs))
         self.trajectory_len = train_cfg.max_traj_len
         self.use_transformer = use_transformer
+        self.sum_rewards = sum_rewards
 
     def train_step(
         self,

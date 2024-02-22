@@ -1,8 +1,9 @@
 seed: 42
-batch_size: 128
-wandb: 'online'
+batch_size: 1
+wandb: 'disabled'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
+sum_rewards: True
 
 hydra:
   output_subdir: null
@@ -29,7 +30,7 @@ transformer_model:
   in_size: 15
   d_model: 32
   device: cuda
-  dim_feedforward: 64
+  dim_feedforward: 128
   num_layers: 1
   nhead: 4
   max_seq_len: 50

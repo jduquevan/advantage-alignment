@@ -44,6 +44,16 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.float32,
             ),
+            "reward_sums_0": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
+            "reward_sums_1": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
             "dones": torch.empty(
                 (batch_size, 2*max_traj_len),
                 device=device,
@@ -62,5 +72,6 @@ class TrajectoryBatch():
         self.data[f'props_{t%2}'][:, t//2, :] = action['prop']
         self.data[f'uttes_{t%2}'][:, t//2, :] = action['utte']
         self.data[f'rewards_{t%2}'][:, t//2] = rewards
-        self.data[f'cos_sims'][:, t] = torch.tensor(info['utility_cos_sim'])
+        self.data[f'reward_sums_{t%2}'][:, t//2] = torch.tensor(info['sum_rewards'], device=self.device)
+        self.data[f'cos_sims'][:, t] = torch.tensor(info['utility_cos_sim'], device=self.device)
         self.data[f'dones'][:, t] = done

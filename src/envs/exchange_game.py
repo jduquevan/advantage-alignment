@@ -11,7 +11,7 @@ grandparent_folder = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 sys.path.append(grandparent_folder)
-from src.utils.utils import get_cosine_similarity
+from src.utils.utils import get_cosine_similarity, unit_vector_from_angles
 from src.utils.format_utils import (
     empty_lists_in_nested_dict,
     t2a,
@@ -99,6 +99,7 @@ class ExchangeEnv(gym.Env):
         # prosocial agent: alpha = [1, 1]
         # selfish agent: alpha = [1, 0]
         self.alpha = np.array(alpha)  # prosocial parameter
+        # import pdb; pdb.set_trace()
         self.utte_channel = utte_channel
         self.prop_channel = prop_channel
 
@@ -116,12 +117,30 @@ class ExchangeEnv(gym.Env):
         )
 
     def reset(self):
-        self.item_pool = np.random.randint(
-            0, self.item_max_quantity + 1, size=self.nb_items
-        )
-        self.utilities = np.random.randint(
-            0, self.utility_max + 1, size=(self.nb_agents, self.nb_items)
-        )
+        # self.item_pool = np.random.randint(
+        #     0, self.item_max_quantity + 1, size=self.nb_items
+        # )
+        # self.utilities = np.random.randint(
+        #     0, self.utility_max + 1, size=(self.nb_agents, self.nb_items)
+        # )
+
+        # Ensures high cosine similarity by sampling utilities from the positive part of R^3 - cone
+        min_angle = 15
+        max_angle = 30
+        thetas_1 = np.random.uniform(min_angle, max_angle, 2)
+        thetas_2 = np.random.uniform(90 - (max_angle - min_angle), 90, 2)
+
+        # utilities_1 = unit_vector_from_angles(thetas_1[0], thetas_1[1])
+        # utilities_2 = unit_vector_from_angles(thetas_2[0], thetas_2[1])
+        utilities_1 = np.array([1, 0.3, 0.2])
+        utilities_2 = np.array([0.3, 1, 0.2])
+
+        self.utilities = np.vstack((utilities_1, utilities_2))
+
+        # Ensures "fair" distribution of the available resources
+        # self.item_pool = np.sum(self.utilities, axis=0)
+        self.item_pool = np.array([1, 1, 1])
+
         self.turn = 0
         self.rewards = [0] * self.nb_agents
         self.dones = [False] * self.nb_agents
@@ -174,6 +193,7 @@ class ExchangeEnv(gym.Env):
             "utility_max": self.utility_max,
             "done": False,
             "utility_cos_sim": 0,
+            "sum_rewards": 0
         }
         self.history = [self.info]
         self.obs = self._get_obs()
@@ -196,6 +216,7 @@ class ExchangeEnv(gym.Env):
         self.agent_in_turn = int(self.turn % self.nb_agents)
         self.info["agent_in_turn"] = self.agent_in_turn
         self.info["turn"] = self.turn
+        sum_rewards = 0
         if self.terminate_condition.lower() == "by_agent":
             term = action["term"]
         utte, prop = (
@@ -245,6 +266,7 @@ class ExchangeEnv(gym.Env):
             reward = self.rewards[self.agent_in_turn]
             self.dones[self.agent_in_turn] = True
             self.done = np.all(self.dones)
+            sum_rewards = np.sum(self.rewards)
         elif term_flag:
             if self.terminate_condition.lower() == "satisfied_prop":
                 self.rewards = self._calculate_rewards((prop + self.old_prop) / 2)
@@ -253,6 +275,7 @@ class ExchangeEnv(gym.Env):
             reward = self.rewards[self.agent_in_turn]
             self.dones[self.agent_in_turn] = True
             self.done = np.all(self.dones)
+            sum_rewards = np.sum(self.rewards)
         else:
             self.rewards = [0] * self.nb_agents
             reward = self.rewards[self.agent_in_turn]
@@ -269,6 +292,7 @@ class ExchangeEnv(gym.Env):
             self.turn += 1
 
         self.info["utility_cos_sim"] = get_cosine_similarity(self.utilities[0], self.utilities[1])
+        self.info["sum_rewards"] = sum_rewards
 
         self.old_prop = deepcopy(prop)
         self.old_utte = deepcopy(utte)
@@ -308,6 +332,7 @@ class ExchangeEnv(gym.Env):
             np.dot(np.roll(self.alpha, shift=-i), np.array([reward_A, reward_B]))
             for i in range(self.nb_agents)
         ]
+        import pdb; pdb.set_trace()
         scaled_reward = self._scale_reward(joint_reward)
 
         return scaled_reward

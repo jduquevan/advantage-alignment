@@ -42,6 +42,19 @@ def get_cosine_similarity(x1, x2, eps=1e-8):
     cosine_sim = dot_product / (norm1 * norm2 + eps)
     return cosine_sim
 
+def unit_vector_from_angles(theta, phi):
+    # Convert angles to radians
+    theta_rad = np.deg2rad(theta)
+    phi_rad = np.deg2rad(phi)
+    
+    # Calculate the components of the unit vector
+    x = np.sin(theta_rad) * np.cos(phi_rad)
+    y = np.sin(theta_rad) * np.sin(phi_rad)
+    z = np.cos(theta_rad)
+    
+    # Return the unit vector
+    return np.array([x, y, z])
+
 def compute_discounted_returns(gamma, rewards, agent):
         batch_size, trajectory_len = rewards.shape
         returns = torch.empty(
@@ -128,6 +141,10 @@ def wandb_stats(trajectory):
     dones = trajectory.data['dones']
     stats['Average reward 1'] = trajectory.data['rewards_0'].mean().detach()
     stats['Average reward 2'] = trajectory.data['rewards_1'].mean().detach()
+    stats['Average sum rewards'] = (
+        trajectory.data['rewards_0'] +
+        trajectory.data['rewards_1']
+    ).mean().detach()
     stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
     stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
     return stats

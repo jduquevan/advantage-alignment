@@ -172,6 +172,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_1 = trajectory.data['rewards_0']
             observation_2 = trajectory.data['obs_1']
             rewards_2 = trajectory.data['rewards_1']
+            sum_rewards_1 = trajectory.data['reward_sums_0']
+            sum_rewards_2 = trajectory.data['reward_sums_1']
         else:
             agent = self.agent_2
             other_agent = self.agent_1
@@ -179,6 +181,13 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_1 = trajectory.data['rewards_1']
             observation_2 = trajectory.data['obs_0']
             rewards_2 = trajectory.data['rewards_0']
+            sum_rewards_1 = trajectory.data['reward_sums_1']
+            sum_rewards_2 = trajectory.data['reward_sums_0']
+
+        import pdb; pdb.set_trace()
+        if self.sum_rewards:
+            rewards_1 = sum_rewards_1
+            rewards_2 = sum_rewards_2
         
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
@@ -214,16 +223,21 @@ class AdvantageAlignment(TrainingAlgorithm):
         if is_first:
             agent = self.agent_1
             observation = trajectory.data['obs_0']
-            rewards = trajectory.data['rewards_0']
+            rewards_1 = trajectory.data['rewards_0']
+            rewards_2 = trajectory.data['rewards_1']
         else:
             agent = self.agent_2
             observation = trajectory.data['obs_1']
-            rewards = trajectory.data['rewards_1']
+            rewards_1 = trajectory.data['rewards_1']
+            rewards_2 = trajectory.data['rewards_0']
+
+        if self.sum_rewards:
+            rewards_1 = rewards_2 = rewards_1 + rewards_2
 
         values_c, values_t = self.get_trajectory_values(agent, observation)
         values_c_shifted = values_c[:, :-1]
         values_t_shifted = values_t[:, 1:]
-        rewards_shifted = rewards[:, :-1]
+        rewards_shifted = rewards_1[:, :-1]
         
         critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
         return critic_loss
