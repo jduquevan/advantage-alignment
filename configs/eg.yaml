@@ -1,6 +1,6 @@
 seed: 42
-batch_size: 1
-wandb: 'disabled'
+batch_size: 128
+wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: True
@@ -46,7 +46,7 @@ policy:
   _target_: src.agents.policies.NormalSigmoidPolicy
   log_std_min: -10.0
   log_std_max: 2.0
-  prop_max: 5 # item max quantity
+  prop_max: 1 # item max quantity
   device: cuda
 
 linear_model:
@@ -57,7 +57,7 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-4
+  lr: 1e-3
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -76,4 +76,5 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.2
+  entropy_beta: 0.15
   vanilla: True

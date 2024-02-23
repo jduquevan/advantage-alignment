@@ -44,12 +44,19 @@ class TrainingAlgorithm(ABC):
         agent.critic_optimizer.step()
 
         agent.actor_optimizer.zero_grad()
-        actor_loss, entropy = self.actor_loss(trajectory, is_first)
-        actor_loss.backward()
+        actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
+        total_loss = actor_loss + self.train_cfg.entropy_beta * term_ent
+        total_loss.backward()
         agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-        return critic_loss.detach(), actor_loss.detach(), entropy.detach()
+        return (
+            critic_loss.detach(), 
+            actor_loss.detach(), 
+            term_ent.detach(), 
+            utte_ent.detach(), 
+            prop_ent.detach()
+        )
 
     def eval(self, step: int, start_time: float):
         eval_res = test_agent(
@@ -83,25 +90,29 @@ class TrainingAlgorithm(ABC):
             wandb.log(wandb_stats(trajectory))
 
             # Train
-            critic_loss_1, actor_loss_1, entropy_1 = self.train_step(
+            critic_loss_1, actor_loss_1, term_ent_1, utte_ent_1, prop_ent_1 = self.train_step(
                 trajectory=trajectory,
                 agent=self.agent_1,
                 is_first=True
             )
             print("Critic loss Agent 1: ", critic_loss_1)
             print("Actor loss Agent 1: ", actor_loss_1)
-            print("Entropy Agent 1: ", entropy_1)
+            print("Term Entropy Agent 1: ", term_ent_1)
+            print("Utte Entropy Agent 1: ", utte_ent_1)
+            print("Prop Entropy Agent 1: ", prop_ent_1)
             # print(trajectory.data['obs_0'][0, 0:20])
             print()
 
-            critic_loss_2, actor_loss_2, entropy_2 = self.train_step(
+            critic_loss_2, actor_loss_2, term_ent_2, utte_ent_2, prop_ent_2 = self.train_step(
                 trajectory=trajectory,
                 agent=self.agent_2,
                 is_first=False
             )
             print("Critic loss Agent 2: ", critic_loss_2)
             print("Actor loss Agent 2: ", actor_loss_2)
-            print("Entropy Agent 2: ", entropy_2)
+            print("Term Entropy Agent 2: ", term_ent_2)
+            print("Utte Entropy Agent 2: ", utte_ent_2)
+            print("Prop Entropy Agent 2: ", prop_ent_2)
             # print(trajectory.data['obs_1'][0, 0:20])
             print()
             wandb.log({
@@ -109,8 +120,12 @@ class TrainingAlgorithm(ABC):
                 "Critic loss 1": critic_loss_1,
                 "Actor loss 2": actor_loss_2,
                 "Critic loss 2": critic_loss_2,
-                "Entropy 1": entropy_1,
-                "Entropy 2": entropy_2,
+                "Term Entropy 1": term_ent_1,
+                "Utte Entropy 1": utte_ent_1,
+                "Prop Entropy 1": prop_ent_1,
+                "Term Entropy 2": term_ent_2,
+                "Utte Entropy 2": utte_ent_2,
+                "Prop Entropy 2": prop_ent_2,
                 })
         return
 
