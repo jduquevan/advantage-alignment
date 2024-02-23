@@ -192,7 +192,7 @@ class ExchangeEnv(gym.Env):
             "item_max_quantity": self.item_max_quantity,
             "utility_max": self.utility_max,
             "done": False,
-            "utility_cos_sim": 0,
+            "utility_cos_sim": get_cosine_similarity(self.utilities[0], self.utilities[1]),
             "sum_rewards": 0
         }
         self.history = [self.info]
@@ -290,7 +290,7 @@ class ExchangeEnv(gym.Env):
         # update for the next round
         if not self.done:
             self.turn += 1
-
+        
         self.info["utility_cos_sim"] = get_cosine_similarity(self.utilities[0], self.utilities[1])
         self.info["sum_rewards"] = sum_rewards
 
@@ -323,8 +323,15 @@ class ExchangeEnv(gym.Env):
     def _calculate_rewards(self, prop):
         assert self.nb_agents == 2, "Only support 2 agents for now"
         if self._is_valid(prop):
-            reward_A = np.dot(self.utilities[0], t2a(prop))
-            reward_B = np.dot(self.utilities[1], self.item_pool - t2a(prop))
+            # import pdb; pdb.set_trace()
+            # if self.agent_in_turn == 0:
+            #     prop = np.array([1, 0, 0.5])
+            # else:
+            #     prop = np.array([0, 1, 0.5])
+            # prop = np.array([1, 1, 0.99])
+            
+            reward_A = np.dot(self.utilities[self.agent_in_turn], t2a(prop))
+            reward_B = np.dot(self.utilities[(self.agent_in_turn + 1) % 2], self.item_pool - t2a(prop))
         else:
             reward_A = reward_B = 0
 
@@ -332,7 +339,7 @@ class ExchangeEnv(gym.Env):
             np.dot(np.roll(self.alpha, shift=-i), np.array([reward_A, reward_B]))
             for i in range(self.nb_agents)
         ]
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         scaled_reward = self._scale_reward(joint_reward)
 
         return scaled_reward
@@ -474,7 +481,7 @@ if __name__ == "__main__":
 
     # Example actions for each environment
     actions = envs.action_space.sample()
-    import pdb; pdb.set_trace()
+
     # Step the environments with the actions
     next_states, rewards, dones, truncation, infos = envs.step(actions)
     print("=====================end_of_test=====================")
