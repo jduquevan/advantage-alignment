@@ -1,9 +1,9 @@
 seed: 42
 batch_size: 128
-wandb: 'online'
+wandb: 'disabled'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
-use_transformer: True
-sum_rewards: True
+use_transformer: False
+sum_rewards: False
 
 hydra:
   output_subdir: null
@@ -30,7 +30,7 @@ transformer_model:
   in_size: 15
   d_model: 32
   device: cuda
-  dim_feedforward: 128
+  dim_feedforward: 32
   num_layers: 1
   nhead: 4
   max_seq_len: 50
@@ -57,11 +57,11 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 5e-4
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-2
+  lr: 1e-3
 
 agent:
   _target_: src.agents.agents.AdvantageAlignmentAgent
@@ -75,6 +75,7 @@ training:
   total_steps: 100000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.2
-  entropy_beta: 0.15
+  clip_range: 0.15
+  entropy_beta: 0
   vanilla: True
+  updates_per_batch: 1

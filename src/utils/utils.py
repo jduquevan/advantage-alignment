@@ -147,4 +147,10 @@ def wandb_stats(trajectory):
     ).mean().detach()
     stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
     stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
+    stats['Average A1 prop1'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A1 prop2'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A1 prop3'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Average A2 prop1'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A2 prop2'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A2 prop3'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[2]
     return stats

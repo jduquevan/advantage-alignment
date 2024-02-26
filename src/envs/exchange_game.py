@@ -17,6 +17,7 @@ from src.utils.format_utils import (
     t2a,
     a2t_in_nested_dict,
     compare,
+    compare_eps
 )
 
 
@@ -35,13 +36,13 @@ class ExchangeEnv(gym.Env):
             1,
             0,
         ],  # the prosocial parameters, [1, 0] means selfish agents, [1, 1] means prosocial agents
-        utte_channel=True,  # if yes, the agent can "see" the previous utterance
+        utte_channel=False,  # if yes, the agent can "see" the previous utterance
         prop_channel=True,  # if yes, the agent can "see" the previous proposal
         utte_max_len=6,  # the maximum length of utterance is 6
         nb_items=3,  # there are 3 kinds of items in the pool
         item_max_quantity=5,  # each kind of item has a maximum quantity of 5
         utility_max=10,  # the utility are random generated, the maximum utility for each item is 10
-        terminate_condition="by_agent",  # by_agent or equal_prop or satisfied_prop
+        terminate_condition="equal_eps",  # by_agent or equal_prop or equal_eps or satisfied_prop
         device=None,
     ):
         super(ExchangeEnv, self).__init__()
@@ -106,6 +107,7 @@ class ExchangeEnv(gym.Env):
         assert self.terminate_condition.lower() in [
             "by_agent",
             "equal_prop",
+            "equal_eps",
             "satisfied_prop",
         ], f"terminate_condition should be by_agent, \
         equal_prop or satisfied_prop, not {self.terminate_condition}"
@@ -146,9 +148,10 @@ class ExchangeEnv(gym.Env):
         self.dones = [False] * self.nb_agents
         self.done = False
 
-        self.old_prop = torch.round(torch.from_numpy(self.item_pool / 2)).type(
-            torch.int
-        )
+        # self.old_prop = torch.round(torch.from_numpy(self.item_pool / 2)).type(
+        #     torch.float32
+        # )
+        self.old_prop = np.round(self.item_pool / 2).astype(np.float32)
         self.old_utte = torch.zeros(self.utte_max_len, dtype=torch.int64)
         self.utte_dummy = torch.zeros(self.utte_max_len, dtype=torch.int64)
         self.prop_dummy = torch.round(torch.from_numpy(self.item_pool / 2)).type(
@@ -177,7 +180,7 @@ class ExchangeEnv(gym.Env):
             "turn": -1,
             "action_term": torch.tensor(0).to(self.device),
             "action_utte": self.old_utte.to(self.device),
-            "action_prop": self.old_prop.to(self.device),
+            "action_prop": torch.tensor(self.old_prop).to(self.device),
             "actual_reward": -1,
             "item_pool": self.item_pool,
             "utilities": self.utilities,
@@ -231,6 +234,8 @@ class ExchangeEnv(gym.Env):
             term_flag = term
         elif self.terminate_condition.lower() == "equal_prop":
             term_flag = compare(self.old_prop, prop, "==", allany="all")
+        elif self.terminate_condition.lower() == "equal_eps":
+            term_flag = compare_eps(self.old_prop, self.item_pool - prop)
         elif self.terminate_condition.lower() == "satisfied_prop":
             if self.agent_in_turn == 0:
                 # the old_prop is done by agent 1,

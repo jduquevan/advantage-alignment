@@ -38,6 +38,7 @@ class TrainingAlgorithm(ABC):
         agent,
         is_first=True
     ):
+        
         agent.critic_optimizer.zero_grad()
         critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
@@ -45,7 +46,7 @@ class TrainingAlgorithm(ABC):
 
         agent.actor_optimizer.zero_grad()
         actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
-        total_loss = actor_loss + self.train_cfg.entropy_beta * term_ent
+        total_loss = actor_loss + self.train_cfg.entropy_beta * prop_ent
         total_loss.backward()
         agent.actor_optimizer.step()
 
@@ -89,44 +90,46 @@ class TrainingAlgorithm(ABC):
             trajectory = self.gen()
             wandb.log(wandb_stats(trajectory))
 
-            # Train
-            critic_loss_1, actor_loss_1, term_ent_1, utte_ent_1, prop_ent_1 = self.train_step(
-                trajectory=trajectory,
-                agent=self.agent_1,
-                is_first=True
-            )
-            print("Critic loss Agent 1: ", critic_loss_1)
-            print("Actor loss Agent 1: ", actor_loss_1)
-            print("Term Entropy Agent 1: ", term_ent_1)
-            print("Utte Entropy Agent 1: ", utte_ent_1)
-            print("Prop Entropy Agent 1: ", prop_ent_1)
-            # print(trajectory.data['obs_0'][0, 0:20])
-            print()
+            for i in range(self.train_cfg.updates_per_batch):
 
-            critic_loss_2, actor_loss_2, term_ent_2, utte_ent_2, prop_ent_2 = self.train_step(
-                trajectory=trajectory,
-                agent=self.agent_2,
-                is_first=False
-            )
-            print("Critic loss Agent 2: ", critic_loss_2)
-            print("Actor loss Agent 2: ", actor_loss_2)
-            print("Term Entropy Agent 2: ", term_ent_2)
-            print("Utte Entropy Agent 2: ", utte_ent_2)
-            print("Prop Entropy Agent 2: ", prop_ent_2)
-            # print(trajectory.data['obs_1'][0, 0:20])
-            print()
-            wandb.log({
-                "Actor loss 1": actor_loss_1, 
-                "Critic loss 1": critic_loss_1,
-                "Actor loss 2": actor_loss_2,
-                "Critic loss 2": critic_loss_2,
-                "Term Entropy 1": term_ent_1,
-                "Utte Entropy 1": utte_ent_1,
-                "Prop Entropy 1": prop_ent_1,
-                "Term Entropy 2": term_ent_2,
-                "Utte Entropy 2": utte_ent_2,
-                "Prop Entropy 2": prop_ent_2,
-                })
+                # Train
+                critic_loss_1, actor_loss_1, term_ent_1, utte_ent_1, prop_ent_1 = self.train_step(
+                    trajectory=trajectory,
+                    agent=self.agent_1,
+                    is_first=True
+                )
+                print("Critic loss Agent 1: ", critic_loss_1)
+                print("Actor loss Agent 1: ", actor_loss_1)
+                print("Term Entropy Agent 1: ", term_ent_1)
+                print("Utte Entropy Agent 1: ", utte_ent_1)
+                print("Prop Entropy Agent 1: ", prop_ent_1)
+                # print(trajectory.data['obs_0'][0, 0:20])
+                print()
+
+                critic_loss_2, actor_loss_2, term_ent_2, utte_ent_2, prop_ent_2 = self.train_step(
+                    trajectory=trajectory,
+                    agent=self.agent_2,
+                    is_first=False
+                )
+                print("Critic loss Agent 2: ", critic_loss_2)
+                print("Actor loss Agent 2: ", actor_loss_2)
+                print("Term Entropy Agent 2: ", term_ent_2)
+                print("Utte Entropy Agent 2: ", utte_ent_2)
+                print("Prop Entropy Agent 2: ", prop_ent_2)
+                # print(trajectory.data['obs_1'][0, 0:20])
+                print()
+                wandb.log({
+                    "Actor loss 1": actor_loss_1, 
+                    "Critic loss 1": critic_loss_1,
+                    "Actor loss 2": actor_loss_2,
+                    "Critic loss 2": critic_loss_2,
+                    "Term Entropy 1": term_ent_1,
+                    "Utte Entropy 1": utte_ent_1,
+                    "Prop Entropy 1": prop_ent_1,
+                    "Term Entropy 2": term_ent_2,
+                    "Utte Entropy 2": utte_ent_2,
+                    "Prop Entropy 2": prop_ent_2,
+                    })
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""

@@ -174,7 +174,6 @@ torch_ops = {
     ">": torch.gt,
 }
 
-
 def compare(x, y, op_str, allany=None):
     if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
         op = numpy_ops[op_str]
@@ -192,5 +191,15 @@ def compare(x, y, op_str, allany=None):
             return torch.all(op(x, y))
         elif allany == "any":
             return torch.any(op(x, y))
+    else:
+        raise TypeError("Inputs must be both NumPy arrays or both PyTorch tensors")
+
+def compare_eps(x, y, eps=0.1):
+    if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+        abs_diff = np.abs(x - y)
+        return np.all(abs_diff <= eps)
+    elif isinstance(x, torch.Tensor) and isinstance(y, torch.Tensor):
+        abs_diff = torch.abs(x - y)
+        return torch.all(abs_diff <= eps)
     else:
         raise TypeError("Inputs must be both NumPy arrays or both PyTorch tensors")

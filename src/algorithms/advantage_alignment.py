@@ -74,7 +74,17 @@ class AdvantageAlignment(TrainingAlgorithm):
             log_ps = log_ps_term + log_ps_utte + log_ps_prop
             term_ent, utte_ent, prop_ent = self.get_total_entropy(term_dist, agent)
         else:
-            entropies = torch.empty(
+            term_ent = torch.empty(
+                (self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            utte_ent = torch.empty(
+                (self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            prop_ent = torch.empty(
                 (self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
@@ -88,7 +98,10 @@ class AdvantageAlignment(TrainingAlgorithm):
                 )
                 hidden = hidden.permute((1, 0, 2))
                 
-                entropies[t] = self.get_entropy(term_dist, agent)
+                term_en, utte_en, prop_en = self.get_entropy(term_dist, agent)
+                term_ent[t] = term_en
+                utte_ent[t] = utte_en
+                prop_ent[t] = prop_en
                 
                 log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
                 log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
@@ -97,7 +110,9 @@ class AdvantageAlignment(TrainingAlgorithm):
                 log_p = log_p_term + log_p_utte + log_p_prop
                 log_p_list.append(log_p)
                 log_ps = torch.stack(log_p_list).permute((1, 0))
-                entropy = entropies.mean()
+            term_ent = term_ent.mean()
+            utte_ent = utte_ent.mean()
+            prop_ent = prop_ent.mean()
 
         return log_ps, term_ent, utte_ent, prop_ent
 
@@ -205,16 +220,16 @@ class AdvantageAlignment(TrainingAlgorithm):
         if proximal:
             ratios = torch.exp(log_ps - log_ps.detach())
             surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            loss_1 = (A_1s * surrogates[:, :-1]).mean()
+            loss_1 = -(A_1s * surrogates[:, :-1]).mean()
         else:
-            loss_1 = (gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
+            loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
-            loss_2 = self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
+            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         
-        return -1*(loss_1 + loss_2), term_ent, utte_ent, prop_ent
+        return (loss_1 + loss_2), term_ent, utte_ent, prop_ent
 
 
     def critic_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
