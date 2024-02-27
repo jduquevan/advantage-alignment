@@ -334,9 +334,14 @@ class ExchangeEnv(gym.Env):
             # else:
             #     prop = np.array([0, 1, 0.5])
             # prop = np.array([1, 1, 0.99])
+
+            if self.agent_in_turn == 1:
+                reward_A = np.dot(self.utilities[0], self.item_pool - t2a(prop))
+                reward_B = np.dot(self.utilities[1], t2a(prop))
+            else:
+                reward_A = np.dot(self.utilities[0], t2a(prop))
+                reward_B = np.dot(self.utilities[1], self.item_pool - t2a(prop))
             
-            reward_A = np.dot(self.utilities[self.agent_in_turn], t2a(prop))
-            reward_B = np.dot(self.utilities[(self.agent_in_turn + 1) % 2], self.item_pool - t2a(prop))
         else:
             reward_A = reward_B = 0
 
