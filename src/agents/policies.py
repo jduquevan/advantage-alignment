@@ -58,6 +58,9 @@ class NormalSigmoidPolicy(nn.Module):
         action = {}
 
         output, term_categorical, utte_normal, prop_normal_sigmoid = self.forward(x, h_0)
+        u_1 = x[:, 3]
+        u_2 = x[:, 4]
+        prop_normal_sigmoid.base_dist.loc = prop_normal_sigmoid.base_dist.loc + torch.stack([torch.where(u_1 > 0.8, -2, +2), torch.where(u_2 > 0.8, -2, +2), torch.zeros_like(u_2)]).permute(1, 0)
         term = term_categorical.sample()
         utte = utte_normal.sample()
         prop = prop_normal_sigmoid.sample()

@@ -42,7 +42,7 @@ class ExchangeEnv(gym.Env):
         nb_items=3,  # there are 3 kinds of items in the pool
         item_max_quantity=5,  # each kind of item has a maximum quantity of 5
         utility_max=10,  # the utility are random generated, the maximum utility for each item is 10
-        terminate_condition="equal_eps",  # by_agent or equal_prop or equal_eps or satisfied_prop
+        terminate_condition="by_agent",  # by_agent or equal_prop or equal_eps or satisfied_prop
         device=None,
     ):
         super(ExchangeEnv, self).__init__()
@@ -334,9 +334,13 @@ class ExchangeEnv(gym.Env):
             # else:
             #     prop = np.array([0, 1, 0.5])
             # prop = np.array([1, 1, 0.99])
-            
-            reward_A = np.dot(self.utilities[self.agent_in_turn], t2a(prop))
-            reward_B = np.dot(self.utilities[(self.agent_in_turn + 1) % 2], self.item_pool - t2a(prop))
+
+            if self.agent_in_turn == 1:
+                reward_A = np.dot(self.utilities[0], self.item_pool - t2a(prop))
+                reward_B = np.dot(self.utilities[1], t2a(prop))
+            else:
+                reward_A = np.dot(self.utilities[0], t2a(prop))
+                reward_B = np.dot(self.utilities[1], self.item_pool - t2a(prop))
         else:
             reward_A = reward_B = 0
 
