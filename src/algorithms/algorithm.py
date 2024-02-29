@@ -22,15 +22,22 @@ class TrainingAlgorithm(ABC):
         train_cfg: DictConfig,
         use_transformer: bool,
         sum_rewards: bool,
+        simultaneous: bool,
+        discrete: bool,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
         self.agent_2 = agent_2
         self.train_cfg = train_cfg
-        self.batch_size = (len(env.envs))
         self.trajectory_len = train_cfg.max_traj_len
         self.use_transformer = use_transformer
         self.sum_rewards = sum_rewards
+        self.simultaneous = simultaneous
+        self.discrete = discrete
+        if self.simultaneous:
+            self.batch_size = env.batch_size
+        else:
+            self.batch_size = (len(env.envs))
 
     def train_step(
         self,
@@ -46,7 +53,7 @@ class TrainingAlgorithm(ABC):
 
         agent.actor_optimizer.zero_grad()
         actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
-        total_loss = actor_loss + self.train_cfg.entropy_beta * prop_ent
+        total_loss = actor_loss - self.train_cfg.entropy_beta * prop_ent
         total_loss.backward()
         agent.actor_optimizer.step()
 
@@ -87,7 +94,10 @@ class TrainingAlgorithm(ABC):
             #     self.network.train()
 
             # Collect trajectories
-            trajectory = self.gen()
+            if self.simultaneous:
+                 trajectory = self.gen_sim()
+            else:
+                trajectory = self.gen()
             wandb.log(wandb_stats(trajectory))
 
             for i in range(self.train_cfg.updates_per_batch):

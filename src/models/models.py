@@ -91,6 +91,7 @@ class StableTransformer(nn.Module):
         for layer in self.layers:
             output = layer(output) + src
         if partial_forward:
+            import pdb; pdb.set_trace()
             output = output[-1, :, :]
         return output
 
@@ -138,6 +139,50 @@ class MLPModel(nn.Module):
         prop_log_std = F.softplus(self.prop_head_std(x))
 
         return output, term_probs, (utte_mean, utte_log_std), (prop_mean, prop_log_std)
+
+class MLPModelDiscrete(nn.Module):
+    def __init__(self, in_size, device, hidden_size=40, gru=None, transformer=None):
+        super(MLPModelDiscrete, self).__init__()
+        self.gru = gru
+        self.transformer = transformer
+
+        self.use_gru = self.gru != None
+
+        self.hidden = nn.Linear(in_size, hidden_size)
+
+        # Termination head
+        self.term_head = nn.Linear(hidden_size, 2)  # Assuming 2 categories for the term
+
+        # Communication head
+        self.utte_head = nn.Linear(hidden_size, 6)
+
+        # Proposition heads
+        self.prop_head_1 = nn.Linear(hidden_size, 5)
+        self.prop_head_2 = nn.Linear(hidden_size, 5)
+        self.prop_head_3 = nn.Linear(hidden_size, 5)
+
+        self.to(device)
+
+    def forward(self, x, h_0=None, partial_forward=True):
+        output = None
+        if self.use_gru:
+            output, x = self.gru(x, h_0)
+        else:
+            x = self.transformer(x, partial_forward)
+        x = F.relu(self.hidden(F.relu(x)))
+
+        # Term
+        term_probs = F.softmax(self.term_head(x), dim=-1)
+
+        # Utte
+        utte_probs =  F.softmax(self.utte_head(x), dim=-1)
+
+        # Prop
+        prop_1 = F.softmax(self.prop_head_1(x), dim=-1)
+        prop_2 = F.softmax(self.prop_head_2(x), dim=-1)
+        prop_3 = F.softmax(self.prop_head_3(x), dim=-1)
+
+        return output, term_probs, utte_probs, (prop_1, prop_2, prop_3)
     
 class LinearModel(nn.Module):
     def __init__(self, in_size, out_size, device, gru=None, transformer=None):

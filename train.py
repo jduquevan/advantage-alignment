@@ -3,6 +3,7 @@ import wandb
 from omegaconf import DictConfig
 
 from src.algorithms.advantage_alignment import AdvantageAlignment
+from src.envs.eg_vectorized import DiscreteEG
 from src.envs.exchange_game import make_vectorized_env
 from src.utils.utils import seed_all, instantiate_agent
 
@@ -23,7 +24,10 @@ def main(cfg: DictConfig) -> None:
         anonymous="allow",
         mode=cfg["wandb"]
     )
-    env = make_vectorized_env(cfg['batch_size'])
+    if cfg['simultaneous']:
+        env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+    else:
+        env = make_vectorized_env(cfg['batch_size'])
     agent = instantiate_agent(cfg)
     algorithm = AdvantageAlignment(
         env=env, 
@@ -32,6 +36,8 @@ def main(cfg: DictConfig) -> None:
         train_cfg=cfg.training,
         use_transformer=cfg['use_transformer'],
         sum_rewards=cfg['sum_rewards'],
+        simultaneous=cfg['simultaneous'],
+        discrete=cfg['discrete'],
     )
     algorithm.train_loop()
 

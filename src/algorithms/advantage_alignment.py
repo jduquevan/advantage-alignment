@@ -46,9 +46,30 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return term_ent, utte_ent, prop_ent
 
+    def get_entropy_discrete(self, term_dist, prop_dist):
+        prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
+        term_probs = term_dist.probs.squeeze(0)
+        prop_probs_1 = prop_dist_1.probs.squeeze(0)
+        prop_probs_2 = prop_dist_2.probs.squeeze(0)
+        prop_probs_3 = prop_dist_3.probs.squeeze(0)
+
+        term_ent = get_categorical_entropy(term_probs)
+        #TODO: Add utterance support
+        utte_ent = 0
+        prop_ent = (
+            get_categorical_entropy(prop_probs_1) +
+            get_categorical_entropy(prop_probs_2) +
+            get_categorical_entropy(prop_probs_3)
+        )
+
+        return term_ent, utte_ent, prop_ent
+
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
         log_p_list = []
-        prop_max = self.agent_1.actor.prop_max
+        if self.discrete:
+            prop_max = 1
+        else:
+            prop_max = self.agent_1.actor.prop_max
 
         if is_first:
             observation = trajectory.data['obs_0']
@@ -98,14 +119,25 @@ class AdvantageAlignment(TrainingAlgorithm):
                 )
                 hidden = hidden.permute((1, 0, 2))
                 
-                term_en, utte_en, prop_en = self.get_entropy(term_dist, agent)
+                if self.discrete:
+                    term_en, utte_en, prop_en = self.get_entropy_discrete(term_dist, prop_dist)
+                    log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
+                    log_p_utte = 0
+                    prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
+                    log_p_prop = (
+                        prop_cat_1.log_prob(props[:, t, 0]) + 
+                        prop_cat_2.log_prob(props[:, t, 1]) + 
+                        prop_cat_3.log_prob(props[:, t, 2])
+                    ).squeeze(0) 
+                else:
+                    term_en, utte_en, prop_en = self.get_entropy(term_dist, agent)
+                    log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
+                    log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
+                    log_p_prop = prop_dist.log_prob(props[:, t]/prop_max).sum(dim=-1)
                 term_ent[t] = term_en
                 utte_ent[t] = utte_en
                 prop_ent[t] = prop_en
                 
-                log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
-                log_p_utte = utte_dist.log_prob(uttes[:, t]).sum(dim=-1)
-                log_p_prop = prop_dist.log_prob(props[:, t]/prop_max).sum(dim=-1)
 
                 log_p = log_p_term + log_p_utte + log_p_prop
                 log_p_list.append(log_p)
@@ -299,6 +331,61 @@ class AdvantageAlignment(TrainingAlgorithm):
             observations=cat_observations(observations, self.agent_1.device), 
             rewards=torch.tensor(rewards, device=self.agent_1.device),
             done=torch.tensor(done, device=self.agent_1.device), 
+            info=info,
+            t=t
+        )
+        return trajectory
+
+    def gen_sim(self):
+        observations, _ = self.env.reset()
+        observations_1, observations_2 = observations
+        hidden_state_1, hidden_state_2 = None, None
+        history = None
+        trajectory = TrajectoryBatch(
+            batch_size=self.batch_size , 
+            max_traj_len=self.trajectory_len,
+            device=self.agent_1.device
+        )
+
+        if self.use_transformer:
+            history = deque(maxlen=self.agent_1.actor.model.transformer.max_seq_len)
+
+        for t in range(self.trajectory_len):
+            hidden_state_1, action_1, log_p_1 = self.agent_1.sample_action(
+                observations=observations_1,
+                h_0=hidden_state_1,
+                history=history,
+                use_transformer=self.use_transformer,
+                extend_history=True
+            )
+            hidden_state_2, action_2, log_p_2 = self.agent_2.sample_action(
+                observations=observations_2,
+                h_0=hidden_state_2,
+                history=history,
+                use_transformer=self.use_transformer,
+                extend_history=False
+            )
+            import pdb; pdb.set_trace()
+            observations, rewards, done, _, info = self.env.step((action_1, action_2))
+            trajectory.add_step_sim(
+                action=(action_1, action_2), 
+                observations=(
+                    cat_observations(observations[0], self.agent_1.device),
+                    cat_observations(observations[1], self.agent_1.device)
+                ), 
+                rewards=rewards,
+                done=done,
+                info=info,
+                t=t
+            )
+        trajectory.add_step_sim(
+            action=(action_1, action_2), 
+            observations=(
+                cat_observations(observations[0], self.agent_1.device),
+                cat_observations(observations[1], self.agent_1.device)
+            ), 
+            rewards=rewards,
+            done=done,
             info=info,
             t=t
         )

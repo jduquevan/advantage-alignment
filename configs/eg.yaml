@@ -1,9 +1,14 @@
 seed: 42
-batch_size: 128
+batch_size: 512
 wandb: 'disabled'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
-use_transformer: False
-sum_rewards: False
+use_transformer: True
+sum_rewards: True
+simultaneous: True
+discrete: True
+
+env:
+  device: cuda
 
 hydra:
   output_subdir: null
@@ -22,28 +27,28 @@ gru_model:
   _target_: src.models.models.GruModel
   in_size: 15
   device: cuda
-  hidden_size: 32
+  hidden_size: 64
   num_layers: 1
 
 transformer_model:
   _target_: src.models.models.StableTransformer
   in_size: 15
-  d_model: 32
+  d_model: 64
   device: cuda
-  dim_feedforward: 32
+  dim_feedforward: 64
   num_layers: 1
   nhead: 4
   max_seq_len: 50
   dropout: 0.1
 
 mlp_model:
-  _target_: src.models.models.MLPModel
-  in_size: 32
+  _target_: src.models.models.MLPModelDiscrete
+  in_size: 64
   device: cuda
   hidden_size: 40
 
 policy:
-  _target_: src.agents.policies.NormalSigmoidPolicy
+  _target_: src.agents.policies.CategoricalPolicy
   log_std_min: -10.0
   log_std_max: 2.0
   prop_max: 1 # item max quantity
@@ -51,13 +56,13 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
-  in_size: 32
+  in_size: 64
   out_size: 1
   device: cuda
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-4
+  lr: 1e-4
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -76,6 +81,6 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0
+  entropy_beta: 0.03
   vanilla: True
   updates_per_batch: 1
