@@ -83,13 +83,26 @@ class CategoricalPolicy(nn.Module):
         self.model = model
         self.to(device)
 
-    def forward(self, x, h_0=None, use_tranformer=False):
+    def forward(self, x, h_0=None, use_tranformer=False, partial_forward=False):
         if use_tranformer:
-            output, term_dist, utte, prop = self.model(x, partial_forward=False)
+            output, term_dist, utte, prop = self.model(x, partial_forward=partial_forward)
         else:
             output, term_dist, utte, prop = self.model(x, h_0)
 
         prop_1, prop_2, prop_3 = prop
+
+        if use_tranformer and not partial_forward:
+            term_dist = term_dist.permute((1, 0, 2))
+            utte = utte.permute((1, 0, 2))
+            prop_1 = prop_1.permute((1, 0, 2))
+            prop_2 = prop_2.permute((1, 0, 2))
+            prop_3 = prop_3.permute((1, 0, 2))
+        elif not use_tranformer:
+            term_dist = term_dist.squeeze(0)
+            utte = utte.squeeze(0)
+            prop_1 = prop_1.squeeze(0)
+            prop_2 = prop_2.squeeze(0)
+            prop_3 = prop_3.squeeze(0)
 
         base_term_dist = D.Categorical(term_dist)
         prop_dist_1 = D.Categorical(prop_1)
@@ -101,14 +114,18 @@ class CategoricalPolicy(nn.Module):
     def sample_action(self, x, h_0=None, use_transformer=False):
         action = {}
 
-        output, term_cat, utte, prop_cat = self.forward(x, h_0, use_transformer)
+        output, term_cat, utte, prop_cat = self.forward(x, h_0, use_transformer, True)
         prop_cat_1, prop_cat_2, prop_cat_3 = prop_cat
         term = term_cat.sample()
         prop_1 = prop_cat_1.sample()
         prop_2 = prop_cat_2.sample()
         prop_3 = prop_cat_3.sample()
-        # import pdb; pdb.set_trace()
-        prop = torch.cat([prop_1, prop_2, prop_3], dim=0).permute((1, 0))
+
+        prop = torch.cat([
+            prop_1.unsqueeze(1), 
+            prop_2.unsqueeze(1), 
+            prop_3.unsqueeze(1)
+        ], dim=1)
 
         # TODO: Add utterance support
 
@@ -120,8 +137,8 @@ class CategoricalPolicy(nn.Module):
         ) 
         log_p = log_p_term + log_p_prop
 
-        action['term'] = term.squeeze(0)
-        action['utte'] = utte.squeeze(0)
+        action['term'] = term.flatten()
+        action['utte'] = utte.squeeze(1)
         action['prop'] = prop
 
         return output, action, log_p

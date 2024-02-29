@@ -91,7 +91,6 @@ class StableTransformer(nn.Module):
         for layer in self.layers:
             output = layer(output) + src
         if partial_forward:
-            import pdb; pdb.set_trace()
             output = output[-1, :, :]
         return output
 

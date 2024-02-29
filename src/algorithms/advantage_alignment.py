@@ -35,6 +35,23 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return term_ent, utte_ent, prop_ent
 
+    def get_total_entropy_discrete(self, term_dist, prop_dist):
+        prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
+        term_probs = term_dist.probs.reshape((-1, term_dist.probs.size(2)))
+        prop_probs_1 = prop_dist_1.probs.reshape((-1, prop_dist_1.probs.size(2)))
+        prop_probs_2 = prop_dist_2.probs.reshape((-1, prop_dist_2.probs.size(2)))
+        prop_probs_3 = prop_dist_3.probs.reshape((-1, prop_dist_3.probs.size(2)))
+
+        term_ent = get_categorical_entropy(term_probs)
+        utte_ent = torch.tensor(0)
+        prop_ent = (
+            get_categorical_entropy(prop_probs_1) +
+            get_categorical_entropy(prop_probs_2) +
+            get_categorical_entropy(prop_probs_3)
+        )
+
+        return term_ent, utte_ent, prop_ent
+
     def get_entropy(self, term_dist, agent):
         term_probs = term_dist.probs.squeeze(0)
         utte_stds = torch.exp(agent.actor.utte_log_std.squeeze(0))
@@ -55,7 +72,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         term_ent = get_categorical_entropy(term_probs)
         #TODO: Add utterance support
-        utte_ent = 0
+        utte_ent = torch.tensor(0)
         prop_ent = (
             get_categorical_entropy(prop_probs_1) +
             get_categorical_entropy(prop_probs_2) +
@@ -87,13 +104,26 @@ class AdvantageAlignment(TrainingAlgorithm):
                 x=observation.permute((1, 0, 2)),
                 use_tranformer=self.use_transformer
             )
-            
-            log_ps_term = term_dist.log_prob(terms)
-            log_ps_utte = utte_dist.log_prob(uttes).sum(dim=-1)
-            log_ps_prop = prop_dist.log_prob(props/prop_max).sum(dim=-1)
+
+            if self.discrete:
+                log_ps_term = term_dist.log_prob(terms)
+                log_ps_utte = 0
+                prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
+                log_ps_prop = (
+                    prop_cat_1.log_prob(props[:, :, 0]) + 
+                    prop_cat_2.log_prob(props[:, :, 1]) + 
+                    prop_cat_3.log_prob(props[:, :, 2])
+                )
+
+                term_ent, utte_ent, prop_ent = self.get_total_entropy_discrete(term_dist, prop_dist)
+            else:
+                log_ps_term = term_dist.log_prob(terms)
+                log_ps_utte = utte_dist.log_prob(uttes).sum(dim=-1)
+                log_ps_prop = prop_dist.log_prob(props/prop_max).sum(dim=-1)
+
+                term_ent, utte_ent, prop_ent = self.get_total_entropy(term_dist, agent)
 
             log_ps = log_ps_term + log_ps_utte + log_ps_prop
-            term_ent, utte_ent, prop_ent = self.get_total_entropy(term_dist, agent)
         else:
             term_ent = torch.empty(
                 (self.trajectory_len), 
@@ -365,7 +395,6 @@ class AdvantageAlignment(TrainingAlgorithm):
                 use_transformer=self.use_transformer,
                 extend_history=False
             )
-            import pdb; pdb.set_trace()
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
