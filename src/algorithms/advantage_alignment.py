@@ -37,18 +37,13 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     def get_total_entropy_discrete(self, term_dist, prop_dist):
         prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
-        term_probs = term_dist.probs.reshape((-1, term_dist.probs.size(2)))
-        prop_probs_1 = prop_dist_1.probs.reshape((-1, prop_dist_1.probs.size(2)))
-        prop_probs_2 = prop_dist_2.probs.reshape((-1, prop_dist_2.probs.size(2)))
-        prop_probs_3 = prop_dist_3.probs.reshape((-1, prop_dist_3.probs.size(2)))
-
-        term_ent = get_categorical_entropy(term_probs)
+        term_ent = term_dist.entropy().mean()
         utte_ent = torch.tensor(0)
         prop_ent = (
-            get_categorical_entropy(prop_probs_1) +
-            get_categorical_entropy(prop_probs_2) +
-            get_categorical_entropy(prop_probs_3)
-        )
+            prop_dist_1.entropy() +
+            prop_dist_2.entropy() +
+            prop_dist_3.entropy()
+        ).mean()
 
         return term_ent, utte_ent, prop_ent
 
@@ -65,19 +60,15 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     def get_entropy_discrete(self, term_dist, prop_dist):
         prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
-        term_probs = term_dist.probs.squeeze(0)
-        prop_probs_1 = prop_dist_1.probs.squeeze(0)
-        prop_probs_2 = prop_dist_2.probs.squeeze(0)
-        prop_probs_3 = prop_dist_3.probs.squeeze(0)
 
-        term_ent = get_categorical_entropy(term_probs)
+        term_ent = term_dist.entropy().mean()
         #TODO: Add utterance support
         utte_ent = torch.tensor(0)
         prop_ent = (
-            get_categorical_entropy(prop_probs_1) +
-            get_categorical_entropy(prop_probs_2) +
-            get_categorical_entropy(prop_probs_3)
-        )
+            prop_dist_1.entropy() +
+            prop_dist_2.entropy() +
+            prop_dist_3.entropy()
+        ).mean()
 
         return term_ent, utte_ent, prop_ent
 

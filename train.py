@@ -28,11 +28,17 @@ def main(cfg: DictConfig) -> None:
         env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
     else:
         env = make_vectorized_env(cfg['batch_size'])
-    agent = instantiate_agent(cfg)
+
+    if cfg['self_play']:
+        agent_1 = agent_2 = instantiate_agent(cfg)
+    else:
+        agent_1 = instantiate_agent(cfg)
+        agent_2 = instantiate_agent(cfg)
+    
     algorithm = AdvantageAlignment(
         env=env, 
-        agent_1=agent, 
-        agent_2=agent, 
+        agent_1=agent_1, 
+        agent_2=agent_2, 
         train_cfg=cfg.training,
         use_transformer=cfg['use_transformer'],
         sum_rewards=cfg['sum_rewards'],

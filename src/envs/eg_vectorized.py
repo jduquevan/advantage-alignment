@@ -47,12 +47,12 @@ class DiscreteEG(gym.Env):
         # TODO: Add utterance support
         return ({
             "item_and_utility": item_context_1,
-            "utte": self.utte_dummy,
+            "utte": self.utte_dummy_1,
             "prop": prop_1,
         },
         {
             "item_and_utility": item_context_2,
-            "utte": self.utte_dummy,
+            "utte": self.utte_dummy_2,
             "prop": prop_2,
         })
 
@@ -78,7 +78,7 @@ class DiscreteEG(gym.Env):
             # For debugging purposes
             utilities_1 = torch.tensor([10, 3, 2]).repeat(self.batch_size, 1).to(self.device)
             utilities_2 = torch.tensor([3, 10, 2]).repeat(self.batch_size, 1).to(self.device)
-            item_pool =  torch.tensor([2, 2, 2]).repeat(self.batch_size, 1).to(self.device)
+            item_pool =  torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
         else:
             raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
 
@@ -115,7 +115,8 @@ class DiscreteEG(gym.Env):
         )
 
         self.prop_dummy = torch.zeros((self.batch_size, self.nb_items)).to(self.device)
-        self.utte_dummy = torch.zeros((self.batch_size, self.utte_max_len)).to(self.device)
+        self.utte_dummy_1 = torch.zeros((self.batch_size, self.utte_max_len)).to(self.device)
+        self.utte_dummy_2 = torch.ones((self.batch_size, self.utte_max_len)).to(self.device)
         obs = self._get_obs((self.prop_dummy, self.prop_dummy))
 
         return obs, self.info

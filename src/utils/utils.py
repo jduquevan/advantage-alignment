@@ -23,7 +23,9 @@ def cat_observations(observations, device):
 
 def get_categorical_entropy(log_ps):
     probs = torch.exp(log_ps)
-    return ((probs * torch.log(probs)).sum(dim=1)).mean()
+    eps = 1e-8  # small value to avoid NaNs
+    probs = torch.clamp(probs, eps, 1.0 - eps)  # clip probabilities to avoid zeros
+    return -(probs * torch.log(probs)).sum(dim=1).mean()
 
 def get_gaussian_entropy(covariance_matrices):
     """
@@ -94,24 +96,37 @@ def instantiate_agent(cfg: DictConfig):
         gru_target = None
         transformer = hydra.utils.instantiate(cfg.transformer_model)
         transformer_t = hydra.utils.instantiate(cfg.transformer_model)
+        if not cfg.share_encoder:
+            gru_c = None
+            transformer_c = hydra.utils.instantiate(cfg.transformer_model)
     else:
         transformer = None
         transformer_t = None
         gru_model = hydra.utils.instantiate(cfg.gru_model)
         gru_target = hydra.utils.instantiate(cfg.gru_model)
+        if not cfg.share_encoder:
+            gru_c = hydra.utils.instantiate(cfg.gru_model)
+            transformer_c = None
 
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model, 
         gru=gru_model, 
         transformer=transformer
     )
-
     actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
-    critic = hydra.utils.instantiate(
-        cfg.linear_model, 
-        gru=gru_model,
-        transformer=transformer
-    )
+
+    if not cfg.share_encoder:
+        critic = hydra.utils.instantiate(
+            cfg.linear_model, 
+            gru=gru_c,
+            transformer=transformer_c
+        )
+    else:
+        critic = hydra.utils.instantiate(
+            cfg.linear_model, 
+            gru=gru_model,
+            transformer=transformer
+        )
 
     target = hydra.utils.instantiate(
         cfg.linear_model, 

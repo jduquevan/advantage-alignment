@@ -1,11 +1,13 @@
-seed: 42
+seed: 1
 batch_size: 512
 wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
-use_transformer: True
+use_transformer: False
 sum_rewards: True
 simultaneous: True
 discrete: True
+self_play: True
+share_encoder: True
 
 env:
   device: cuda
@@ -36,7 +38,7 @@ transformer_model:
   d_model: 64
   device: cuda
   dim_feedforward: 64
-  num_layers: 2
+  num_layers: 1
   nhead: 4
   max_seq_len: 50
   dropout: 0.1
@@ -62,7 +64,7 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-4
+  lr: 1e-5
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -81,6 +83,6 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.03
+  entropy_beta: 0.07
   vanilla: True
   updates_per_batch: 1
