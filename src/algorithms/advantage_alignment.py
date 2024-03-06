@@ -37,7 +37,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     def get_total_entropy_discrete(self, term_dist, prop_dist):
         prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
-        term_ent = term_dist.entropy().mean()
+        term_ent = torch.tensor(0)
         utte_ent = torch.tensor(0)
         prop_ent = (
             prop_dist_1.entropy() +
@@ -61,8 +61,8 @@ class AdvantageAlignment(TrainingAlgorithm):
     def get_entropy_discrete(self, term_dist, prop_dist):
         prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
 
-        term_ent = term_dist.entropy().mean()
-        #TODO: Add utterance support
+        term_ent = torch.tensor(0)
+        #TODO: Add utterance and term support
         utte_ent = torch.tensor(0)
         prop_ent = (
             prop_dist_1.entropy() +
@@ -91,13 +91,15 @@ class AdvantageAlignment(TrainingAlgorithm):
             uttes = trajectory.data['uttes_1']
 
         if self.use_transformer:
+            # import pdb; pdb.set_trace()
             _, term_dist, utte_dist, prop_dist = agent.actor(
                 x=observation.permute((1, 0, 2)),
                 use_tranformer=self.use_transformer
             )
 
             if self.discrete:
-                log_ps_term = term_dist.log_prob(terms)
+                # log_ps_term = term_dist.log_prob(terms)
+                log_ps_term = 0
                 log_ps_utte = 0
                 prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
                 log_ps_prop = (
@@ -369,7 +371,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         )
 
         if self.use_transformer:
-            history = deque(maxlen=self.agent_1.actor.model.transformer.max_seq_len)
+            history = deque(maxlen=self.agent_1.actor.model.encoder.max_seq_len)
 
         for t in range(self.trajectory_len):
             hidden_state_1, action_1, log_p_1 = self.agent_1.sample_action(

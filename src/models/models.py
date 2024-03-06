@@ -139,57 +139,69 @@ class MLPModel(nn.Module):
 
         return output, term_probs, (utte_mean, utte_log_std), (prop_mean, prop_log_std)
 
+    
 class MLPModelDiscrete(nn.Module):
-    def __init__(self, in_size, device, hidden_size=40, gru=None, transformer=None):
+    def __init__(self, in_size, device, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
         super(MLPModelDiscrete, self).__init__()
-        self.gru = gru
-        self.transformer = transformer
+        # self.transformer = transformer
+        self.num_layers = num_layers
+        self.encoder = encoder
+        self.use_gru = use_gru
 
-        self.use_gru = self.gru != None
-
-        self.hidden = nn.Linear(in_size, hidden_size)
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
 
         # Termination head
-        self.term_head = nn.Linear(hidden_size, 2)  # Assuming 2 categories for the term
+        # self.term_head = nn.Linear(hidden_size, 2)  # Assuming 2 categories for the term
 
         # Communication head
-        self.utte_head = nn.Linear(hidden_size, 6)
+        # self.utte_head = nn.Linear(hidden_size, 6)
 
         # Proposition heads
-        self.prop_head_1 = nn.Linear(hidden_size, 5)
-        self.prop_head_2 = nn.Linear(hidden_size, 5)
-        self.prop_head_3 = nn.Linear(hidden_size, 5)
+        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 5) for _ in range(3)])
 
         self.to(device)
 
     def forward(self, x, h_0=None, partial_forward=True):
         output = None
+        # item_and_utility = x[:, :, 0:6]
         if self.use_gru:
-            output, x = self.gru(x, h_0)
+            output, x = self.encoder(x, h_0)
         else:
-            x = self.transformer(x, partial_forward)
-        x = F.relu(self.hidden(F.relu(x)))
+            x = self.encoder(x, partial_forward)
+
+        # if partial_forward:
+        #     x = torch.cat([
+        #         item_and_utility[-1, :, :],
+        #         x
+        #     ], dim=1)
+        # else:
+        #     x = torch.cat([
+        #         item_and_utility,
+        #         x
+        #     ], dim=2)
+
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
 
         # Term
-        term_probs = F.softmax(self.term_head(x), dim=-1)
+        # term_probs = F.softmax(self.term_head(x), dim=-1)
+        term_probs = None
 
         # Utte
-        utte_probs =  F.softmax(self.utte_head(x), dim=-1)
+        # utte_probs = F.softmax(self.utte_head(x), dim=-1)
+        utte_probs = None
 
         # Prop
-        prop_1 = F.softmax(self.prop_head_1(x), dim=-1)
-        prop_2 = F.softmax(self.prop_head_2(x), dim=-1)
-        prop_3 = F.softmax(self.prop_head_3(x), dim=-1)
+        prop_probs = [F.softmax(prop_head(x), dim=-1) for prop_head in self.prop_heads]
 
-        return output, term_probs, utte_probs, (prop_1, prop_2, prop_3)
+        return output, term_probs, utte_probs, prop_probs
     
 class LinearModel(nn.Module):
-    def __init__(self, in_size, out_size, device, gru=None, transformer=None):
+    def __init__(self, in_size, out_size, device, encoder=None, use_gru=True):
         super(LinearModel, self).__init__()
-        self.gru = gru
-        self.transformer = transformer
+        self.encoder = encoder
 
-        self.use_gru = self.gru != None
+        self.use_gru = use_gru
 
         self.linear = nn.Linear(in_size, out_size)
         self.to(device)
@@ -197,9 +209,9 @@ class LinearModel(nn.Module):
     def forward(self, x, h_0=None, partial_forward=True):
         output = None
         if self.use_gru:
-            output, x = self.gru(x, h_0)
+            output, x = self.encoder(x, h_0)
         else:
-            x = self.transformer(x, partial_forward)
+            x = self.encoder(x, partial_forward)
         
         return output, self.linear(x)
     

@@ -24,7 +24,7 @@ class DiscreteEG(gym.Env):
         utility_max=10,
         device=None,
         batch_size=128,
-        sampling_type="no_sampling"
+        sampling_type="uniform"
         ):
         super(DiscreteEG, self).__init__()
 
@@ -60,17 +60,17 @@ class DiscreteEG(gym.Env):
     def _sample_utilities(self):
         if self.sampling_type == "uniform":
             utilities_1 = torch.randint(
-                0, 
+                1, 
                 self.utility_max + 1, 
                 (self.batch_size, self.nb_items)
             ).to(self.device)
             utilities_2 = torch.randint(
-                0, 
+                1, 
                 self.utility_max + 1, 
                 (self.batch_size, self.nb_items)
             ).to(self.device)
             item_pool = torch.randint(
-                0, 
+                1, 
                 self.item_max_quantity + 1, 
                 (self.batch_size, self.nb_items)
             ).to(self.device)

@@ -7,12 +7,12 @@ class TrajectoryBatch():
         self.device = device
         self.data = {
             "obs_0": torch.empty(
-                (batch_size, max_traj_len, 15),
+                (batch_size, max_traj_len, 9),
                 dtype=torch.float32,
                 device=device,
             ),
             "obs_1": torch.empty(
-                (batch_size, max_traj_len, 15),
+                (batch_size, max_traj_len, 9),
                 dtype=torch.float32,
                 device=device,
             ),
@@ -79,12 +79,12 @@ class TrajectoryBatch():
     def add_step_sim(self, action, observations, rewards, done, info, t):
         self.data[f'obs_{0}'][:, t, :] = observations[0]
         self.data[f'obs_{1}'][:, t, :] = observations[1]
-        self.data[f'terms_{0}'][:, t] = action[0]['term']
-        self.data[f'terms_{1}'][:, t] = action[1]['term']
+        # self.data[f'terms_{0}'][:, t] = action[0]['term']
+        # self.data[f'terms_{1}'][:, t] = action[1]['term']
         self.data[f'props_{0}'][:, t, :] = action[0]['prop']
         self.data[f'props_{1}'][:, t, :] = action[1]['prop']
-        self.data[f'uttes_{0}'][:, t, :] = action[0]['utte']
-        self.data[f'uttes_{1}'][:, t, :] = action[1]['utte']
+        # self.data[f'uttes_{0}'][:, t, :] = action[0]['utte']
+        # self.data[f'uttes_{1}'][:, t, :] = action[1]['utte']
         self.data[f'rewards_{0}'][:, t] = rewards[0]
         self.data[f'rewards_{1}'][:, t] = rewards[1]
         self.data[f'reward_sums_{0}'][:, t] = rewards[0] + rewards[1]

@@ -7,6 +7,8 @@ from src.envs.eg_vectorized import DiscreteEG
 from src.envs.exchange_game import make_vectorized_env
 from src.utils.utils import seed_all, instantiate_agent
 
+# import torch
+# torch.autograd.set_detect_anomaly(True)
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="eg.yaml")
 def main(cfg: DictConfig) -> None:

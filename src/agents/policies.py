@@ -92,31 +92,26 @@ class CategoricalPolicy(nn.Module):
         prop_1, prop_2, prop_3 = prop
 
         if use_tranformer and not partial_forward:
-            term_dist = term_dist.permute((1, 0, 2))
-            utte = utte.permute((1, 0, 2))
             prop_1 = prop_1.permute((1, 0, 2))
             prop_2 = prop_2.permute((1, 0, 2))
             prop_3 = prop_3.permute((1, 0, 2))
         elif not use_tranformer:
-            term_dist = term_dist.squeeze(0)
-            utte = utte.squeeze(0)
             prop_1 = prop_1.squeeze(0)
             prop_2 = prop_2.squeeze(0)
             prop_3 = prop_3.squeeze(0)
 
-        base_term_dist = D.Categorical(term_dist)
         prop_dist_1 = D.Categorical(prop_1)
         prop_dist_2 = D.Categorical(prop_2)
         prop_dist_3 = D.Categorical(prop_3)
         
-        return output, base_term_dist, utte, (prop_dist_1, prop_dist_2, prop_dist_3)
+        return output, term_dist, utte, (prop_dist_1, prop_dist_2, prop_dist_3)
 
     def sample_action(self, x, h_0=None, use_transformer=False):
         action = {}
 
         output, term_cat, utte, prop_cat = self.forward(x, h_0, use_transformer, True)
         prop_cat_1, prop_cat_2, prop_cat_3 = prop_cat
-        term = term_cat.sample()
+
         prop_1 = prop_cat_1.sample()
         prop_2 = prop_cat_2.sample()
         prop_3 = prop_cat_3.sample()
@@ -129,16 +124,15 @@ class CategoricalPolicy(nn.Module):
 
         # TODO: Add utterance support
 
-        log_p_term = term_cat.log_prob(term).unsqueeze(0)
         log_p_prop = (
             prop_cat_1.log_prob(prop_1) + 
             prop_cat_2.log_prob(prop_2) + 
             prop_cat_3.log_prob(prop_3)
         ) 
-        log_p = log_p_term + log_p_prop
+        log_p = log_p_prop
 
-        action['term'] = term.flatten()
-        action['utte'] = utte.squeeze(1)
+        action['term'] = term_cat
+        action['utte'] = utte
         action['prop'] = prop
 
         return output, action, log_p

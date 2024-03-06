@@ -16,8 +16,8 @@ def seed_all(seed):
 def cat_observations(observations, device):
     observations_cat = torch.cat([
         torch.tensor(observations['item_and_utility'], device=device),
-        torch.tensor(observations['prop'], device=device),
-        torch.tensor(observations['utte'], device=device)
+        torch.tensor(observations['prop'], device=device)
+        # torch.tensor(observations['utte'], device=device)
     ], dim=1)
     return observations_cat
 
@@ -92,46 +92,42 @@ def torchify_actions(action, device):
 
 def instantiate_agent(cfg: DictConfig):
     if cfg.use_transformer:
-        gru_model = None
-        gru_target = None
-        transformer = hydra.utils.instantiate(cfg.transformer_model)
-        transformer_t = hydra.utils.instantiate(cfg.transformer_model)
+        use_gru = False
+        encoder = hydra.utils.instantiate(cfg.transformer_model)
+        encoder_t = hydra.utils.instantiate(cfg.transformer_model)
         if not cfg.share_encoder:
-            gru_c = None
-            transformer_c = hydra.utils.instantiate(cfg.transformer_model)
+            encoder_c = hydra.utils.instantiate(cfg.transformer_model)
     else:
-        transformer = None
-        transformer_t = None
-        gru_model = hydra.utils.instantiate(cfg.gru_model)
-        gru_target = hydra.utils.instantiate(cfg.gru_model)
+        use_gru = True
+        encoder = hydra.utils.instantiate(cfg.gru_model)
+        encoder_t = hydra.utils.instantiate(cfg.gru_model)
         if not cfg.share_encoder:
-            gru_c = hydra.utils.instantiate(cfg.gru_model)
-            transformer_c = None
+            encoder_c = hydra.utils.instantiate(cfg.gru_model)
 
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model, 
-        gru=gru_model, 
-        transformer=transformer
+        encoder=encoder,
+        use_gru=use_gru
     )
     actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
 
     if not cfg.share_encoder:
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
-            gru=gru_c,
-            transformer=transformer_c
+            encoder=encoder_c,
+            use_gru=use_gru
         )
     else:
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
-            gru=gru_model,
-            transformer=transformer
+            encoder=encoder,
+            use_gru=use_gru
         )
 
     target = hydra.utils.instantiate(
         cfg.linear_model, 
-        gru=gru_target,
-        transformer=transformer_t
+        encoder=encoder_t,
+        use_gru=use_gru
     )
 
     optimizer_actor = hydra.utils.instantiate(cfg.optimizer_actor, params=actor.parameters())
