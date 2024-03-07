@@ -71,15 +71,16 @@ def compute_discounted_returns(gamma, rewards, agent):
 
 def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
     # Compute deltas
-    deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
-    
-    advantages = torch.empty_like(deltas)
-    advantage = 0
-    for t in reversed(range(deltas.size(1))):
-        advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
-    
-    # Normalize advantages
-    # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    with torch.no_grad():
+        deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
+        
+        advantages = torch.empty_like(deltas)
+        advantage = 0
+        for t in reversed(range(deltas.size(1))):
+            advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
+        
+        # Normalize advantages
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
     
     return advantages
 
@@ -124,6 +125,20 @@ def instantiate_agent(cfg: DictConfig):
             use_gru=use_gru
         )
 
+    # Self-supervised reward learning objective
+    reward = hydra.utils.instantiate(
+        cfg.linear_model, 
+        encoder=encoder,
+        use_gru=use_gru
+    )
+
+    # Self-predictive-representations objective
+    spr = hydra.utils.instantiate(
+        cfg.spr_model, 
+        encoder=encoder,
+        use_gru=use_gru
+    )
+
     target = hydra.utils.instantiate(
         cfg.linear_model, 
         encoder=encoder_t,
@@ -132,14 +147,20 @@ def instantiate_agent(cfg: DictConfig):
 
     optimizer_actor = hydra.utils.instantiate(cfg.optimizer_actor, params=actor.parameters())
     optimizer_critic = hydra.utils.instantiate(cfg.optimizer_critic, params=critic.parameters())
-    
+    optimizer_reward = hydra.utils.instantiate(cfg.optimizer_reward, params=reward.parameters())
+    optimizer_spr = hydra.utils.instantiate(cfg.optimizer_spr, params=spr.parameters())
+
     agent = hydra.utils.instantiate(
         cfg.agent,
         actor=actor,
         critic=critic,
         target=target,
+        reward=reward,
+        spr=spr,
         critic_optimizer=optimizer_critic,
-        actor_optimizer=optimizer_actor
+        actor_optimizer=optimizer_actor,
+        reward_optimizer=optimizer_reward,
+        spr_optimizer=optimizer_spr
     )
     return agent
 

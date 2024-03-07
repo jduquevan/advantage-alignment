@@ -144,7 +144,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 
                 if self.discrete:
                     term_en, utte_en, prop_en = self.get_entropy_discrete(term_dist, prop_dist)
-                    log_p_term = term_dist.log_prob(terms[:, t]).squeeze(0)
+                    log_p_term = 0
                     log_p_utte = 0
                     prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
                     log_p_prop = (
@@ -201,6 +201,44 @@ class AdvantageAlignment(TrainingAlgorithm):
                 hidden_c = hidden_c.permute((1, 0, 2))
                 hidden_t = hidden_t.permute((1, 0, 2))
         return values_c, values_t
+
+    def get_trajectory_rewards(self, agent, observation):
+        if self.use_transformer:
+            rewards = agent.reward(
+                x=observation.permute((1, 0, 2)), 
+                partial_forward=False
+            )[1].permute((1, 0, 2)).squeeze(-1)
+        else:
+            rewards = torch.empty(
+                (self.batch_size, self.trajectory_len), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            hidden = None
+            for t in range(self.trajectory_len):
+                hidden, reward = agent.reward(observation[:, t, :])
+                rewards[:, t] = reward.reshape(self.batch_size)
+                hidden = hidden.permute((1, 0, 2))
+        return rewards
+
+    def get_trajectory_embeds(self, agent, observation, hidden_dim):
+        if self.use_transformer:
+            embeds = agent.spr(
+                x=observation.permute((1, 0, 2)), 
+                partial_forward=False
+            )[1].permute((1, 0, 2)).squeeze(-1)
+        else:
+            embeds = torch.empty(
+                (self.batch_size, self.trajectory_len, hidden_dim), 
+                device=self.agent_1.device, 
+                dtype=torch.float32
+            )
+            hidden = None
+            for t in range(self.trajectory_len):
+                hidden, embed = agent.spr(observation[:, t, :])
+                embeds[:, t, :] = embed.reshape(self.batch_size, -1)
+                hidden = hidden.permute((1, 0, 2))
+        return embeds
 
     def linear_aa_loss(self, A_1s, A_2s, log_ps):
         gamma = self.train_cfg.gamma
@@ -263,14 +301,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
 
         log_ps, term_ent, utte_ent, prop_ent = self.get_trajectory_log_ps(agent, trajectory, is_first)
-        
-        A_1s = compute_gae_advantages(rewards_1, V_1s, gamma)
-        A_2s = compute_gae_advantages(rewards_2, V_2s, gamma)
+
+        A_1s = compute_gae_advantages(rewards_1, V_1s.detach(), gamma)
+        A_2s = compute_gae_advantages(rewards_2, V_2s.detach(), gamma)
         
         gammas = torch.pow(
             gamma, 
             torch.arange(self.trajectory_len)
-        ).repeat(self.batch_size, 1)
+        ).repeat(self.batch_size, 1).to(A_1s.device)
         
         if proximal:
             ratios = torch.exp(log_ps - log_ps.detach())
@@ -311,6 +349,47 @@ class AdvantageAlignment(TrainingAlgorithm):
         
         critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
         return critic_loss
+
+    def reward_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
+        if is_first:
+            agent = self.agent_1
+            observation = trajectory.data['obs_0']
+            rewards_1 = trajectory.data['rewards_0']
+        else:
+            agent = self.agent_2
+            observation = trajectory.data['obs_1']
+            rewards_1 = trajectory.data['rewards_1']
+
+        reward_preds = self.get_trajectory_rewards(agent, observation)
+        reward_preds = reward_preds[:, :-1]
+        rewards_shifted = rewards_1[:, 1:]
+        
+        critic_loss = F.huber_loss(reward_preds, rewards_shifted)
+        return critic_loss
+
+    def spr_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
+        if is_first:
+            agent = self.agent_1
+            observation = trajectory.data['obs_0']
+        else:
+            agent = self.agent_2
+            observation = trajectory.data['obs_1']
+
+        hidden_dim = agent.spr.in_size
+
+        target_y = agent.actor.model.encoder.get_embeds(observation).detach()
+        target_y = target_y[:, 1:, :].reshape(-1, hidden_dim)
+        y_preds = self.get_trajectory_embeds(agent, observation, hidden_dim)
+        y_preds = y_preds[:, :-1, :].reshape(-1, hidden_dim)
+
+        norms_t = torch.norm(target_y, dim=1, keepdim=True) + 1e-8
+        norms_p = torch.norm(y_preds, dim=1, keepdim=True) + 1e-8
+
+        normalized_t = target_y/norms_t
+        normalized_p = y_preds/norms_p
+
+        spr_loss = -torch.mean(torch.bmm(normalized_t.unsqueeze(1), normalized_p.unsqueeze(2)))
+        return spr_loss
         
     def gen(self):
         observations, _ = self.env.reset()

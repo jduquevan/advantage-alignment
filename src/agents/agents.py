@@ -19,16 +19,24 @@ class AdvantageAlignmentAgent(Agent):
         actor: nn.Module,
         critic: nn.Module,
         target: nn.Module,
+        reward: nn.Module,
+        spr: nn.Module,
         critic_optimizer: torch.optim.Optimizer,
         actor_optimizer: torch.optim.Optimizer,
+        reward_optimizer: torch.optim.Optimizer,
+        spr_optimizer: torch.optim.Optimizer,
     ) -> None:
         super().__init__()
         self.device = device
         self.actor = actor
         self.critic = critic
         self.target = target
+        self.reward = reward
+        self.spr = spr
         self.critic_optimizer = critic_optimizer
-        self.actor_optimizer = actor_optimizer 
+        self.actor_optimizer = actor_optimizer
+        self.reward_optimizer = reward_optimizer
+        self.spr_optimizer = spr_optimizer
     
     def sample_action(
         self, 

@@ -21,6 +21,10 @@ class GruModel(nn.Module):
         x = F.relu(self.linear(x))
         output, x = self.gru(x.unsqueeze(1), h_0)
         return output, x
+    
+    def get_embeds(self, x):
+        x = self.linear(x)
+        return x
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -93,6 +97,10 @@ class StableTransformer(nn.Module):
         if partial_forward:
             output = output[-1, :, :]
         return output
+
+    def get_embeds(self, src):
+        src = self.embed_layer(src)
+        return src
 
 
 class MLPModel(nn.Module):
@@ -202,6 +210,7 @@ class LinearModel(nn.Module):
         self.encoder = encoder
 
         self.use_gru = use_gru
+        self.in_size = in_size
 
         self.linear = nn.Linear(in_size, out_size)
         self.to(device)

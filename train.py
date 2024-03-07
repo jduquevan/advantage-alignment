@@ -46,6 +46,8 @@ def main(cfg: DictConfig) -> None:
         sum_rewards=cfg['sum_rewards'],
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
+        use_reward_loss=cfg['use_reward_loss'],
+        use_spr_loss=cfg['use_spr_loss'],
     )
     algorithm.train_loop()
 

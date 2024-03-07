@@ -24,6 +24,8 @@ class TrainingAlgorithm(ABC):
         sum_rewards: bool,
         simultaneous: bool,
         discrete: bool,
+        use_reward_loss: bool,
+        use_spr_loss: bool, 
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
@@ -34,6 +36,8 @@ class TrainingAlgorithm(ABC):
         self.sum_rewards = sum_rewards
         self.simultaneous = simultaneous
         self.discrete = discrete
+        self.use_reward_loss = use_reward_loss
+        self.use_spr_loss = use_spr_loss
         if self.simultaneous:
             self.batch_size = env.batch_size
         else:
@@ -59,7 +63,6 @@ class TrainingAlgorithm(ABC):
         agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-
         train_step_metrics = {
             "critic_loss": critic_loss.detach(),
             "actor_loss": actor_loss.detach(),
@@ -67,8 +70,29 @@ class TrainingAlgorithm(ABC):
             "utterance_entropy": utte_ent.detach(),
             "prop_entropy": prop_ent.detach(),
             "critic_grad_norm": critic_grad_norm.detach(),
-            "actor_grad_norm": actor_grad_norm.detach()
+            "actor_grad_norm": actor_grad_norm.detach(),
         }
+
+        # Self-supervised objectives
+        if self.use_reward_loss:
+            agent.reward_optimizer.zero_grad()
+            reward_loss = self.reward_loss(trajectory, is_first)
+            reward_loss.backward()
+            reward_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.reward.parameters()]))
+            agent.reward_optimizer.step()
+
+            train_step_metrics["reward_loss"] = reward_loss.detach()
+            train_step_metrics["reward_grad_norm"] = reward_grad_norm.detach()
+
+        if self.use_spr_loss:
+            agent.spr_optimizer.zero_grad()
+            spr_loss = self.spr_loss(trajectory, is_first)
+            spr_loss.backward()
+            spr_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.spr.parameters()]))
+            agent.spr_optimizer.step()
+
+            train_step_metrics["spr_loss"] = spr_loss.detach()
+            train_step_metrics["spr_grad_norm"] = spr_grad_norm.detach()
 
         return train_step_metrics
 
