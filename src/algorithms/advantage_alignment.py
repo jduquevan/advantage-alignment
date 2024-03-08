@@ -240,7 +240,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 hidden = hidden.permute((1, 0, 2))
         return embeds
 
-    def linear_aa_loss(self, A_1s, A_2s, log_ps):
+    def linear_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
@@ -250,7 +250,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         if proximal:
             gamma = 1
-            ratios = torch.exp(log_ps - log_ps.detach())
+            ratios = torch.exp(log_ps - old_log_ps.detach())
             action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
         else:
             action_term = log_ps
@@ -282,6 +282,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_2 = trajectory.data['rewards_1']
             sum_rewards_1 = trajectory.data['reward_sums_0']
             sum_rewards_2 = trajectory.data['reward_sums_1']
+            old_log_ps = trajectory.data['log_ps_0']
         else:
             agent = self.agent_2
             other_agent = self.agent_1
@@ -291,6 +292,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_2 = trajectory.data['rewards_0']
             sum_rewards_1 = trajectory.data['reward_sums_1']
             sum_rewards_2 = trajectory.data['reward_sums_0']
+            old_log_ps = trajectory.data['log_ps_1']
 
         # import pdb; pdb.set_trace()
         if self.sum_rewards:
@@ -311,14 +313,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         ).repeat(self.batch_size, 1).to(A_1s.device)
         
         if proximal:
-            ratios = torch.exp(log_ps - log_ps.detach())
+            ratios = torch.exp(log_ps - old_log_ps.detach())
             surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
             loss_1 = -(A_1s * surrogates[:, :-1]).mean()
         else:
             loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
-            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
+            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         
@@ -468,6 +470,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
+            
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
                 observations=(
@@ -475,6 +478,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                     cat_observations(observations[1], self.agent_1.device)
                 ), 
                 rewards=rewards,
+                log_ps=(log_p_1, log_p_2),
                 done=done,
                 info=info,
                 t=t
@@ -486,6 +490,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 cat_observations(observations[1], self.agent_1.device)
             ), 
             rewards=rewards,
+            log_ps=(log_p_1, log_p_2),
             done=done,
             info=info,
             t=t

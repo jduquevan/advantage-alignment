@@ -185,4 +185,6 @@ def wandb_stats(trajectory):
     stats['Average A2 prop1'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[0]
     stats['Average A2 prop2'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[1]
     stats['Average A2 prop3'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
+
     return stats

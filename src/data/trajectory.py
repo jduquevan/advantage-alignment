@@ -44,6 +44,16 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.float32,
             ),
+            "log_ps_0": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
+            "log_ps_1": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
             "reward_sums_0": torch.empty(
                 (batch_size, max_traj_len),
                 device=device,
@@ -55,12 +65,17 @@ class TrajectoryBatch():
                 dtype=torch.float32,
             ),
             "dones": torch.empty(
-                (batch_size, 2*max_traj_len),
+                (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.bool,
             ),
             "cos_sims": torch.empty(
-                (batch_size, 2*max_traj_len),
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
+            "max_sum_rewards": torch.empty(
+                (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
@@ -76,7 +91,7 @@ class TrajectoryBatch():
         self.data[f'cos_sims'][:, t] = torch.tensor(info['utility_cos_sim'], device=self.device)
         self.data[f'dones'][:, t] = done
 
-    def add_step_sim(self, action, observations, rewards, done, info, t):
+    def add_step_sim(self, action, observations, rewards, log_ps, done, info, t):
         self.data[f'obs_{0}'][:, t, :] = observations[0]
         self.data[f'obs_{1}'][:, t, :] = observations[1]
         # self.data[f'terms_{0}'][:, t] = action[0]['term']
@@ -87,6 +102,9 @@ class TrajectoryBatch():
         # self.data[f'uttes_{1}'][:, t, :] = action[1]['utte']
         self.data[f'rewards_{0}'][:, t] = rewards[0]
         self.data[f'rewards_{1}'][:, t] = rewards[1]
+        self.data[f'log_ps_{0}'][:, t] = log_ps[0]
+        self.data[f'log_ps_{1}'][:, t] = log_ps[1]
         self.data[f'reward_sums_{0}'][:, t] = rewards[0] + rewards[1]
         self.data[f'reward_sums_{1}'][:, t] = rewards[0] + rewards[1]
-        self.data[f'dones'][:, t] = done
+        self.data['max_sum_rewards'][:, t] = info['max_sum_rewards']
+        self.data['dones'][:, t] = done
