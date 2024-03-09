@@ -1,6 +1,6 @@
 seed: 42
 batch_size: 512
-wandb: 'disabled'
+wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: True
@@ -40,7 +40,7 @@ transformer_model:
   d_model: 64
   device: cuda
   dim_feedforward: 64
-  num_layers: 1
+  num_layers: 2
   nhead: 4
   max_seq_len: 50
   dropout: 0.1

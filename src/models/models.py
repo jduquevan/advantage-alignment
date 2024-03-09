@@ -172,21 +172,24 @@ class MLPModelDiscrete(nn.Module):
     def forward(self, x, h_0=None, partial_forward=True):
         output = None
         # item_and_utility = x[:, :, 0:6]
+        prop = x['prop']
+        item_and_utility = x['item_and_utility']
         if self.use_gru:
-            output, x = self.encoder(x, h_0)
+            output, x = self.encoder(prop, h_0)
+            x = x.squeeze(0)
         else:
-            x = self.encoder(x, partial_forward)
+            x = self.encoder(prop, partial_forward)
 
-        # if partial_forward:
-        #     x = torch.cat([
-        #         item_and_utility[-1, :, :],
-        #         x
-        #     ], dim=1)
-        # else:
-        #     x = torch.cat([
-        #         item_and_utility,
-        #         x
-        #     ], dim=2)
+        if partial_forward:
+            x = torch.cat([
+                item_and_utility,
+                x
+            ], dim=-1)
+        else:
+            x = torch.cat([
+                item_and_utility.permute((1, 0, 2)),
+                x
+            ], dim=-1)
 
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
@@ -217,10 +220,24 @@ class LinearModel(nn.Module):
 
     def forward(self, x, h_0=None, partial_forward=True):
         output = None
+        prop = x['prop']
+        item_and_utility = x['item_and_utility']
         if self.use_gru:
-            output, x = self.encoder(x, h_0)
+            output, x = self.encoder(prop, h_0)
+            x = x.squeeze(0)
         else:
-            x = self.encoder(x, partial_forward)
-        
+            x = self.encoder(prop, partial_forward)
+
+        if partial_forward:
+            x = torch.cat([
+                item_and_utility,
+                x
+            ], dim=-1)
+        else:
+            x = torch.cat([
+                item_and_utility.permute((1, 0, 2)),
+                x
+            ], dim=-1)
+
         return output, self.linear(x)
     

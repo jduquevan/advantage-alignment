@@ -13,6 +13,14 @@ def seed_all(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def get_observation(observations, t):
+    prop = observations['prop'][:, t, :]
+    item_and_utility = observations['item_and_utility'][:, t, :]
+    return {
+        'prop': prop,
+        'item_and_utility': item_and_utility
+    }
+
 def cat_observations(observations, device):
     observations_cat = torch.cat([
         torch.tensor(observations['item_and_utility'], device=device),
@@ -179,12 +187,12 @@ def wandb_stats(trajectory):
     ).mean().detach()
     stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
     stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
-    stats['Average A1 prop1'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A1 prop2'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A1 prop3'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['Average A2 prop1'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A2 prop2'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A2 prop3'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Average A1 prop1'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A1 prop2'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A1 prop3'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Average A2 prop1'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A2 prop2'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A2 prop3'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[2]
     stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
 
     return stats

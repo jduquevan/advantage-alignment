@@ -28,6 +28,18 @@ class TrajectoryBatch():
             "props_1": torch.empty(
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
+            "a_props_0": torch.empty(
+                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+            ),
+            "a_props_1": torch.empty(
+                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+            ),
+            "i_and_u_0": torch.empty(
+                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
+            ),
+            "i_and_u_1": torch.empty(
+                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
+            ),
             "uttes_0": torch.empty(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
@@ -92,12 +104,16 @@ class TrajectoryBatch():
         self.data[f'dones'][:, t] = done
 
     def add_step_sim(self, action, observations, rewards, log_ps, done, info, t):
-        self.data[f'obs_{0}'][:, t, :] = observations[0]
-        self.data[f'obs_{1}'][:, t, :] = observations[1]
+        # self.data[f'obs_{0}'][:, t, :] = observations[0]
+        # self.data[f'obs_{1}'][:, t, :] = observations[1]
         # self.data[f'terms_{0}'][:, t] = action[0]['term']
         # self.data[f'terms_{1}'][:, t] = action[1]['term']
-        self.data[f'props_{0}'][:, t, :] = action[0]['prop']
-        self.data[f'props_{1}'][:, t, :] = action[1]['prop']
+        self.data[f'props_{0}'][:, t, :] = observations[0]['prop']
+        self.data[f'props_{1}'][:, t, :] = observations[1]['prop']
+        self.data[f'a_props_{0}'][:, t, :] = action[0]['prop']
+        self.data[f'a_props_{1}'][:, t, :] = action[1]['prop']
+        self.data[f'i_and_u_{0}'][:, t, :] = observations[0]['item_and_utility']
+        self.data[f'i_and_u_{1}'][:, t, :] = observations[1]['item_and_utility']
         # self.data[f'uttes_{0}'][:, t, :] = action[0]['utte']
         # self.data[f'uttes_{1}'][:, t, :] = action[1]['utte']
         self.data[f'rewards_{0}'][:, t] = rewards[0]

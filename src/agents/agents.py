@@ -46,16 +46,23 @@ class AdvantageAlignmentAgent(Agent):
         use_transformer=False, 
         extend_history=False
     ):
-        observations = cat_observations(observations, self.device)
+        props = observations['prop']
+        item_and_utility = observations['item_and_utility']
+        # observations = cat_observations(observations, self.device)
         
         if use_transformer:
-            observations = observations.unsqueeze(0)
+            props = props.unsqueeze(0)
             if extend_history:
-                history.append(observations)
-            observations = torch.cat(list(history), dim=0)
+                history.append(props)
+            props = torch.cat(list(history), dim=0)
 
         if h_0 is not None:
             h_0 = torch.permute(h_0, (1, 0, 2))
+
+        observations = {
+            'prop': props,
+            'item_and_utility': item_and_utility
+        }
         
         return self.actor.sample_action(observations, h_0, use_transformer)
 
