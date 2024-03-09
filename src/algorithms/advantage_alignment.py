@@ -15,7 +15,8 @@ from src.utils.utils import (
     torchify_actions,
     compute_gae_advantages,
     get_categorical_entropy,
-    get_gaussian_entropy
+    get_gaussian_entropy,
+    get_observation
 )
 
 class AdvantageAlignment(TrainingAlgorithm):
@@ -80,21 +81,29 @@ class AdvantageAlignment(TrainingAlgorithm):
             prop_max = self.agent_1.actor.prop_max
 
         if is_first:
-            observation = trajectory.data['obs_0']
+            # observation = trajectory.data['obs_0']
             terms = trajectory.data['terms_0']
-            props = trajectory.data['props_0']
+            a_props = trajectory.data['a_props_0']
             uttes = trajectory.data['uttes_0']
+            props = trajectory.data['props_0']
+            item_and_utility = trajectory.data['i_and_u_0']
         else:
-            observation = trajectory.data['obs_1']
+            # observation = trajectory.data['obs_1']
             terms = trajectory.data['terms_1']
-            props = trajectory.data['props_1']
+            a_props = trajectory.data['a_props_1']
             uttes = trajectory.data['uttes_1']
+            props = trajectory.data['props_1']
+            item_and_utility = trajectory.data['i_and_u_1']
 
         if self.use_transformer:
-            # import pdb; pdb.set_trace()
+            props = props.permute((1, 0, 2))
+
+        observation = {'prop': props, 'item_and_utility': item_and_utility}
+
+        if self.use_transformer:
             _, term_dist, utte_dist, prop_dist = agent.actor(
-                x=observation.permute((1, 0, 2)),
-                use_tranformer=self.use_transformer
+                x=observation,
+                use_transformer=self.use_transformer
             )
 
             if self.discrete:
@@ -103,9 +112,9 @@ class AdvantageAlignment(TrainingAlgorithm):
                 log_ps_utte = 0
                 prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
                 log_ps_prop = (
-                    prop_cat_1.log_prob(props[:, :, 0]) + 
-                    prop_cat_2.log_prob(props[:, :, 1]) + 
-                    prop_cat_3.log_prob(props[:, :, 2])
+                    prop_cat_1.log_prob(a_props[:, :, 0]) + 
+                    prop_cat_2.log_prob(a_props[:, :, 1]) + 
+                    prop_cat_3.log_prob(a_props[:, :, 2])
                 )
 
                 term_ent, utte_ent, prop_ent = self.get_total_entropy_discrete(term_dist, prop_dist)
@@ -137,7 +146,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             hidden = None
             for t in range(self.trajectory_len):
                 hidden, term_dist, utte_dist, prop_dist = agent.actor(
-                    x=observation[:, t, :],
+                    x=get_observation(observation, t),
                     h_0=hidden
                 )
                 hidden = hidden.permute((1, 0, 2))
@@ -148,9 +157,9 @@ class AdvantageAlignment(TrainingAlgorithm):
                     log_p_utte = 0
                     prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
                     log_p_prop = (
-                        prop_cat_1.log_prob(props[:, t, 0]) + 
-                        prop_cat_2.log_prob(props[:, t, 1]) + 
-                        prop_cat_3.log_prob(props[:, t, 2])
+                        prop_cat_1.log_prob(a_props[:, t, 0]) + 
+                        prop_cat_2.log_prob(a_props[:, t, 1]) + 
+                        prop_cat_3.log_prob(a_props[:, t, 2])
                     ).squeeze(0) 
                 else:
                     term_en, utte_en, prop_en = self.get_entropy(term_dist, agent)
@@ -174,11 +183,11 @@ class AdvantageAlignment(TrainingAlgorithm):
     def get_trajectory_values(self, agent, observation):
         if self.use_transformer:
             values_c = agent.critic(
-                x=observation.permute((1, 0, 2)), 
+                x=observation, 
                 partial_forward=False
             )[1].permute((1, 0, 2)).squeeze(-1)
             values_t = agent.target(
-                x=observation.permute((1, 0, 2)), 
+                x=observation, 
                 partial_forward=False
             )[1].permute((1, 0, 2)).squeeze(-1)
         else:
@@ -194,8 +203,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             )
             hidden_c, hidden_t = None, None
             for t in range(self.trajectory_len):
-                hidden_c, value_c = agent.critic(observation[:, t, :])
-                hidden_t, value_t = agent.target(observation[:, t, :])
+                hidden_c, value_c = agent.critic(get_observation(observation, t))
+                hidden_t, value_t = agent.target(get_observation(observation, t))
                 values_c[:, t] = value_c.reshape(self.batch_size)
                 values_t[:, t] = value_t.reshape(self.batch_size)
                 hidden_c = hidden_c.permute((1, 0, 2))
@@ -240,7 +249,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 hidden = hidden.permute((1, 0, 2))
         return embeds
 
-    def linear_aa_loss(self, A_1s, A_2s, log_ps):
+    def linear_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
@@ -250,7 +259,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         if proximal:
             gamma = 1
-            ratios = torch.exp(log_ps - log_ps.detach())
+            ratios = torch.exp(log_ps - old_log_ps.detach())
             action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
         else:
             action_term = log_ps
@@ -276,23 +285,39 @@ class AdvantageAlignment(TrainingAlgorithm):
         if is_first:
             agent = self.agent_1
             other_agent = self.agent_2
-            observation_1 = trajectory.data['obs_0']
+            props_1 = trajectory.data['props_0']
+            item_and_utility_1 = trajectory.data['i_and_u_0']
+            props_2 = trajectory.data['props_1']
+            item_and_utility_2 = trajectory.data['i_and_u_1']
+            # observation_1 = trajectory.data['obs_0']
             rewards_1 = trajectory.data['rewards_0']
-            observation_2 = trajectory.data['obs_1']
+            # observation_2 = trajectory.data['obs_1']
             rewards_2 = trajectory.data['rewards_1']
             sum_rewards_1 = trajectory.data['reward_sums_0']
             sum_rewards_2 = trajectory.data['reward_sums_1']
+            old_log_ps = trajectory.data['log_ps_0']
         else:
             agent = self.agent_2
             other_agent = self.agent_1
-            observation_1 = trajectory.data['obs_1']
+            props_1 = trajectory.data['props_1']
+            item_and_utility_1 = trajectory.data['i_and_u_1']
+            props_2 = trajectory.data['props_0']
+            item_and_utility_2 = trajectory.data['i_and_u_0']
+            # observation_1 = trajectory.data['obs_1']
             rewards_1 = trajectory.data['rewards_1']
-            observation_2 = trajectory.data['obs_0']
+            # observation_2 = trajectory.data['obs_0']
             rewards_2 = trajectory.data['rewards_0']
             sum_rewards_1 = trajectory.data['reward_sums_1']
             sum_rewards_2 = trajectory.data['reward_sums_0']
+            old_log_ps = trajectory.data['log_ps_1']
 
-        # import pdb; pdb.set_trace()
+        if self.use_transformer:
+            props_1 = props_1.permute((1, 0, 2))
+            props_2 = props_2.permute((1, 0, 2))
+
+        observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1}
+        observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2}
+
         if self.sum_rewards:
             rewards_1 = sum_rewards_1
             rewards_2 = sum_rewards_2
@@ -311,14 +336,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         ).repeat(self.batch_size, 1).to(A_1s.device)
         
         if proximal:
-            ratios = torch.exp(log_ps - log_ps.detach())
+            ratios = torch.exp(log_ps - old_log_ps.detach())
             surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
             loss_1 = -(A_1s * surrogates[:, :-1]).mean()
         else:
             loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
-            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1])
+            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         
@@ -330,14 +355,24 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         if is_first:
             agent = self.agent_1
-            observation = trajectory.data['obs_0']
+            props = trajectory.data['props_0']
+            item_and_utility = trajectory.data['i_and_u_0']
             rewards_1 = trajectory.data['rewards_0']
             rewards_2 = trajectory.data['rewards_1']
         else:
             agent = self.agent_2
-            observation = trajectory.data['obs_1']
+            props = trajectory.data['props_1']
+            item_and_utility = trajectory.data['i_and_u_1']
             rewards_1 = trajectory.data['rewards_1']
             rewards_2 = trajectory.data['rewards_0']
+
+        if self.use_transformer:
+            props= props.permute((1, 0, 2))
+
+        observation = {
+            'prop': props,
+            'item_and_utility': item_and_utility
+        }
 
         if self.sum_rewards:
             rewards_1 = rewards_2 = rewards_1 + rewards_2
@@ -353,14 +388,14 @@ class AdvantageAlignment(TrainingAlgorithm):
     def reward_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
         if is_first:
             agent = self.agent_1
-            observation = trajectory.data['obs_0']
+            props = trajectory.data['props_0']
             rewards_1 = trajectory.data['rewards_0']
         else:
             agent = self.agent_2
-            observation = trajectory.data['obs_1']
+            props = trajectory.data['props_1']
             rewards_1 = trajectory.data['rewards_1']
 
-        reward_preds = self.get_trajectory_rewards(agent, observation)
+        reward_preds = self.get_trajectory_rewards(agent, props)
         reward_preds = reward_preds[:, :-1]
         rewards_shifted = rewards_1[:, 1:]
         
@@ -370,16 +405,17 @@ class AdvantageAlignment(TrainingAlgorithm):
     def spr_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
         if is_first:
             agent = self.agent_1
-            observation = trajectory.data['obs_0']
+            props = trajectory.data['props_0']
         else:
             agent = self.agent_2
-            observation = trajectory.data['obs_1']
+            props = trajectory.data['props_1']
 
         hidden_dim = agent.spr.in_size
 
-        target_y = agent.actor.model.encoder.get_embeds(observation).detach()
+        target_y = agent.actor.model.encoder.get_embeds(props).detach()
+        import pdb; pdb.set_trace()
         target_y = target_y[:, 1:, :].reshape(-1, hidden_dim)
-        y_preds = self.get_trajectory_embeds(agent, observation, hidden_dim)
+        y_preds = self.get_trajectory_embeds(agent, props, hidden_dim)
         y_preds = y_preds[:, :-1, :].reshape(-1, hidden_dim)
 
         norms_t = torch.norm(target_y, dim=1, keepdim=True) + 1e-8
@@ -468,13 +504,15 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
+
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
                 observations=(
-                    cat_observations(observations[0], self.agent_1.device),
-                    cat_observations(observations[1], self.agent_1.device)
+                    observations_1,
+                    observations_2
                 ), 
                 rewards=rewards,
+                log_ps=(log_p_1, log_p_2),
                 done=done,
                 info=info,
                 t=t
@@ -482,10 +520,11 @@ class AdvantageAlignment(TrainingAlgorithm):
         trajectory.add_step_sim(
             action=(action_1, action_2), 
             observations=(
-                cat_observations(observations[0], self.agent_1.device),
-                cat_observations(observations[1], self.agent_1.device)
+                observations_1,
+                observations_2
             ), 
             rewards=rewards,
+            log_ps=(log_p_1, log_p_2),
             done=done,
             info=info,
             t=t

@@ -83,19 +83,19 @@ class CategoricalPolicy(nn.Module):
         self.model = model
         self.to(device)
 
-    def forward(self, x, h_0=None, use_tranformer=False, partial_forward=False):
-        if use_tranformer:
+    def forward(self, x, h_0=None, use_transformer=False, partial_forward=False):
+        if use_transformer:
             output, term_dist, utte, prop = self.model(x, partial_forward=partial_forward)
         else:
             output, term_dist, utte, prop = self.model(x, h_0)
 
         prop_1, prop_2, prop_3 = prop
 
-        if use_tranformer and not partial_forward:
+        if use_transformer and not partial_forward:
             prop_1 = prop_1.permute((1, 0, 2))
             prop_2 = prop_2.permute((1, 0, 2))
             prop_3 = prop_3.permute((1, 0, 2))
-        elif not use_tranformer:
+        elif not use_transformer:
             prop_1 = prop_1.squeeze(0)
             prop_2 = prop_2.squeeze(0)
             prop_3 = prop_3.squeeze(0)

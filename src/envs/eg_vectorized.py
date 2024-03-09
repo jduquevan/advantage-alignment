@@ -39,6 +39,33 @@ class DiscreteEG(gym.Env):
         self.sampling_type = sampling_type
         self.info = {}
 
+    def _get_max_sum_rewards(self):
+        max_reward_1 = torch.bmm(
+            self.item_pool.float().unsqueeze(1), 
+            self.utilities_1.float().unsqueeze(2)
+        ).flatten()
+        max_reward_2 = torch.bmm(
+            self.item_pool.float().unsqueeze(1), 
+            self.utilities_2.float().unsqueeze(2)
+        ).flatten()
+
+        utility_comparer = (self.utilities_1 >= self.utilities_2)
+        agent_1_gets = torch.where(utility_comparer, self.item_pool, 0)
+        agent_2_gets = self.item_pool - agent_1_gets
+        max_sum_rewards = (
+            torch.bmm(
+                agent_1_gets.float().unsqueeze(1),
+                self.utilities_1.float().unsqueeze(2)
+            ).flatten()/max_reward_1 +
+            torch.bmm(
+                agent_2_gets.float().unsqueeze(1),
+                self.utilities_2.float().unsqueeze(2)
+            ).flatten()/max_reward_2
+        )
+
+        return max_sum_rewards
+
+
     def _get_obs(self, props):
         prop_1, prop_2 = props
         item_context_1 = torch.cat([self.item_pool, self.utilities_1], dim=1)
@@ -119,6 +146,8 @@ class DiscreteEG(gym.Env):
         self.utte_dummy_2 = torch.ones((self.batch_size, self.utte_max_len)).to(self.device)
         obs = self._get_obs((self.prop_dummy, self.prop_dummy))
 
+        self.info["max_sum_rewards"] = self._get_max_sum_rewards()
+
         return obs, self.info
 
     def step(self, actions):
@@ -162,6 +191,8 @@ class DiscreteEG(gym.Env):
         self.utilities_2 = torch.where(reset, utilities_2, self.utilities_2)
         self.item_pool = torch.where(reset, item_pool, self.item_pool)
         self.turn = torch.where(dones, 0, self.turn)
+        
+        self.info["max_sum_rewards"] = self._get_max_sum_rewards()
 
         return obs, (rewards_1, rewards_2), dones, None, self.info
 

@@ -100,7 +100,6 @@ class ExchangeEnv(gym.Env):
         # prosocial agent: alpha = [1, 1]
         # selfish agent: alpha = [1, 0]
         self.alpha = np.array(alpha)  # prosocial parameter
-        # import pdb; pdb.set_trace()
         self.utte_channel = utte_channel
         self.prop_channel = prop_channel
 
