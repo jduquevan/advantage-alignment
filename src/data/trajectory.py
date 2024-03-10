@@ -91,6 +91,11 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.float32,
             ),
+            "max_sum_reward_ratio": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.float32,
+            ),
         }
     
     def add_step(self, action, observations, rewards, done, info, t):
@@ -123,4 +128,6 @@ class TrajectoryBatch():
         self.data[f'reward_sums_{0}'][:, t] = rewards[0] + rewards[1]
         self.data[f'reward_sums_{1}'][:, t] = rewards[0] + rewards[1]
         self.data['max_sum_rewards'][:, t] = info['max_sum_rewards']
+        self.data['max_sum_reward_ratio'][:, t] = info['max_sum_reward_ratio']
+        self.data['cos_sims'][:, t] = info['cos_sims']
         self.data['dones'][:, t] = done

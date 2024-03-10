@@ -413,7 +413,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         hidden_dim = agent.spr.in_size
 
         target_y = agent.actor.model.encoder.get_embeds(props).detach()
-        import pdb; pdb.set_trace()
         target_y = target_y[:, 1:, :].reshape(-1, hidden_dim)
         y_preds = self.get_trajectory_embeds(agent, props, hidden_dim)
         y_preds = y_preds[:, :-1, :].reshape(-1, hidden_dim)

@@ -327,7 +327,6 @@ class ExchangeEnv(gym.Env):
     def _calculate_rewards(self, prop):
         assert self.nb_agents == 2, "Only support 2 agents for now"
         if self._is_valid(prop):
-            # import pdb; pdb.set_trace()
             # if self.agent_in_turn == 0:
             #     prop = np.array([1, 0, 0.5])
             # else:
@@ -348,7 +347,6 @@ class ExchangeEnv(gym.Env):
             np.dot(np.roll(self.alpha, shift=-i), np.array([reward_A, reward_B]))
             for i in range(self.nb_agents)
         ]
-        # import pdb; pdb.set_trace()
         scaled_reward = self._scale_reward(joint_reward)
 
         return scaled_reward

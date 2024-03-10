@@ -52,6 +52,13 @@ def get_cosine_similarity(x1, x2, eps=1e-8):
     cosine_sim = dot_product / (norm1 * norm2 + eps)
     return cosine_sim
 
+def get_cosine_similarity_torch(x1, x2, eps=1e-8):
+    dot_product = torch.sum(x1 * x2, dim=-1)
+    norm1 = torch.norm(x1, dim=-1)
+    norm2 = torch.norm(x2, dim=-1)
+    cosine_sim = dot_product / (norm1 * norm2 + eps)
+    return cosine_sim
+
 def unit_vector_from_angles(theta, phi):
     # Convert angles to radians
     theta_rad = np.deg2rad(theta)
@@ -193,6 +200,15 @@ def wandb_stats(trajectory):
     stats['Average A2 prop1'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[0]
     stats['Average A2 prop2'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[1]
     stats['Average A2 prop3'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['A1 prop1 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[0]
+    stats['A1 prop2 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[1]
+    stats['A1 prop3 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[2]
+    stats['A2 prop1 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[0]
+    stats['A2 prop2 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[1]
+    stats['A2 prop3 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[2]
     stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
-
+    stats['Avg max sum rew ratio'] = trajectory.data['max_sum_reward_ratio'][
+         trajectory.data['dones']
+    ].mean()
+       
     return stats
