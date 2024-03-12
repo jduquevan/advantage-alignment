@@ -86,17 +86,21 @@ class AdvantageAlignment(TrainingAlgorithm):
             a_props = trajectory.data['a_props_0']
             uttes = trajectory.data['uttes_0']
             props = trajectory.data['props_0']
-            item_and_utility = trajectory.data['i_and_u_0']
+            item_and_utility_1 = trajectory.data['i_and_u_0']
+            item_and_utility_2 = trajectory.data['i_and_u_1']
         else:
             # observation = trajectory.data['obs_1']
             terms = trajectory.data['terms_1']
             a_props = trajectory.data['a_props_1']
             uttes = trajectory.data['uttes_1']
             props = trajectory.data['props_1']
-            item_and_utility = trajectory.data['i_and_u_1']
+            item_and_utility_1 = trajectory.data['i_and_u_1']
+            item_and_utility_2 = trajectory.data['i_and_u_0']
 
         if self.use_transformer:
             props = props.permute((1, 0, 2))
+
+        item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
 
         observation = {'prop': props, 'item_and_utility': item_and_utility}
 
@@ -314,14 +318,17 @@ class AdvantageAlignment(TrainingAlgorithm):
         if self.use_transformer:
             props_1 = props_1.permute((1, 0, 2))
             props_2 = props_2.permute((1, 0, 2))
+        
+        item_and_utility_1_cat = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
+        item_and_utility_2_cat = torch.cat([item_and_utility_2, item_and_utility_1], dim=-1)
 
-        observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1}
-        observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2}
+        observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1_cat}
+        observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2_cat}
 
         if self.sum_rewards:
             rewards_1 = sum_rewards_1
             rewards_2 = sum_rewards_2
-        
+
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
 
@@ -356,18 +363,22 @@ class AdvantageAlignment(TrainingAlgorithm):
         if is_first:
             agent = self.agent_1
             props = trajectory.data['props_0']
-            item_and_utility = trajectory.data['i_and_u_0']
+            item_and_utility_1 = trajectory.data['i_and_u_0']
+            item_and_utility_2 = trajectory.data['i_and_u_1']
             rewards_1 = trajectory.data['rewards_0']
             rewards_2 = trajectory.data['rewards_1']
         else:
             agent = self.agent_2
             props = trajectory.data['props_1']
-            item_and_utility = trajectory.data['i_and_u_1']
+            item_and_utility_1 = trajectory.data['i_and_u_1']
+            item_and_utility_2 = trajectory.data['i_and_u_0']
             rewards_1 = trajectory.data['rewards_1']
             rewards_2 = trajectory.data['rewards_0']
 
         if self.use_transformer:
             props= props.permute((1, 0, 2))
+        
+        item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
 
         observation = {
             'prop': props,
@@ -476,6 +487,22 @@ class AdvantageAlignment(TrainingAlgorithm):
     def gen_sim(self):
         observations, _ = self.env.reset()
         observations_1, observations_2 = observations
+
+        item_and_utility_1 = torch.cat(
+            [
+                observations_1['item_and_utility'],
+                observations_2['item_and_utility']
+            ], dim=1
+        )
+        item_and_utility_2 = torch.cat(
+            [
+                observations_2['item_and_utility'],
+                observations_1['item_and_utility']
+            ], dim=1
+        )
+        observations_1['item_and_utility'] = item_and_utility_1
+        observations_2['item_and_utility'] = item_and_utility_2
+
         hidden_state_1, hidden_state_2 = None, None
         history = None
         trajectory = TrajectoryBatch(
@@ -503,6 +530,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
+            observations_1, observations_2 = observations
 
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
@@ -516,16 +544,32 @@ class AdvantageAlignment(TrainingAlgorithm):
                 info=info,
                 t=t
             )
-        trajectory.add_step_sim(
-            action=(action_1, action_2), 
-            observations=(
-                observations_1,
-                observations_2
-            ), 
-            rewards=rewards,
-            log_ps=(log_p_1, log_p_2),
-            done=done,
-            info=info,
-            t=t
-        )
+
+            item_and_utility_1 = torch.cat(
+                [
+                    observations_1['item_and_utility'],
+                    observations_2['item_and_utility']
+                ], dim=1
+            )
+            item_and_utility_2 = torch.cat(
+                [
+                    observations_2['item_and_utility'],
+                    observations_1['item_and_utility']
+                ], dim=1
+            )
+            observations_1['item_and_utility'] = item_and_utility_1
+            observations_2['item_and_utility'] = item_and_utility_2
+
+        # trajectory.add_step_sim(
+        #     action=(action_1, action_2), 
+        #     observations=(
+        #         observations_1,
+        #         observations_2
+        #     ), 
+        #     rewards=rewards,
+        #     log_ps=(log_p_1, log_p_2),
+        #     done=done,
+        #     info=info,
+        #     t=t
+        # )
         return trajectory

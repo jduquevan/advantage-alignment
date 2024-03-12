@@ -54,8 +54,8 @@ def get_cosine_similarity(x1, x2, eps=1e-8):
 
 def get_cosine_similarity_torch(x1, x2, eps=1e-8):
     dot_product = torch.sum(x1 * x2, dim=-1)
-    norm1 = torch.norm(x1, dim=-1)
-    norm2 = torch.norm(x2, dim=-1)
+    norm1 = torch.norm(x1.float(), dim=-1)
+    norm2 = torch.norm(x2.float(), dim=-1)
     cosine_sim = dot_product / (norm1 * norm2 + eps)
     return cosine_sim
 

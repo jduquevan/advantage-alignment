@@ -24,7 +24,7 @@ class DiscreteEG(gym.Env):
         utility_max=5,
         device=None,
         batch_size=128,
-        sampling_type="cooperative"
+        sampling_type="uniform"
         ):
         super(DiscreteEG, self).__init__()
 
@@ -63,14 +63,14 @@ class DiscreteEG(gym.Env):
 
         # TODO: Add utterance support
         return ({
-            "item_and_utility": item_context_1,
-            "utte": self.utte_dummy_1,
-            "prop": prop_1,
+            "item_and_utility": item_context_1.float(),
+            "utte": self.utte_dummy_1.float(),
+            "prop": prop_1.float(),
         },
         {
-            "item_and_utility": item_context_2,
-            "utte": self.utte_dummy_2,
-            "prop": prop_2,
+            "item_and_utility": item_context_2.float(),
+            "utte": self.utte_dummy_2.float(),
+            "prop": prop_2.float(),
         })
 
 
@@ -211,7 +211,7 @@ class DiscreteEG(gym.Env):
         self.turn = torch.where(done, 0, self.turn)
         
         max_sum_rewards = torch.where(done, max_sum_rewards, 0)
-        max_sum_reward_ratio = torch.where(done, max_sum_reward_ratio, 0)
+        max_sum_reward_ratio = torch.where(done_and_valid, max_sum_reward_ratio, 0)
 
         self.info["max_sum_rewards"] = max_sum_rewards
         self.info["max_sum_reward_ratio"] = max_sum_reward_ratio
