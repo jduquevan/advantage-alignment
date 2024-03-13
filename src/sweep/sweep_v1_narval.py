@@ -27,6 +27,8 @@ def run_random_job(fake_submit: bool = True):
     #     config['hp.agent_replay_buffer.capacity'] = 1
     #     config['hp.agent_replay_buffer.update_freq'] = 1
 
+    config['model_in_size'] = config['d_model'] + 12
+
     # submit this job using slurm
     command = gen_command(config)
     if fake_submit:
