@@ -7,21 +7,21 @@ grandparent_folder = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
 sys.path.append(grandparent_folder)
-from src.utils.utils import get_cosine_similarity, unit_vector_from_angles
+from src.utils.utils import get_cosine_similarity_torch, unit_vector_from_angles
 
 class DiscreteEG(gym.Env):
     def __init__(
         self,
         max_turns={
-            "lower": 2,
-            "mean": 4,
-            "upper": 6,
+            "lower": 3,
+            "mean": 3,
+            "upper": 3,
         },
         utte_channel=False,
         utte_max_len=6,
         nb_items=3,
         item_max_quantity=5,
-        utility_max=10,
+        utility_max=5,
         device=None,
         batch_size=128,
         sampling_type="uniform"
@@ -40,15 +40,6 @@ class DiscreteEG(gym.Env):
         self.info = {}
 
     def _get_max_sum_rewards(self):
-        max_reward_1 = torch.bmm(
-            self.item_pool.float().unsqueeze(1), 
-            self.utilities_1.float().unsqueeze(2)
-        ).flatten()
-        max_reward_2 = torch.bmm(
-            self.item_pool.float().unsqueeze(1), 
-            self.utilities_2.float().unsqueeze(2)
-        ).flatten()
-
         utility_comparer = (self.utilities_1 >= self.utilities_2)
         agent_1_gets = torch.where(utility_comparer, self.item_pool, 0)
         agent_2_gets = self.item_pool - agent_1_gets
@@ -56,13 +47,12 @@ class DiscreteEG(gym.Env):
             torch.bmm(
                 agent_1_gets.float().unsqueeze(1),
                 self.utilities_1.float().unsqueeze(2)
-            ).flatten()/max_reward_1 +
+            ).flatten() +
             torch.bmm(
                 agent_2_gets.float().unsqueeze(1),
                 self.utilities_2.float().unsqueeze(2)
-            ).flatten()/max_reward_2
+            ).flatten()
         )
-
         return max_sum_rewards
 
 
@@ -73,14 +63,14 @@ class DiscreteEG(gym.Env):
 
         # TODO: Add utterance support
         return ({
-            "item_and_utility": item_context_1,
-            "utte": self.utte_dummy_1,
-            "prop": prop_1,
+            "item_and_utility": item_context_1.float(),
+            "utte": self.utte_dummy_1.float(),
+            "prop": prop_1.float(),
         },
         {
-            "item_and_utility": item_context_2,
-            "utte": self.utte_dummy_2,
-            "prop": prop_2,
+            "item_and_utility": item_context_2.float(),
+            "utte": self.utte_dummy_2.float(),
+            "prop": prop_2.float(),
         })
 
 
@@ -101,6 +91,13 @@ class DiscreteEG(gym.Env):
                 self.item_max_quantity + 1, 
                 (self.batch_size, self.nb_items)
             ).to(self.device)
+        elif self.sampling_type == "cooperative":
+            item_1_utilities = torch.randint(1, self.utility_max + 1, (self.batch_size, 1)).to(self.device)
+            item_2_utilities = torch.randint(1, self.utility_max + 1, (self.batch_size, 1)).to(self.device)
+            item_3_utilities = torch.zeros((self.batch_size, 1)).to(self.device)
+            utilities_1 = torch.cat([item_1_utilities, -item_2_utilities, item_3_utilities], dim=1)
+            utilities_2 = torch.cat([-item_1_utilities, item_2_utilities, item_3_utilities], dim=1)
+            item_pool =  torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
         elif self.sampling_type == "no_sampling":
             # For debugging purposes
             utilities_1 = torch.tensor([10, 3, 2]).repeat(self.batch_size, 1).to(self.device)
@@ -158,6 +155,18 @@ class DiscreteEG(gym.Env):
 
         obs = self._get_obs((prop_2, prop_1))
 
+        filtered_items_1 = torch.where(
+            self.utilities_1 >= 0,
+            self.item_pool,
+            0
+        ).float()
+
+        filtered_items_2 = torch.where(
+            self.utilities_1 >= 0,
+            self.item_pool,
+            0
+        ).float()
+
         rewards_1 = torch.bmm(
             prop_1.float().unsqueeze(1), 
             self.utilities_1.float().unsqueeze(2)
@@ -166,35 +175,49 @@ class DiscreteEG(gym.Env):
             prop_2.float().unsqueeze(1), 
             self.utilities_2.float().unsqueeze(2)
         ).flatten()
-        max_reward_1 = torch.bmm(
-            self.item_pool.float().unsqueeze(1), 
-            self.utilities_1.float().unsqueeze(2)
-        ).flatten()
-        max_reward_2 = torch.bmm(
-            self.item_pool.float().unsqueeze(1), 
-            self.utilities_2.float().unsqueeze(2)
-        ).flatten()
+
+        max_sum_rewards = self._get_max_sum_rewards()
+
+        if self.sampling_type == "cooperative":
+            max_reward_1 = max_reward_2 = max_sum_rewards
+        else:
+            max_reward_1 = torch.bmm(
+                filtered_items_1.unsqueeze(1), 
+                self.utilities_1.float().unsqueeze(2)
+            ).flatten()
+            max_reward_2 = torch.bmm(
+                filtered_items_2.unsqueeze(1), 
+                self.utilities_2.float().unsqueeze(2)
+            ).flatten()
+
         norm_rewards_1 = rewards_1/max_reward_1
         norm_rewards_2 = rewards_2/max_reward_2
 
-        dones = (self.turn >= self.max_turns)
-        valid_props = (((prop_1 + prop_2) <= self.item_pool).sum(dim=1) == 3)
-        done_and_valid = torch.logical_and(dones, valid_props)
+        max_sum_reward_ratio = (rewards_1 + rewards_2)/max_sum_rewards
+
+        done = (self.turn >= self.max_turns)
+        valid_props = (((prop_1 + prop_2) <= self.item_pool).sum(dim=1) == self.nb_items)
+        done_and_valid = torch.logical_and(done, valid_props)
 
         utilities_1, utilities_2, item_pool = self._sample_utilities()
 
         rewards_1 = torch.where(done_and_valid, norm_rewards_1, 0)
         rewards_2 = torch.where(done_and_valid, norm_rewards_2, 0)
 
-        reset = dones.unsqueeze(1).repeat(1, 3)
+        reset = done.unsqueeze(1).repeat(1, 3)
         self.utilities_1 = torch.where(reset, utilities_1, self.utilities_1)
         self.utilities_2 = torch.where(reset, utilities_2, self.utilities_2)
         self.item_pool = torch.where(reset, item_pool, self.item_pool)
-        self.turn = torch.where(dones, 0, self.turn)
+        self.turn = torch.where(done, 0, self.turn)
         
-        self.info["max_sum_rewards"] = self._get_max_sum_rewards()
+        max_sum_rewards = torch.where(done, max_sum_rewards, 0)
+        max_sum_reward_ratio = torch.where(done_and_valid, max_sum_reward_ratio, 0)
 
-        return obs, (rewards_1, rewards_2), dones, None, self.info
+        self.info["max_sum_rewards"] = max_sum_rewards
+        self.info["max_sum_reward_ratio"] = max_sum_reward_ratio
+        self.info["cos_sims"] = get_cosine_similarity_torch(self.utilities_1, self.utilities_2)
+
+        return obs, (rewards_1, rewards_2), done, None, self.info
 
 if __name__ == "__main__":
     env = DiscreteEG()

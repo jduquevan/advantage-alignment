@@ -36,5 +36,4 @@ eval "$(conda shell.bash hook)"
 conda activate cogames
 module load python/3.9
 
-python train.py \
-    training.vanilla=False
+python train.py

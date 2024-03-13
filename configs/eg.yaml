@@ -2,7 +2,7 @@ seed: 42
 batch_size: 512
 wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
-use_transformer: True
+use_transformer: False
 sum_rewards: True
 simultaneous: True
 discrete: True
@@ -39,18 +39,18 @@ transformer_model:
   in_size: 3
   d_model: 64
   device: cuda
-  dim_feedforward: 64
-  num_layers: 2
+  dim_feedforward: 128
+  num_layers: 1
   nhead: 4
   max_seq_len: 50
   dropout: 0.1
 
 mlp_model:
   _target_: src.models.models.MLPModelDiscrete
-  in_size: 70
+  in_size: 76
   device: cuda
-  hidden_size: 64
-  num_layers: 1
+  hidden_size: 128
+  num_layers: 2
 
 policy:
   _target_: src.agents.policies.CategoricalPolicy
@@ -61,7 +61,7 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
-  in_size: 70
+  in_size: 76
   out_size: 1
   device: cuda
 
