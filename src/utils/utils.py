@@ -13,17 +13,27 @@ def seed_all(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+def get_observation(observations, t):
+    prop = observations['prop'][:, t, :]
+    item_and_utility = observations['item_and_utility'][:, t, :]
+    return {
+        'prop': prop,
+        'item_and_utility': item_and_utility
+    }
+
 def cat_observations(observations, device):
     observations_cat = torch.cat([
         torch.tensor(observations['item_and_utility'], device=device),
-        torch.tensor(observations['prop'], device=device),
-        torch.tensor(observations['utte'], device=device)
+        torch.tensor(observations['prop'], device=device)
+        # torch.tensor(observations['utte'], device=device)
     ], dim=1)
     return observations_cat
 
 def get_categorical_entropy(log_ps):
     probs = torch.exp(log_ps)
-    return ((probs * torch.log(probs)).sum(dim=1)).mean()
+    eps = 1e-8  # small value to avoid NaNs
+    probs = torch.clamp(probs, eps, 1.0 - eps)  # clip probabilities to avoid zeros
+    return -(probs * torch.log(probs)).sum(dim=1).mean()
 
 def get_gaussian_entropy(covariance_matrices):
     """
@@ -39,6 +49,13 @@ def get_cosine_similarity(x1, x2, eps=1e-8):
     dot_product = np.sum(x1 * x2, axis=-1)
     norm1 = np.linalg.norm(x1, axis=-1)
     norm2 = np.linalg.norm(x2, axis=-1)
+    cosine_sim = dot_product / (norm1 * norm2 + eps)
+    return cosine_sim
+
+def get_cosine_similarity_torch(x1, x2, eps=1e-8):
+    dot_product = torch.sum(x1 * x2, dim=-1)
+    norm1 = torch.norm(x1.float(), dim=-1)
+    norm2 = torch.norm(x2.float(), dim=-1)
     cosine_sim = dot_product / (norm1 * norm2 + eps)
     return cosine_sim
 
@@ -69,15 +86,16 @@ def compute_discounted_returns(gamma, rewards, agent):
 
 def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
     # Compute deltas
-    deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
-    
-    advantages = torch.empty_like(deltas)
-    advantage = 0
-    for t in reversed(range(deltas.size(1))):
-        advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
-    
-    # Normalize advantages
-    # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    with torch.no_grad():
+        deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
+        
+        advantages = torch.empty_like(deltas)
+        advantage = 0
+        for t in reversed(range(deltas.size(1))):
+            advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
+        
+        # Normalize advantages
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
     
     return advantages
 
@@ -90,45 +108,74 @@ def torchify_actions(action, device):
 
 def instantiate_agent(cfg: DictConfig):
     if cfg.use_transformer:
-        gru_model = None
-        gru_target = None
-        transformer = hydra.utils.instantiate(cfg.transformer_model)
-        transformer_t = hydra.utils.instantiate(cfg.transformer_model)
+        use_gru = False
+        encoder = hydra.utils.instantiate(cfg.transformer_model)
+        encoder_t = hydra.utils.instantiate(cfg.transformer_model)
+        if not cfg.share_encoder:
+            encoder_c = hydra.utils.instantiate(cfg.transformer_model)
     else:
-        transformer = None
-        transformer_t = None
-        gru_model = hydra.utils.instantiate(cfg.gru_model)
-        gru_target = hydra.utils.instantiate(cfg.gru_model)
+        use_gru = True
+        encoder = hydra.utils.instantiate(cfg.gru_model)
+        encoder_t = hydra.utils.instantiate(cfg.gru_model)
+        if not cfg.share_encoder:
+            encoder_c = hydra.utils.instantiate(cfg.gru_model)
 
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model, 
-        gru=gru_model, 
-        transformer=transformer
+        encoder=encoder,
+        use_gru=use_gru
+    )
+    actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
+
+    if not cfg.share_encoder:
+        critic = hydra.utils.instantiate(
+            cfg.linear_model, 
+            encoder=encoder_c,
+            use_gru=use_gru
+        )
+    else:
+        critic = hydra.utils.instantiate(
+            cfg.linear_model, 
+            encoder=encoder,
+            use_gru=use_gru
+        )
+
+    # Self-supervised reward learning objective
+    reward = hydra.utils.instantiate(
+        cfg.linear_model, 
+        encoder=encoder,
+        use_gru=use_gru
     )
 
-    actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
-    critic = hydra.utils.instantiate(
-        cfg.linear_model, 
-        gru=gru_model,
-        transformer=transformer
+    # Self-predictive-representations objective
+    spr = hydra.utils.instantiate(
+        cfg.spr_model, 
+        encoder=encoder,
+        use_gru=use_gru
     )
 
     target = hydra.utils.instantiate(
         cfg.linear_model, 
-        gru=gru_target,
-        transformer=transformer_t
+        encoder=encoder_t,
+        use_gru=use_gru
     )
 
     optimizer_actor = hydra.utils.instantiate(cfg.optimizer_actor, params=actor.parameters())
     optimizer_critic = hydra.utils.instantiate(cfg.optimizer_critic, params=critic.parameters())
-    
+    optimizer_reward = hydra.utils.instantiate(cfg.optimizer_reward, params=reward.parameters())
+    optimizer_spr = hydra.utils.instantiate(cfg.optimizer_spr, params=spr.parameters())
+
     agent = hydra.utils.instantiate(
         cfg.agent,
         actor=actor,
         critic=critic,
         target=target,
+        reward=reward,
+        spr=spr,
         critic_optimizer=optimizer_critic,
-        actor_optimizer=optimizer_actor
+        actor_optimizer=optimizer_actor,
+        reward_optimizer=optimizer_reward,
+        spr_optimizer=optimizer_spr
     )
     return agent
 
@@ -147,10 +194,21 @@ def wandb_stats(trajectory):
     ).mean().detach()
     stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
     stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
-    stats['Average A1 prop1'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A1 prop2'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A1 prop3'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['Average A2 prop1'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A2 prop2'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A2 prop3'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Average A1 prop1'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A1 prop2'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A1 prop3'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['Average A2 prop1'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[0]
+    stats['Average A2 prop2'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[1]
+    stats['Average A2 prop3'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[2]
+    stats['A1 prop1 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[0]
+    stats['A1 prop2 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[1]
+    stats['A1 prop3 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[2]
+    stats['A2 prop1 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[0]
+    stats['A2 prop2 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[1]
+    stats['A2 prop3 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[2]
+    stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
+    stats['Avg max sum rew ratio'] = trajectory.data['max_sum_reward_ratio'][
+         trajectory.data['dones']
+    ].mean()
+       
     return stats

@@ -22,15 +22,26 @@ class TrainingAlgorithm(ABC):
         train_cfg: DictConfig,
         use_transformer: bool,
         sum_rewards: bool,
+        simultaneous: bool,
+        discrete: bool,
+        use_reward_loss: bool,
+        use_spr_loss: bool, 
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
         self.agent_2 = agent_2
         self.train_cfg = train_cfg
-        self.batch_size = (len(env.envs))
         self.trajectory_len = train_cfg.max_traj_len
         self.use_transformer = use_transformer
         self.sum_rewards = sum_rewards
+        self.simultaneous = simultaneous
+        self.discrete = discrete
+        self.use_reward_loss = use_reward_loss
+        self.use_spr_loss = use_spr_loss
+        if self.simultaneous:
+            self.batch_size = env.batch_size
+        else:
+            self.batch_size = (len(env.envs))
 
     def train_step(
         self,
@@ -38,26 +49,52 @@ class TrainingAlgorithm(ABC):
         agent,
         is_first=True
     ):
-        
         agent.critic_optimizer.zero_grad()
         critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
+        critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.critic.parameters()]))
         agent.critic_optimizer.step()
 
         agent.actor_optimizer.zero_grad()
         actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
-        total_loss = actor_loss + self.train_cfg.entropy_beta * prop_ent
+        total_loss = actor_loss - self.train_cfg.entropy_beta * prop_ent
         total_loss.backward()
+        actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-        return (
-            critic_loss.detach(), 
-            actor_loss.detach(), 
-            term_ent.detach(), 
-            utte_ent.detach(), 
-            prop_ent.detach()
-        )
+        train_step_metrics = {
+            "critic_loss": critic_loss.detach(),
+            "actor_loss": actor_loss.detach(),
+            "term_entropy": term_ent.detach(),
+            "utterance_entropy": utte_ent.detach(),
+            "prop_entropy": prop_ent.detach(),
+            "critic_grad_norm": critic_grad_norm.detach(),
+            "actor_grad_norm": actor_grad_norm.detach(),
+        }
+
+        # Self-supervised objectives
+        if self.use_reward_loss:
+            agent.reward_optimizer.zero_grad()
+            reward_loss = self.reward_loss(trajectory, is_first)
+            reward_loss.backward()
+            reward_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.reward.parameters()]))
+            agent.reward_optimizer.step()
+
+            train_step_metrics["reward_loss"] = reward_loss.detach()
+            train_step_metrics["reward_grad_norm"] = reward_grad_norm.detach()
+
+        if self.use_spr_loss:
+            agent.spr_optimizer.zero_grad()
+            spr_loss = self.spr_loss(trajectory, is_first)
+            spr_loss.backward()
+            spr_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.spr.parameters()]))
+            agent.spr_optimizer.step()
+
+            train_step_metrics["spr_loss"] = spr_loss.detach()
+            train_step_metrics["spr_grad_norm"] = spr_grad_norm.detach()
+
+        return train_step_metrics
 
     def eval(self, step: int, start_time: float):
         eval_res = test_agent(
@@ -80,56 +117,83 @@ class TrainingAlgorithm(ABC):
 
         pbar = tqdm(range(self.train_cfg.total_steps))
         for step in pbar:
-            # # Eval
             # if step % self.train_cfg.eval_every == 0:
             #     self.network.eval()
             #     self.eval(step, start_time)
             #     self.network.train()
 
-            # Collect trajectories
-            trajectory = self.gen()
+            if self.simultaneous:
+                trajectory = self.gen_sim()
+            else:
+                trajectory = self.gen()
             wandb.log(wandb_stats(trajectory))
 
             for i in range(self.train_cfg.updates_per_batch):
-
-                # Train
-                critic_loss_1, actor_loss_1, term_ent_1, utte_ent_1, prop_ent_1 = self.train_step(
+                train_step_metrics_1 = self.train_step(
                     trajectory=trajectory,
                     agent=self.agent_1,
                     is_first=True
                 )
-                print("Critic loss Agent 1: ", critic_loss_1)
-                print("Actor loss Agent 1: ", actor_loss_1)
-                print("Term Entropy Agent 1: ", term_ent_1)
-                print("Utte Entropy Agent 1: ", utte_ent_1)
-                print("Prop Entropy Agent 1: ", prop_ent_1)
-                # print(trajectory.data['obs_0'][0, 0:20])
-                print()
 
-                critic_loss_2, actor_loss_2, term_ent_2, utte_ent_2, prop_ent_2 = self.train_step(
+                train_step_metrics_2 = self.train_step(
                     trajectory=trajectory,
                     agent=self.agent_2,
                     is_first=False
                 )
-                print("Critic loss Agent 2: ", critic_loss_2)
-                print("Actor loss Agent 2: ", actor_loss_2)
-                print("Term Entropy Agent 2: ", term_ent_2)
-                print("Utte Entropy Agent 2: ", utte_ent_2)
-                print("Prop Entropy Agent 2: ", prop_ent_2)
-                # print(trajectory.data['obs_1'][0, 0:20])
+
+                critic_loss_1 = train_step_metrics_1["critic_loss"]
+                actor_loss_1 = train_step_metrics_1["actor_loss"]
+                term_ent_1 = train_step_metrics_1["term_entropy"]
+                utterance_ent_1 = train_step_metrics_1["utterance_entropy"]
+                prop_ent_1 = train_step_metrics_1["prop_entropy"]
+                critic_grad_norm_1 = train_step_metrics_1["critic_grad_norm"]
+                actor_grad_norm_1 = train_step_metrics_1["actor_grad_norm"]
+
+                critic_loss_2 = train_step_metrics_2["critic_loss"]
+                actor_loss_2 = train_step_metrics_2["actor_loss"]
+                term_ent_2 = train_step_metrics_2["term_entropy"]
+                utterance_ent_2 = train_step_metrics_2["utterance_entropy"]
+                prop_ent_2 = train_step_metrics_2["prop_entropy"]
+                critic_grad_norm_2 = train_step_metrics_2["critic_grad_norm"]
+                actor_grad_norm_2 = train_step_metrics_2["actor_grad_norm"]
+
+                print("Agent 1 Metrics:")
+                print("Actor loss 1:", actor_loss_1)
+                print("Critic loss 1:", critic_loss_1)
+                print("Term Entropy 1:", term_ent_1)
+                print("Utterance Entropy 1:", utterance_ent_1)
+                print("Prop Entropy 1:", prop_ent_1)
+                print("Critic Grad Norm 1:", critic_grad_norm_1)
+                print("Actor Grad Norm 1:", actor_grad_norm_1)
                 print()
+
+                print("Agent 2 Metrics:")
+                print("Actor loss 2:", actor_loss_2)
+                print("Critic loss 2:", critic_loss_2)
+                print("Term Entropy 2:", term_ent_2)
+                print("Utterance Entropy 2:", utterance_ent_2)
+                print("Prop Entropy 2:", prop_ent_2)
+                print("Critic Grad Norm 2:", critic_grad_norm_2)
+                print("Actor Grad Norm 2:", actor_grad_norm_2)
+                print()
+
                 wandb.log({
                     "Actor loss 1": actor_loss_1, 
                     "Critic loss 1": critic_loss_1,
+                    "Term Entropy 1": term_ent_1,
+                    "Utterance Entropy 1": utterance_ent_1,
+                    "Prop Entropy 1": prop_ent_1,
+                    "Critic Grad Norm 1": critic_grad_norm_1,
+                    "Actor Grad Norm 1": actor_grad_norm_1,
                     "Actor loss 2": actor_loss_2,
                     "Critic loss 2": critic_loss_2,
-                    "Term Entropy 1": term_ent_1,
-                    "Utte Entropy 1": utte_ent_1,
-                    "Prop Entropy 1": prop_ent_1,
                     "Term Entropy 2": term_ent_2,
-                    "Utte Entropy 2": utte_ent_2,
+                    "Utterance Entropy 2": utterance_ent_2,
                     "Prop Entropy 2": prop_ent_2,
-                    })
+                    "Critic Grad Norm 2": critic_grad_norm_2,
+                    "Actor Grad Norm 2": actor_grad_norm_2,
+                })
+
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""

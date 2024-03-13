@@ -4,6 +4,15 @@ wandb: 'online'
 wandb_dir: /Users/miladaghajohari/PycharmProjects/advantage-alignment/wandb_dir
 use_transformer: False
 sum_rewards: True
+simultaneous: True
+discrete: True
+self_play: True
+share_encoder: True
+use_reward_loss: False
+use_spr_loss: False
+
+env:
+  device: cuda
 
 hydra:
   output_subdir: null
@@ -20,46 +29,61 @@ network:
 
 gru_model:
   _target_: src.models.models.GruModel
-  in_size: 15
+  in_size: 3
   device: cpu
-  hidden_size: 32
+  hidden_size: 64
   num_layers: 1
 
 transformer_model:
   _target_: src.models.models.StableTransformer
-  in_size: 15
-  d_model: 32
+  in_size: 3
+  d_model: 64
   device: cpu
-  dim_feedforward: 32
+  dim_feedforward: 128
   num_layers: 1
   nhead: 4
   max_seq_len: 50
   dropout: 0.1
 
 mlp_model:
-  _target_: src.models.models.MLPModel
-  in_size: 32
+  _target_: src.models.models.MLPModelDiscrete
+  in_size: 76
   device: cpu
-  hidden_size: 40
+  hidden_size: 128
+  num_layers: 2
 
 policy:
-  _target_: src.agents.policies.NormalSigmoidPolicy
-  log_std_min: -2.28
-  log_std_max: -2.32
+  _target_: src.agents.policies.CategoricalPolicy
+  log_std_min: -10.0
+  log_std_max: 2.0
   prop_max: 1 # item max quantity
   device: cpu
 
 linear_model:
   _target_: src.models.models.LinearModel
-  in_size: 32
+  in_size: 76
   out_size: 1
   device: cpu
 
+spr_model:
+  _target_: src.models.models.LinearModel
+  in_size: 64
+  out_size: 64
+  device: cuda
+
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-4
+  lr: 1e-3
 
 optimizer_critic:
+  _target_: torch.optim.Adam
+  lr: 1e-3
+
+optimizer_reward:
+  _target_: torch.optim.Adam
+  lr: 1e-4
+
+optimizer_spr:
   _target_: torch.optim.Adam
   lr: 1e-3
 
@@ -72,10 +96,11 @@ training:
   tau: 0.005
   max_traj_len: 50
   batch_size: 512 # Training batch size
-  total_steps: 100000 # Number of optimization steps to train for
+  total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.15
-  entropy_beta: 0
+  clip_range: 0.3
+  entropy_beta: 0.007
   vanilla: True
   updates_per_batch: 1
+  use_mlm: True

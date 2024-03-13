@@ -42,7 +42,7 @@ class ExchangeEnv(gym.Env):
         nb_items=3,  # there are 3 kinds of items in the pool
         item_max_quantity=5,  # each kind of item has a maximum quantity of 5
         utility_max=10,  # the utility are random generated, the maximum utility for each item is 10
-        terminate_condition="by_agent",  # by_agent or equal_prop or equal_eps or satisfied_prop
+        terminate_condition="equal_eps",  # by_agent or equal_prop or equal_eps or satisfied_prop
         device=None,
     ):
         super(ExchangeEnv, self).__init__()
@@ -100,7 +100,6 @@ class ExchangeEnv(gym.Env):
         # prosocial agent: alpha = [1, 1]
         # selfish agent: alpha = [1, 0]
         self.alpha = np.array(alpha)  # prosocial parameter
-        # import pdb; pdb.set_trace()
         self.utte_channel = utte_channel
         self.prop_channel = prop_channel
 
@@ -328,7 +327,6 @@ class ExchangeEnv(gym.Env):
     def _calculate_rewards(self, prop):
         assert self.nb_agents == 2, "Only support 2 agents for now"
         if self._is_valid(prop):
-            # import pdb; pdb.set_trace()
             # if self.agent_in_turn == 0:
             #     prop = np.array([1, 0, 0.5])
             # else:
@@ -348,7 +346,6 @@ class ExchangeEnv(gym.Env):
             np.dot(np.roll(self.alpha, shift=-i), np.array([reward_A, reward_B]))
             for i in range(self.nb_agents)
         ]
-        # import pdb; pdb.set_trace()
         scaled_reward = self._scale_reward(joint_reward)
 
         return scaled_reward
