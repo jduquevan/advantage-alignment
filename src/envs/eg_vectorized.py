@@ -162,7 +162,7 @@ class DiscreteEG(gym.Env):
         ).float()
 
         filtered_items_2 = torch.where(
-            self.utilities_1 >= 0,
+            self.utilities_2 >= 0,
             self.item_pool,
             0
         ).float()
@@ -197,17 +197,17 @@ class DiscreteEG(gym.Env):
 
         done = (self.turn >= self.max_turns)
         valid_props = (((prop_1 + prop_2) <= self.item_pool).sum(dim=1) == self.nb_items)
-        done_and_valid = torch.logical_and(done, valid_props)
+        done_and_valid = torch.logical_and(done, valid_props)  # todo: milad
 
-        utilities_1, utilities_2, item_pool = self._sample_utilities()
+        new_utilities_1, new_utilities_2, new_item_pool = self._sample_utilities()
 
         rewards_1 = torch.where(done_and_valid, norm_rewards_1, 0)
         rewards_2 = torch.where(done_and_valid, norm_rewards_2, 0)
 
         reset = done.unsqueeze(1).repeat(1, 3)
-        self.utilities_1 = torch.where(reset, utilities_1, self.utilities_1)
-        self.utilities_2 = torch.where(reset, utilities_2, self.utilities_2)
-        self.item_pool = torch.where(reset, item_pool, self.item_pool)
+        self.utilities_1 = torch.where(reset, new_utilities_1, self.utilities_1)
+        self.utilities_2 = torch.where(reset, new_utilities_2, self.utilities_2)
+        self.item_pool = torch.where(reset, new_item_pool, self.item_pool)
         self.turn = torch.where(done, 0, self.turn)
         
         max_sum_rewards = torch.where(done, max_sum_rewards, 0)

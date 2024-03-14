@@ -1,0 +1,35 @@
+defaults:
+  - eg.yaml
+  - _self_
+
+wandb_dir: /Users/miladaghajohari/PycharmProjects/advantage-alignment/wandb_dir
+hydra:
+  run:
+    dir:  /Users/miladaghajohari/PycharmProjects/advantage-alignment/hydra_dir
+
+env:
+  device: cpu
+
+network:
+  device: cpu
+
+gru_model:
+  device: cpu
+
+transformer_model:
+  device: cpu
+
+mlp_model:
+  device: cpu
+
+policy:
+  device: cpu
+
+linear_model:
+  device: cpu
+
+spr_model:
+  device: cpu
+
+agent:
+  device: cpu

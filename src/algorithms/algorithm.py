@@ -112,7 +112,6 @@ class TrainingAlgorithm(ABC):
         pass
 
     def train_loop(self):
-        print("Generating initial trajectories")
         start_time = time.time()
 
         pbar = tqdm(range(self.train_cfg.total_steps))
