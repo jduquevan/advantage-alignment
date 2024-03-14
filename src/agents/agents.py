@@ -4,6 +4,8 @@ import torch
 
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
+
+from src.models.models import LinearModel
 from src.utils.utils import cat_observations
 from torch import nn
 
@@ -17,7 +19,7 @@ class AdvantageAlignmentAgent(Agent):
         self,
         device: torch.device,
         actor: nn.Module,
-        critic: nn.Module,
+        critic: LinearModel,
         target: nn.Module,
         reward: nn.Module,
         spr: nn.Module,

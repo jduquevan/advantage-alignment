@@ -207,8 +207,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             )
             hidden_c, hidden_t = None, None
             for t in range(self.trajectory_len):
-                hidden_c, value_c = agent.critic(get_observation(observation, t))
-                hidden_t, value_t = agent.target(get_observation(observation, t))
+                hidden_c, value_c = agent.critic(get_observation(observation, t), h_0=hidden_c)
+                hidden_t, value_t = agent.target(get_observation(observation, t), h_0=hidden_t)
                 values_c[:, t] = value_c.reshape(self.batch_size)
                 values_t[:, t] = value_t.reshape(self.batch_size)
                 hidden_c = hidden_c.permute((1, 0, 2))
