@@ -3,10 +3,10 @@ defaults:
   - _self_
 
 wandb: 'disabled'
-wandb_dir: /home/a/aghajohm/scratch/advantage-alignment/wandb_dir
+wandb_dir: /home/mila/a/aghajohm/scratch/advantage-alignment/wandb_dir
 hydra:
   run:
-    dir:  /home/a/aghajohm/scratch/advantage-alignment/hydra_dir
+    dir:  /home/mila/a/aghajohm/scratch/advantage-alignment/hydra_dir
 
 env:
   device: cpu
