@@ -9,28 +9,28 @@ hydra:
     dir:  /home/mila/a/aghajohm/scratch/advantage-alignment/hydra_dir
 
 env:
-  device: cpu
+  device: cuda
 
 network:
-  device: cpu
+  device: cuda
 
 gru_model:
-  device: cpu
+  device: cuda
 
 transformer_model:
-  device: cpu
+  device: cuda
 
 mlp_model:
-  device: cpu
+  device: cuda
 
 policy:
-  device: cpu
+  device: cuda
 
 linear_model:
-  device: cpu
+  device: cuda
 
 spr_model:
-  device: cpu
+  device: cuda
 
 agent:
-  device: cpu
+  device: cuda
