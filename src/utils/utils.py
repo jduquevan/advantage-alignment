@@ -160,6 +160,8 @@ def instantiate_agent(cfg: DictConfig):
         use_gru=use_gru
     )
 
+    target.load_state_dict(critic.state_dict())
+
     optimizer_actor = hydra.utils.instantiate(cfg.optimizer_actor, params=actor.parameters())
     optimizer_critic = hydra.utils.instantiate(cfg.optimizer_critic, params=critic.parameters())
     optimizer_reward = hydra.utils.instantiate(cfg.optimizer_reward, params=reward.parameters())

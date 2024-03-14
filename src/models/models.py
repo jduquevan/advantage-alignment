@@ -12,18 +12,20 @@ class GruModel(nn.Module):
         self.device = device
         self.hidden_size = hidden_size
         
-        self.linear = nn.Linear(in_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, num_layers, batch_first=True)
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
+        self.gru = nn.GRU(hidden_size, hidden_size, 1, batch_first=True)
         self.to(device)
 
     def forward(self, x, h_0=None):
         self.gru.flatten_parameters()
-        x = F.relu(self.linear(x))
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
         output, x = self.gru(x.unsqueeze(1), h_0)
         return output, x
     
     def get_embeds(self, x):
-        x = self.linear(x)
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
         return x
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
@@ -166,6 +168,7 @@ class MLPModelDiscrete(nn.Module):
 
         # Proposition heads
         self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 5) for _ in range(3)])
+        self.temp = nn.Parameter(torch.ones(1))
 
         self.to(device)
 
@@ -203,17 +206,19 @@ class MLPModelDiscrete(nn.Module):
         utte_probs = None
 
         # Prop
-        prop_probs = [F.softmax(prop_head(x), dim=-1) for prop_head in self.prop_heads]
+        prop_probs = [F.softmax(prop_head(x)/ self.temp, dim=-1) for prop_head in self.prop_heads]
 
         return output, term_probs, utte_probs, prop_probs
     
 class LinearModel(nn.Module):
-    def __init__(self, in_size, out_size, device, encoder=None, use_gru=True):
+    def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True):
         super(LinearModel, self).__init__()
         self.encoder = encoder
 
         self.use_gru = use_gru
         self.in_size = in_size
+
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, in_size) for i in range(num_hidden)])
 
         self.linear = nn.Linear(in_size, out_size)
         self.to(device)
@@ -238,6 +243,9 @@ class LinearModel(nn.Module):
                 item_and_utility.permute((1, 0, 2)),
                 x
             ], dim=-1)
+
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
 
         return output, self.linear(x)
     

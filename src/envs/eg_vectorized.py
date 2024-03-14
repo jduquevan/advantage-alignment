@@ -24,7 +24,8 @@ class DiscreteEG(gym.Env):
         utility_max=5,
         device=None,
         batch_size=128,
-        sampling_type="uniform"
+        sampling_type="uniform",
+        normalize_rewards=False,
         ):
         super(DiscreteEG, self).__init__()
 
@@ -37,22 +38,14 @@ class DiscreteEG(gym.Env):
         self.device = device
         self.batch_size = batch_size
         self.sampling_type = sampling_type
+        self.normalize_rewards = normalize_rewards
         self.info = {}
 
     def _get_max_sum_rewards(self):
         utility_comparer = (self.utilities_1 >= self.utilities_2)
         agent_1_gets = torch.where(utility_comparer, self.item_pool, 0)
         agent_2_gets = self.item_pool - agent_1_gets
-        max_sum_rewards = (
-            torch.bmm(
-                agent_1_gets.float().unsqueeze(1),
-                self.utilities_1.float().unsqueeze(2)
-            ).flatten() +
-            torch.bmm(
-                agent_2_gets.float().unsqueeze(1),
-                self.utilities_2.float().unsqueeze(2)
-            ).flatten()
-        )
+        max_sum_rewards = (agent_1_gets * self.utilities_1).sum(dim=-1) + (agent_2_gets * self.utilities_2).sum(dim=-1)
         return max_sum_rewards
 
 
@@ -155,43 +148,27 @@ class DiscreteEG(gym.Env):
 
         obs = self._get_obs((prop_2, prop_1))
 
-        filtered_items_1 = torch.where(
-            self.utilities_1 >= 0,
-            self.item_pool,
-            0
-        ).float()
+        filtered_items_1 = torch.where(self.utilities_1 >= 0, self.item_pool, 0).float()
 
-        filtered_items_2 = torch.where(
-            self.utilities_2 >= 0,
-            self.item_pool,
-            0
-        ).float()
+        filtered_items_2 = torch.where(self.utilities_2 >= 0, self.item_pool, 0).float()
 
-        rewards_1 = torch.bmm(
-            prop_1.float().unsqueeze(1), 
-            self.utilities_1.float().unsqueeze(2)
-        ).flatten()
-        rewards_2 = torch.bmm(
-            prop_2.float().unsqueeze(1), 
-            self.utilities_2.float().unsqueeze(2)
-        ).flatten()
+        rewards_1 = (prop_1 * self.utilities_1).sum(dim=-1)
+        rewards_2 = (prop_2 * self.utilities_2).sum(dim=-1)
 
         max_sum_rewards = self._get_max_sum_rewards()
 
         if self.sampling_type == "cooperative":
             max_reward_1 = max_reward_2 = max_sum_rewards
         else:
-            max_reward_1 = torch.bmm(
-                filtered_items_1.unsqueeze(1), 
-                self.utilities_1.float().unsqueeze(2)
-            ).flatten()
-            max_reward_2 = torch.bmm(
-                filtered_items_2.unsqueeze(1), 
-                self.utilities_2.float().unsqueeze(2)
-            ).flatten()
+            max_reward_1 = (filtered_items_1 * self.utilities_1).sum(dim=-1)
+            max_reward_2 = (filtered_items_2 * self.utilities_2).sum(dim=-1)
 
-        norm_rewards_1 = rewards_1/max_reward_1
-        norm_rewards_2 = rewards_2/max_reward_2
+        if self.normalize_rewards:
+            norm_rewards_1 = rewards_1/max_reward_1
+            norm_rewards_2 = rewards_2/max_reward_2
+        else:
+            norm_rewards_1 = rewards_1
+            norm_rewards_2 = rewards_2
 
         max_sum_reward_ratio = (rewards_1 + rewards_2)/max_sum_rewards
 

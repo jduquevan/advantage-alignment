@@ -2,6 +2,7 @@ defaults:
   - eg.yaml
   - _self_
 
+wandb: 'disabled'
 wandb_dir: /Users/miladaghajohari/PycharmProjects/advantage-alignment/wandb_dir
 hydra:
   run:
