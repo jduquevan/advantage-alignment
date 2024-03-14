@@ -297,8 +297,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_1 = trajectory.data['rewards_0']
             # observation_2 = trajectory.data['obs_1']
             rewards_2 = trajectory.data['rewards_1']
-            sum_rewards_1 = trajectory.data['reward_sums_0']
-            sum_rewards_2 = trajectory.data['reward_sums_1']
             old_log_ps = trajectory.data['log_ps_0']
         else:
             agent = self.agent_2
@@ -311,8 +309,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_1 = trajectory.data['rewards_1']
             # observation_2 = trajectory.data['obs_0']
             rewards_2 = trajectory.data['rewards_0']
-            sum_rewards_1 = trajectory.data['reward_sums_1']
-            sum_rewards_2 = trajectory.data['reward_sums_0']
             old_log_ps = trajectory.data['log_ps_1']
 
         if self.use_transformer:
@@ -326,8 +322,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2_cat}
 
         if self.sum_rewards:
-            rewards_1 = sum_rewards_1
-            rewards_2 = sum_rewards_2
+            rewards_1 = rewards_2 = rewards_1 + rewards_2
 
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
@@ -559,17 +554,5 @@ class AdvantageAlignment(TrainingAlgorithm):
             )
             observations_1['item_and_utility'] = item_and_utility_1
             observations_2['item_and_utility'] = item_and_utility_2
-
-        # trajectory.add_step_sim(
-        #     action=(action_1, action_2), 
-        #     observations=(
-        #         observations_1,
-        #         observations_2
-        #     ), 
-        #     rewards=rewards,
-        #     log_ps=(log_p_1, log_p_2),
-        #     done=done,
-        #     info=info,
-        #     t=t
-        # )
+        
         return trajectory

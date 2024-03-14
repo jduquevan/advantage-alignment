@@ -24,7 +24,8 @@ class DiscreteEG(gym.Env):
         utility_max=5,
         device=None,
         batch_size=128,
-        sampling_type="uniform"
+        sampling_type="uniform",
+        normalize_rewards=False,
         ):
         super(DiscreteEG, self).__init__()
 
@@ -37,6 +38,7 @@ class DiscreteEG(gym.Env):
         self.device = device
         self.batch_size = batch_size
         self.sampling_type = sampling_type
+        self.normalize_rewards = normalize_rewards
         self.info = {}
 
     def _get_max_sum_rewards(self):
@@ -190,8 +192,12 @@ class DiscreteEG(gym.Env):
                 self.utilities_2.float().unsqueeze(2)
             ).flatten()
 
-        norm_rewards_1 = rewards_1/max_reward_1
-        norm_rewards_2 = rewards_2/max_reward_2
+        if self.normalize_rewards:
+            norm_rewards_1 = rewards_1/max_reward_1
+            norm_rewards_2 = rewards_2/max_reward_2
+        else:
+            norm_rewards_1 = rewards_1
+            norm_rewards_2 = rewards_2
 
         max_sum_reward_ratio = (rewards_1 + rewards_2)/max_sum_rewards
 

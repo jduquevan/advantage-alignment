@@ -6,72 +6,72 @@ class TrajectoryBatch():
         self.max_traj_len = max_traj_len
         self.device = device
         self.data = {
-            "obs_0": torch.empty(
+            "obs_0": torch.ones(
                 (batch_size, max_traj_len, 9),
                 dtype=torch.float32,
                 device=device,
             ),
-            "obs_1": torch.empty(
+            "obs_1": torch.ones(
                 (batch_size, max_traj_len, 9),
                 dtype=torch.float32,
                 device=device,
             ),
-            "terms_0": torch.empty(
+            "terms_0": torch.ones(
                 (batch_size, max_traj_len), device=device, dtype=torch.int32
             ),
-            "terms_1": torch.empty(
+            "terms_1": torch.ones(
                 (batch_size, max_traj_len), device=device, dtype=torch.int32
             ),
-            "props_0": torch.empty(
+            "props_0": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
-            "props_1": torch.empty(
+            "props_1": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
-            "a_props_0": torch.empty(
+            "a_props_0": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
-            "a_props_1": torch.empty(
+            "a_props_1": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
-            "i_and_u_0": torch.empty(
+            "i_and_u_0": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
-            "i_and_u_1": torch.empty(
+            "i_and_u_1": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
-            "uttes_0": torch.empty(
+            "uttes_0": torch.ones(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
-            "uttes_1": torch.empty(
+            "uttes_1": torch.ones(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
-            "rewards_0": torch.empty(
+            "rewards_0": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "rewards_1": torch.empty(
+            "rewards_1": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "log_ps_0": torch.empty(
+            "log_ps_0": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "log_ps_1": torch.empty(
+            "log_ps_1": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "reward_sums_0": torch.empty(
+            "reward_sums_0": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "reward_sums_1": torch.empty(
+            "reward_sums_1": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
@@ -81,17 +81,17 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.bool,
             ),
-            "cos_sims": torch.empty(
+            "cos_sims": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "max_sum_rewards": torch.empty(
+            "max_sum_rewards": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
             ),
-            "max_sum_reward_ratio": torch.empty(
+            "max_sum_reward_ratio": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
                 dtype=torch.float32,
