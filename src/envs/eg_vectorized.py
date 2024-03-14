@@ -13,9 +13,9 @@ class DiscreteEG(gym.Env):
     def __init__(
         self,
         max_turns={
-            "lower": 3,
-            "mean": 3,
-            "upper": 3,
+            "lower": 1,
+            "mean": 1,
+            "upper": 1,
         },
         utte_channel=False,
         utte_max_len=6,
