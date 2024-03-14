@@ -1,0 +1,36 @@
+defaults:
+  - eg.yaml
+  - _self_
+
+wandb: 'disabled'
+wandb_dir: /home/a/aghajohm/scratch/advantage-alignment/wandb_dir
+hydra:
+  run:
+    dir:  /home/a/aghajohm/scratch/advantage-alignment/hydra_dir
+
+env:
+  device: cpu
+
+network:
+  device: cpu
+
+gru_model:
+  device: cpu
+
+transformer_model:
+  device: cpu
+
+mlp_model:
+  device: cpu
+
+policy:
+  device: cpu
+
+linear_model:
+  device: cpu
+
+spr_model:
+  device: cpu
+
+agent:
+  device: cpu

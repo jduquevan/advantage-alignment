@@ -32,7 +32,7 @@ export WANDB_ENTITY="miladink"
 
 module purge
 eval "$(conda shell.bash hook)"
-conda activate cogame
+conda activate cogames
 module load python/3.9
 
 python train.py
