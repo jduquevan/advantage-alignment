@@ -33,4 +33,5 @@ spr_model:
   device: cpu
 
 agent:
+  _target_: src.agents.agents.AdvantageAlignmentAgent
   device: cpu

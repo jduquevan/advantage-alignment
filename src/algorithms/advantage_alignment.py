@@ -451,14 +451,16 @@ class AdvantageAlignment(TrainingAlgorithm):
                     observations=observations,
                     h_0=hidden_state_1,
                     history=history,
-                    use_transformer=self.use_transformer
+                    use_transformer=self.use_transformer,
+                    is_first=True,
                 )
             else:
                 hidden_state_2, action, log_p_2 = self.agent_2.sample_action(
                     observations=observations,
                     h_0=hidden_state_2,
                     history=history,
-                    use_transformer=self.use_transformer
+                    use_transformer=self.use_transformer,
+                    is_first=False
                 )
             observations, rewards, done, _, info = self.env.step(action)
             trajectory.add_step(
@@ -515,14 +517,16 @@ class AdvantageAlignment(TrainingAlgorithm):
                 h_0=hidden_state_1,
                 history=history,
                 use_transformer=self.use_transformer,
-                extend_history=True
+                extend_history=True,
+                is_first=True,
             )
             hidden_state_2, action_2, log_p_2 = self.agent_2.sample_action(
                 observations=observations_2,
                 h_0=hidden_state_2,
                 history=history,
                 use_transformer=self.use_transformer,
-                extend_history=False
+                extend_history=False,
+                is_first=False,
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
             observations_1, observations_2 = observations
