@@ -16,7 +16,7 @@ from src.utils.utils import (
     compute_gae_advantages,
     get_categorical_entropy,
     get_gaussian_entropy,
-    get_observation
+    get_observation, compute_discounted_returns
 )
 
 class AdvantageAlignment(TrainingAlgorithm):
@@ -342,7 +342,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
             loss_1 = -(A_1s * surrogates[:, :-1]).mean()
         else:
-            loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
+            # loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
+           loss_1 = -(A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
             loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
@@ -352,7 +353,10 @@ class AdvantageAlignment(TrainingAlgorithm):
         return (loss_1 + loss_2), term_ent, utte_ent, prop_ent
 
 
-    def critic_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
+    def critic_loss(self,
+                    trajectory: TrajectoryBatch,
+                    is_first: bool,
+                    ) -> float:
         gamma = self.train_cfg.gamma
 
         if is_first:
@@ -384,11 +388,16 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards_1 = rewards_2 = rewards_1 + rewards_2
 
         values_c, values_t = self.get_trajectory_values(agent, observation)
-        values_c_shifted = values_c[:, :-1]
-        values_t_shifted = values_t[:, 1:]
-        rewards_shifted = rewards_1[:, :-1]
+        if self.train_cfg.critic_loss_mode == 'td-1':
+            values_c_shifted = values_c[:, :-1]
+            values_t_shifted = values_t[:, 1:]
+            rewards_shifted = rewards_1[:, :-1]
         
-        critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
+            critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
+        elif self.train_cfg.critic_loss_mode == 'MC':
+            discounted_returns = compute_discounted_returns(gamma, rewards_1)
+            critic_loss = F.huber_loss(values_c, discounted_returns)
+
         return critic_loss
 
     def reward_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:

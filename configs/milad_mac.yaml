@@ -35,3 +35,6 @@ spr_model:
 agent:
   _target_: src.agents.agents.AdvantageAlignmentAgent
   device: cpu
+
+training:
+  critic_loss_mode: 'MC'

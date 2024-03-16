@@ -72,11 +72,11 @@ def unit_vector_from_angles(theta, phi):
     # Return the unit vector
     return np.array([x, y, z])
 
-def compute_discounted_returns(gamma, rewards, agent):
+def compute_discounted_returns(gamma, rewards):
         batch_size, trajectory_len = rewards.shape
         returns = torch.empty(
             (batch_size, trajectory_len), 
-            device=agent.device, 
+            device=rewards.device,
             dtype=torch.float32
         )
         returns[:, -1] = rewards[:, -1]
