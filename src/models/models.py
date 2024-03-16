@@ -167,7 +167,7 @@ class MLPModelDiscrete(nn.Module):
         # self.utte_head = nn.Linear(hidden_size, 6)
 
         # Proposition heads
-        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 5) for _ in range(3)])
+        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 6) for _ in range(3)])
         self.temp = nn.Parameter(torch.ones(1))
 
         self.to(device)
