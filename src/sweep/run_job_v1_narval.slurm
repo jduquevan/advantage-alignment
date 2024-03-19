@@ -16,7 +16,7 @@
 #SBATCH -n 1 #tasks
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --mem=40G
-#SBATCH --time=1-23:59:00
+#SBATCH --time=0-11:59:00
 #SBATCH --gres=gpu:1 
 
 
@@ -30,9 +30,12 @@ export WANDB_ENTITY="jduque"
 export HYDRA_FULL_ERROR=1
 
 python train.py \
+    wandb='offline' \
+    wandb_dir='/home/jduque/scratch/wandb' \
+    hydra.run.dir='/home/jduque/scratch/hydra' \
     seed=${1} \
     optimizer_actor.lr=${2} \
-    optimizer_critic.lr=${2} \
+    optimizer_critic.lr=${8} \
     optimizer_spr.lr=${2} \
     training.entropy_beta=${3} \
     training.clip_range=${4} \
@@ -44,5 +47,6 @@ python train.py \
     spr_model.out_size=${6} \
     transformer_model.num_layers=${7} \
     gru_model.num_layers=${7} \
-    mlp_model.in_size=${8} \
-    linear_model.in_size=${8} \
+    mlp_model.in_size=${10} \
+    linear_model.in_size=${10} \
+    training.critic_loss_mode=${9} \
