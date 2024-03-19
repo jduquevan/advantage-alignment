@@ -50,7 +50,7 @@ mlp_model:
   in_size: 76
   device: cuda
   hidden_size: 256
-  num_layers: 2
+  num_layers: 3
 
 policy:
   _target_: src.agents.policies.CategoricalPolicy
@@ -73,7 +73,7 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 1e-5
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -100,7 +100,7 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.007
+  entropy_beta: 1
   vanilla: True
   updates_per_batch: 1
   use_mlm: True

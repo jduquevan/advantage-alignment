@@ -244,6 +244,8 @@ class LinearModel(nn.Module):
                 x
             ], dim=-1)
 
+        x = x/torch.linalg.norm(x)
+
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
