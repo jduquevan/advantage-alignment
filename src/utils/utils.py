@@ -6,6 +6,7 @@ import torch
 
 from omegaconf import DictConfig
 
+
 def seed_all(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -27,13 +28,16 @@ def cat_observations(observations, device):
         torch.tensor(observations['prop'], device=device)
         # torch.tensor(observations['utte'], device=device)
     ], dim=1)
+
     return observations_cat
+
 
 def get_categorical_entropy(log_ps):
     probs = torch.exp(log_ps)
     eps = 1e-8  # small value to avoid NaNs
     probs = torch.clamp(probs, eps, 1.0 - eps)  # clip probabilities to avoid zeros
     return -(probs * torch.log(probs)).sum(dim=1).mean()
+
 
 def get_gaussian_entropy(covariance_matrices):
     """
@@ -42,8 +46,12 @@ def get_gaussian_entropy(covariance_matrices):
     batch_size = covariance_matrices.size(0)
     dimension = covariance_matrices.size(-1)
     det_covariance = torch.det(covariance_matrices)
-    entropy = 0.5 * (dimension * (torch.log(2 * torch.tensor(math.pi)) + 1) + torch.log(det_covariance))
+    entropy = 0.5 * (
+        dimension * (torch.log(2 * torch.tensor(math.pi)) + 1)
+        + torch.log(det_covariance)
+    )
     return entropy.mean()
+
 
 def get_cosine_similarity(x1, x2, eps=1e-8):
     dot_product = np.sum(x1 * x2, axis=-1)
@@ -63,12 +71,12 @@ def unit_vector_from_angles(theta, phi):
     # Convert angles to radians
     theta_rad = np.deg2rad(theta)
     phi_rad = np.deg2rad(phi)
-    
+
     # Calculate the components of the unit vector
     x = np.sin(theta_rad) * np.cos(phi_rad)
     y = np.sin(theta_rad) * np.sin(phi_rad)
     z = np.cos(theta_rad)
-    
+
     # Return the unit vector
     return np.array([x, y, z])
 
@@ -97,14 +105,15 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
         # Normalize advantages
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
     
-    return advantages
+
 
 def torchify_actions(action, device):
     action_torch = {}
-    action_torch['term'] = torch.tensor(action['term'], device=device)
-    action_torch['utte'] = torch.tensor(action['utte'], device=device)
-    action_torch['prop'] = torch.tensor(action['prop'], device=device)
+    action_torch["term"] = torch.tensor(action["term"], device=device)
+    action_torch["utte"] = torch.tensor(action["utte"], device=device)
+    action_torch["prop"] = torch.tensor(action["prop"], device=device)
     return action_torch
+
 
 def instantiate_agent(cfg: DictConfig):
     if cfg.use_transformer:
@@ -181,9 +190,11 @@ def instantiate_agent(cfg: DictConfig):
     )
     return agent
 
+
 def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
-        target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
+        target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
+
 
 def wandb_stats(trajectory):
     stats = {}

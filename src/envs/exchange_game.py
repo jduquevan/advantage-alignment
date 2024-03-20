@@ -63,38 +63,72 @@ class ExchangeEnv(gym.Env):
             self.nb_items, self.utility_max, dtype=np.float32
         )
         # Combine low and high bounds for items and utilities
-        low_bound = np.concatenate((item_continuous_low, utility_continuous_low))
-        high_bound = np.concatenate((item_continuous_high, utility_continuous_high))
+        # low_bound = np.concatenate((item_continuous_low, utility_continuous_low))
+        # high_bound = np.concatenate((item_continuous_high, utility_continuous_high))
 
         if self.terminate_condition.lower() == "by_agent":
-            self.action_space = spaces.Dict(
-                {
-                    "term": spaces.Discrete(2),
-                    "utte": spaces.Box(
-                        low=0, high=1, shape=(self.utte_max_len,), dtype=np.int64
-                    ),
-                    "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
-                }
+            # self.action_space = spaces.Dict(
+            #     {
+            #         "term": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            #         "utte": spaces.Box(
+            #             low=0, high=1, shape=(self.utte_max_len,), dtype=np.float32
+            #         ),
+            #         "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
+            #     }
+            # )
+            self.action_space = spaces.Box(
+                low=np.array([0] + [0] * self.utte_max_len + [0] * self.nb_items),
+                high=np.array(
+                    [1] + [1] * self.utte_max_len + [item_max_quantity] * self.nb_items
+                ),
+                dtype=np.float32,
             )
+
         else:
-            self.action_space = spaces.Dict(
-                {
-                    "utte": spaces.Box(
-                        low=0, high=1, shape=(self.utte_max_len,), dtype=np.int64
-                    ),
-                    "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
-                }
+            # self.action_space = spaces.Dict(
+            #     {
+            #         "utte": spaces.Box(
+            #             low=0, high=1, shape=(self.utte_max_len,), dtype=np.float32
+            #         ),
+            #         "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
+            #     }
+            # )
+            self.action_space = spaces.Box(
+                low=np.array([0] * self.utte_max_len + [0] * self.nb_items),
+                high=np.array(
+                    [1] * self.utte_max_len + [item_max_quantity] * self.nb_items
+                ),
+                dtype=np.float32,
             )
-        self.observation_space = spaces.Dict(
-            {
-                "item_and_utility": spaces.Box(
-                    low=low_bound, high=high_bound, dtype=np.float32
-                ),
-                "utte": spaces.Box(
-                    low=0, high=1, shape=(self.utte_max_len,), dtype=np.int64
-                ),
-                "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
-            }
+        # self.observation_space = spaces.Dict(
+        #     {
+        #         "item_and_utility": spaces.Box(
+        #             low=low_bound, high=high_bound, dtype=np.float32
+        #         ),
+        #         "utte": spaces.Box(
+        #             low=0, high=1, shape=(self.utte_max_len,), dtype=np.float32
+        #         ),
+        #         "prop": spaces.Box(low=prop_low, high=prop_high, dtype=np.float32),
+        #     }
+        # )
+        low_bound = np.concatenate(
+            (
+                item_continuous_low,
+                utility_continuous_low,
+                [0] * self.utte_max_len,
+                prop_low,
+            )
+        )
+        high_bound = np.concatenate(
+            (
+                item_continuous_high,
+                utility_continuous_high,
+                [1] * self.utte_max_len,
+                prop_high,
+            )
+        )
+        self.observation_space = spaces.Box(
+            low=low_bound, high=high_bound, dtype=np.float32
         )
         self.nb_agents = nb_agents
         # prosocial agent: alpha = [1, 1]
@@ -117,7 +151,35 @@ class ExchangeEnv(gym.Env):
             else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
 
-    def reset(self):
+    def translate_action_to_dict(self, action):
+        """Translate flat action array into a dictionary with keys."""
+        return {
+            "term": action[0:1],  # Assuming the first element is 'term'
+            "utte": action[
+                1 : 1 + self.utte_max_len
+            ],  # Next utte_max_len elements are 'utte'
+            "prop": action[1 + self.utte_max_len :],  # Remaining elements are 'prop'
+        }
+
+    def translate_obs_to_dict(self, obs):
+        """Translate flat observation array into a dictionary with keys."""
+        return {
+            "item_and_utility": obs[
+                : self.nb_items * 2
+            ],  # First nb_items*2 elements are 'item_and_utility'
+            "utte": obs[
+                self.nb_items * 2 : self.nb_items * 2 + self.utte_max_len
+            ],  # Next utte_max_len elements are 'utte'
+            "prop": obs[
+                self.nb_items * 2 + self.utte_max_len :
+            ],  # Remaining elements are 'prop'
+        }
+
+    def reset(self, seed=None):
+        # Optionally set the random seed for reproducibility
+        if seed is not None:
+            np.random.seed(seed)
+
         # self.item_pool = np.random.randint(
         #     0, self.item_max_quantity + 1, size=self.nb_items
         # )
@@ -204,9 +266,21 @@ class ExchangeEnv(gym.Env):
     def step(self, action):
         if self.done:
             return self.obs, 0, self.done, None, self.info
-        assert isinstance(action, dict), "action should be a dict"
+        if not isinstance(action, dict):
+            action = self.translate_action_to_dict(action)
         if "term" in action:
-            assert int(action["term"]) in [0, 1], "termination should be 0 or 1"
+            if isinstance(action["term"], (int, float)):
+                assert round(action["term"]) in [0, 1], "termination should be 0 or 1"
+            elif isinstance(action["term"], (np.ndarray)):
+                rounded_term = np.round(action["term"]).astype(int)
+                assert np.all(
+                    np.isin(rounded_term, [0, 1])
+                ), "termination should be 0 or 1"
+            elif isinstance(action["term"], torch.Tensor):
+                rounded_term = torch.round(action["term"]).type(torch.int)
+                assert torch.all(
+                    torch.isin(rounded_term, torch.tensor([0, 1]).to(self.device))
+                ), "termination should be 0 or 1"
         assert (
             len(action["utte"]) == self.utte_max_len
             or len(action["utte"][0]) == self.utte_max_len
@@ -220,7 +294,12 @@ class ExchangeEnv(gym.Env):
         self.info["turn"] = self.turn
         sum_rewards = 0
         if self.terminate_condition.lower() == "by_agent":
-            term = action["term"]
+            if isinstance(action["term"], (int, float)):
+                term = round(action["term"])
+            elif isinstance(action["term"], (np.ndarray)):
+                term = np.round(action["term"]).astype(int)
+            elif isinstance(action["term"], torch.Tensor):
+                term = torch.round(action["term"]).type(torch.int)
         utte, prop = (
             action["utte"],
             action["prop"],
@@ -294,7 +373,6 @@ class ExchangeEnv(gym.Env):
         # update for the next round
         if not self.done:
             self.turn += 1
-        
         self.info["utility_cos_sim"] = get_cosine_similarity(self.utilities[0], self.utilities[1])
         self.info["sum_rewards"] = sum_rewards
 
@@ -304,7 +382,7 @@ class ExchangeEnv(gym.Env):
         self.info["done"] = self.done
         return self.obs, reward, self.done, truncation, self.info
 
-    def _get_obs(self):
+    def _get_obs(self, return_obs_dict=False):
         item_context = np.concatenate(
             (self.item_pool, self.utilities[self.agent_in_turn])
         )
@@ -318,11 +396,14 @@ class ExchangeEnv(gym.Env):
         else:
             prop_context = self.prop_dummy
         # return np.concatenate([item_context, utte_context, prop_context])
-        return {
-            "item_and_utility": item_context,  # shape: item_pool(=3) + utility(=3) = 6
-            "utte": utte_context,  # shape: utterance_max_len = 6
-            "prop": prop_context,  # shape: 3
-        }
+        if return_obs_dict:
+            return {
+                "item_and_utility": item_context,  # shape: item_pool(=3) + utility(=3) = 6
+                "utte": utte_context,  # shape: utterance_max_len = 6
+                "prop": prop_context,  # shape: 3
+            }
+        else:
+            return np.concatenate([item_context, utte_context, prop_context])
 
     def _calculate_rewards(self, prop):
         assert self.nb_agents == 2, "Only support 2 agents for now"
@@ -346,6 +427,7 @@ class ExchangeEnv(gym.Env):
             np.dot(np.roll(self.alpha, shift=-i), np.array([reward_A, reward_B]))
             for i in range(self.nb_agents)
         ]
+
         scaled_reward = self._scale_reward(joint_reward)
 
         return scaled_reward
