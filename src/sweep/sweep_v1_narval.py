@@ -13,9 +13,9 @@ def run_random_job(fake_submit: bool = True):
         'optimizer_actor.lr': [1e-6, 1e-5, 1e-4, 1e-3],
         'training.entropy_beta': [0.007, 0.05, 1, 1.5, 3],
         'training.clip_range': [0.05, 0.15, 0.3],
-        'training.updates_per_batch': [1],
+        'training.updates_per_batch': [1, 2, 3],
         'd_model': [32, 64, 128, 256],
-        'num_layers': [1, 2, 4, 6],
+        'num_layers': [2, 3, 4, 5],
         'optimizer_critic.lr': [1e-5, 1e-4, 1e-3, 1e-2],
         'training.critic_loss_mode': ['td-1', 'MC']
     }
@@ -26,6 +26,7 @@ def run_random_job(fake_submit: bool = True):
         config[key] = random.choice(values)
 
     config['model_in_size'] = config['d_model'] + 12
+    config['linear_model.num_hidden'] = config['num_layers'] - 1
 
     # submit this job using slurm
     command = gen_command(config)

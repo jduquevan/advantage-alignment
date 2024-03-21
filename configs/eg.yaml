@@ -61,6 +61,7 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
+  num_hidden: 1
   in_size: 76
   out_size: 1
   device: cuda
