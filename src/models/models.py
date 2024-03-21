@@ -183,6 +183,8 @@ class MLPModelDiscrete(nn.Module):
         else:
             x = self.encoder(prop, partial_forward)
 
+        x = x/torch.linalg.norm(x)
+
         if partial_forward:
             x = torch.cat([
                 item_and_utility,
@@ -233,6 +235,8 @@ class LinearModel(nn.Module):
         else:
             x = self.encoder(prop, partial_forward)
 
+        x = x/torch.linalg.norm(x)
+
         if partial_forward:
             x = torch.cat([
                 item_and_utility,
@@ -243,8 +247,6 @@ class LinearModel(nn.Module):
                 item_and_utility.permute((1, 0, 2)),
                 x
             ], dim=-1)
-
-        x = x/torch.linalg.norm(x)
 
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
