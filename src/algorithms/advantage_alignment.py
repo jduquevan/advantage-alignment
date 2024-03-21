@@ -11,12 +11,14 @@ from tqdm import tqdm
 from src.algorithms.algorithm import TrainingAlgorithm
 from src.data.trajectory import TrajectoryBatch
 from src.utils.utils import (
+    compute_discounted_returns,
     cat_observations,
-    torchify_actions,
     compute_gae_advantages,
     get_categorical_entropy,
+    get_cosine_similarity_torch,
     get_gaussian_entropy,
-    get_observation, compute_discounted_returns
+    get_observation, 
+    torchify_actions
 )
 
 class AdvantageAlignment(TrainingAlgorithm):
@@ -262,7 +264,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         A_2s = A_2s[:, 1:]
 
         if proximal:
-            gamma = 1
+            # gamma = 1
             ratios = torch.exp(log_ps - old_log_ps.detach())
             action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
         else:
@@ -277,6 +279,32 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         if torch.any(torch.isnan(acc_surrogates)):
             acc_surrogates = torch.nan_to_num(acc_surrogates)
+        
+        return acc_surrogates.mean()
+
+    def dot_product_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
+        gamma = self.train_cfg.gamma
+        proximal = self.train_cfg.proximal
+        clip_range = self.train_cfg.clip_range
+        device = log_ps.device
+
+        A_1s = A_1s[:, :-1]
+        A_2s = A_2s[:, 1:]
+        
+        if proximal:
+            # gamma = 1
+            ratios = torch.exp(log_ps - old_log_ps.detach())
+            action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
+        else:
+            action_term = log_ps
+        
+        acc_surrogates = torch.zeros_like(action_term)
+        carry = torch.zeros_like(action_term[:, 0])
+
+        for t in range(0, action_term.size(1) - 1):
+            A_1_t = A_1s[:, :t+1]
+            A_2_t = A_2s[:, t].unsqueeze(1) * torch.ones(action_term.size(0), t+1).to(device)
+            acc_surrogates[:, t] = get_cosine_similarity_torch(A_1_t, A_2_t) * action_term[:, t]     
         
         return acc_surrogates.mean()
     
@@ -346,7 +374,7 @@ class AdvantageAlignment(TrainingAlgorithm):
            loss_1 = -(A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
-            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
+            loss_2 = -self.dot_product_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         

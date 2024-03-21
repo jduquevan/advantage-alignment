@@ -3,10 +3,10 @@ batch_size: 512
 wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
-sum_rewards: True
+sum_rewards: False
 simultaneous: True
 discrete: True
-self_play: False
+self_play: True
 share_encoder: True
 use_reward_loss: False
 use_spr_loss: False
@@ -18,9 +18,6 @@ hydra:
   output_subdir: null
   run:
     dir: /network/scratch/j/juan.duque/hydra/
-
-lg:
-  _target_: src.algorithms.db.DB
 
 # Architecture hyperparameters
 network:
@@ -49,7 +46,7 @@ mlp_model:
   _target_: src.models.models.MLPModelDiscrete
   in_size: 76
   device: cuda
-  hidden_size: 256
+  hidden_size: 128
   num_layers: 3
 
 policy:
@@ -73,7 +70,7 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-5
+  lr: 3e-4
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -101,7 +98,7 @@ training:
   proximal: True
   clip_range: 0.15
   entropy_beta: 1
-  vanilla: True
+  vanilla: False
   updates_per_batch: 1
   use_mlm: True
   critic_loss_mode: 'td-1'
