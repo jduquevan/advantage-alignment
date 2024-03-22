@@ -29,7 +29,7 @@ gru_model:
   in_size: 3
   device: cuda
   hidden_size: 64
-  num_layers: 1
+  num_layers: 3
 
 transformer_model:
   _target_: src.models.models.StableTransformer
@@ -61,6 +61,7 @@ linear_model:
   in_size: 76
   out_size: 1
   device: cuda
+  num_hidden: 2
 
 spr_model:
   _target_: src.models.models.LinearModel
@@ -70,11 +71,11 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 3e-4
+  lr: 0.0001
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-3
+  lr: 0.001
 
 optimizer_reward:
   _target_: torch.optim.Adam
@@ -97,8 +98,8 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 1
-  vanilla: False
-  updates_per_batch: 1
+  entropy_beta: 0.1
+  vanilla: True
+  updates_per_batch: 2
   use_mlm: True
-  critic_loss_mode: 'td-1'
+  critic_loss_mode: 'MC'
