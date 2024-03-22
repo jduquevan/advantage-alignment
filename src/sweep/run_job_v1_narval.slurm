@@ -16,7 +16,7 @@
 #SBATCH -n 1 #tasks
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --mem=40G
-#SBATCH --time=0-11:59:00
+#SBATCH --time=0-5:59:00
 #SBATCH --gres=gpu:1 
 
 
@@ -50,3 +50,4 @@ python train.py \
     mlp_model.in_size=${10} \
     linear_model.in_size=${10} \
     training.critic_loss_mode=${9} \
+    linear_model.num_hidden=${11} \
