@@ -519,6 +519,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return trajectory
 
     def gen_sim(self):
+        import pdb; pdb.set_trace()
         observations, _ = self.env.reset()
         observations_1, observations_2 = observations
 

@@ -13,9 +13,9 @@ class DiscreteEG(gym.Env):
     def __init__(
         self,
         max_turns={
-            "lower": 3,
-            "mean": 5,
-            "upper": 7,
+            "lower": 2,
+            "mean": 3,
+            "upper": 4,
         },
         utte_channel=False,
         utte_max_len=6,
@@ -91,6 +91,18 @@ class DiscreteEG(gym.Env):
             utilities_1 = torch.cat([item_1_utilities, -item_2_utilities, item_3_utilities], dim=1)
             utilities_2 = torch.cat([-item_1_utilities, item_2_utilities, item_3_utilities], dim=1)
             item_pool =  torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
+        elif self.sampling_type == "competitive":
+            utilities_1 = torch.randint(
+                1, 
+                self.utility_max + 1, 
+                (self.batch_size, self.nb_items)
+            ).to(self.device)
+            utilities_2 = utilities_1
+            item_pool = torch.randint(
+                1, 
+                self.item_max_quantity + 1, 
+                (self.batch_size, self.nb_items)
+            ).to(self.device)
         elif self.sampling_type == "no_sampling":
             # For debugging purposes
             utilities_1 = torch.tensor([10, 3, 2]).repeat(self.batch_size, 1).to(self.device)

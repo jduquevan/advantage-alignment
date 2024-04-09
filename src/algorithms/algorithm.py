@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import gym
 import time
 import torch
 import wandb
-import gym
 
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from src.agents.agents import Agent
-from src.utils.utils import update_target_network, wandb_stats
+from src.utils.utils import update_target_network, wandb_stats, save_checkpoint
 from tqdm import tqdm
 from torch import nn
 from typing import List
@@ -25,7 +25,8 @@ class TrainingAlgorithm(ABC):
         simultaneous: bool,
         discrete: bool,
         use_reward_loss: bool,
-        use_spr_loss: bool, 
+        use_spr_loss: bool,
+        is_f1: bool, 
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
@@ -38,7 +39,10 @@ class TrainingAlgorithm(ABC):
         self.discrete = discrete
         self.use_reward_loss = use_reward_loss
         self.use_spr_loss = use_spr_loss
-        if self.simultaneous:
+        self.is_f1 = is_f1
+        if self.is_f1:
+            self.batch_size = len(env.env_fns)
+        elif self.simultaneous:
             self.batch_size = env.batch_size
         else:
             self.batch_size = (len(env.envs))
@@ -115,11 +119,14 @@ class TrainingAlgorithm(ABC):
         start_time = time.time()
 
         pbar = tqdm(range(self.train_cfg.total_steps))
+       
         for step in pbar:
             # if step % self.train_cfg.eval_every == 0:
             #     self.network.eval()
             #     self.eval(step, start_time)
             #     self.network.train()
+            if step % self.train_cfg.save_every == 0:
+                save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
 
             if self.simultaneous:
                 trajectory = self.gen_sim()

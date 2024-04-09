@@ -1,3 +1,4 @@
+import gymnasium as gym
 import hydra
 import wandb
 from omegaconf import DictConfig
@@ -26,10 +27,14 @@ def main(cfg: DictConfig) -> None:
         anonymous="allow",
         mode=cfg["wandb"]
     )
-    if cfg['simultaneous']:
-        env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+    is_f1 = cfg['env']['type'] == 'f1'
+    if is_f1:
+        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=False)
     else:
-        env = make_vectorized_env(cfg['batch_size'])
+        if cfg['simultaneous']:
+            env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+        else:
+            env = make_vectorized_env(cfg['batch_size'])
 
     if cfg['self_play']:
         agent_1 = agent_2 = instantiate_agent(cfg)
@@ -48,6 +53,7 @@ def main(cfg: DictConfig) -> None:
         discrete=cfg['discrete'],
         use_reward_loss=cfg['use_reward_loss'],
         use_spr_loss=cfg['use_spr_loss'],
+        is_f1=is_f1
     )
     algorithm.train_loop()
 

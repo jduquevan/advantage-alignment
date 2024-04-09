@@ -1,9 +1,9 @@
 seed: 42
 batch_size: 512
-wandb: 'online'
+wandb: 'disabled'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
-sum_rewards: False
+sum_rewards: True
 simultaneous: True
 discrete: True
 self_play: True
@@ -12,7 +12,19 @@ use_reward_loss: False
 use_spr_loss: False
 
 env:
+  type: 'f1'
+  batch: 2
   device: cuda
+  conf:
+    controlled_vehicles: 2
+    observation: 
+      type: 'MultiAgentObservation'
+      observation_config:
+        type: 'Kinematics'
+    action:
+      type: 'MultiAgentObservation'
+      action_config:
+        type: 'ContinuousAction'
 
 hydra:
   output_subdir: null
@@ -58,7 +70,6 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
-  num_hidden: 1
   in_size: 76
   out_size: 1
   device: cuda
@@ -99,8 +110,10 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.1
+  entropy_beta: 0.5
   vanilla: True
   updates_per_batch: 2
   use_mlm: True
   critic_loss_mode: 'MC'
+  save_every: 200
+  checkpoint_dir: './experiments'

@@ -1,0 +1,3 @@
+[submodule "f1env"]
+	path = f1env
+	url = git@github.com:MiladInk/f1env.git

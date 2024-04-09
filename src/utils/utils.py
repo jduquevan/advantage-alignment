@@ -1,8 +1,10 @@
 import hydra
 import math
 import numpy as np
+import os
 import random
 import torch
+import wandb
 
 from omegaconf import DictConfig
 
@@ -184,6 +186,27 @@ def instantiate_agent(cfg: DictConfig):
 def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
+
+def save_checkpoint(agent, epoch, checkpoint_dir):
+    # Get the W&B run ID
+    run_id = wandb.run.id
+
+    # Create a folder with the run ID if it doesn't exist
+    run_folder = os.path.join(checkpoint_dir, run_id)
+    os.makedirs(run_folder, exist_ok=True)
+
+    # Generate a unique filename
+    checkpoint_name = f"model_{epoch}.pt"
+    checkpoint_path = os.path.join(run_folder, checkpoint_name)
+    
+    checkpoint = {
+        'epoch': epoch,
+        'actor_state_dict': agent.actor.state_dict(),
+        'critic_state_dict': agent.critic.state_dict()
+    }
+    
+    torch.save(checkpoint, checkpoint_path)
+    print(f"Checkpoint saved at: {checkpoint_path}")
 
 def wandb_stats(trajectory):
     stats = {}
