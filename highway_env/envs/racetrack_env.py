@@ -423,24 +423,6 @@ class F1Env(AbstractEnv):
 
     def __init__(self, config: dict = None, render_mode: Optional[str] = None) -> None:
         super().__init__(config=config, render_mode=render_mode)
-
-        # Racetrack config
-        conf = {
-            "controlled_vehicles": 2,
-            "observation": {
-                "type": "MultiAgentObservation",
-                "observation_config": {
-                    "type": "Kinematics",
-                }
-            },
-            "action": {
-                "type": "MultiAgentAction",
-                "action_config": {
-                    "type": "ContinuousAction",
-                }
-            }
-        }
-        self.config.update(conf)
         
         # DRS
         self.drs_actions = 24  # Multiple of 3
@@ -453,19 +435,18 @@ class F1Env(AbstractEnv):
         config = super().default_config()
         config.update(
             {
+                "controlled_vehicles": 2,
                 "observation": {
-                    "type": "OccupancyGrid",
-                    "features": ["presence", "on_road"],
-                    "grid_size": [[-18, 18], [-18, 18]],
-                    "grid_step": [3, 3],
-                    "as_image": False,
-                    "align_to_vehicle_axes": True,
+                    "type": "MultiAgentObservation",
+                    "observation_config": {
+                        "type": "Kinematics",
+                    }
                 },
                 "action": {
-                    "type": "ContinuousAction",
-                    "longitudinal": False,
-                    "lateral": True,
-                    "target_speeds": [0, 5, 10],
+                    "type": "MultiAgentAction",
+                    "action_config": {
+                        "type": "ContinuousAction",
+                    }
                 },
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
@@ -474,7 +455,6 @@ class F1Env(AbstractEnv):
                 "lane_centering_cost": 4,
                 "lane_centering_reward": 1,
                 "action_reward": -0.3,
-                "controlled_vehicles": 1,
                 "other_vehicles": 1,
                 "screen_width": 600,
                 "screen_height": 600,

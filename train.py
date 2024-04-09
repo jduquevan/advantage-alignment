@@ -29,7 +29,7 @@ def main(cfg: DictConfig) -> None:
     )
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
-        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=False)
+        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'])
     else:
         if cfg['simultaneous']:
             env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
