@@ -597,3 +597,69 @@ class AdvantageAlignment(TrainingAlgorithm):
             observations_2['item_and_utility'] = item_and_utility_2
         
         return trajectory
+    
+    def gen_f1(self):
+        import pdb; pdb.set_trace()
+        observations, _ = self.env.reset()
+        observations_1, observations_2 = observations
+
+        hidden_state_1, hidden_state_2 = None, None
+        history = None
+        trajectory = TrajectoryBatch(
+            batch_size=self.batch_size , 
+            max_traj_len=self.trajectory_len,
+            device=self.agent_1.device
+        )
+
+        if self.use_transformer:
+            history = deque(maxlen=self.agent_1.actor.model.encoder.max_seq_len)
+
+        for t in range(self.trajectory_len):
+            hidden_state_1, action_1, log_p_1 = self.agent_1.sample_action(
+                observations=observations_1,
+                h_0=hidden_state_1,
+                history=history,
+                use_transformer=self.use_transformer,
+                extend_history=True,
+                is_first=True,
+            )
+            hidden_state_2, action_2, log_p_2 = self.agent_2.sample_action(
+                observations=observations_2,
+                h_0=hidden_state_2,
+                history=history,
+                use_transformer=self.use_transformer,
+                extend_history=False,
+                is_first=False,
+            )
+            observations, rewards, done, _, info = self.env.step((action_1, action_2))
+            observations_1, observations_2 = observations
+
+            trajectory.add_step_sim(
+                action=(action_1, action_2), 
+                observations=(
+                    observations_1,
+                    observations_2
+                ), 
+                rewards=rewards,
+                log_ps=(log_p_1, log_p_2),
+                done=done,
+                info=info,
+                t=t
+            )
+
+            item_and_utility_1 = torch.cat(
+                [
+                    observations_1['item_and_utility'],
+                    observations_2['item_and_utility']
+                ], dim=1
+            )
+            item_and_utility_2 = torch.cat(
+                [
+                    observations_2['item_and_utility'],
+                    observations_1['item_and_utility']
+                ], dim=1
+            )
+            observations_1['item_and_utility'] = item_and_utility_1
+            observations_2['item_and_utility'] = item_and_utility_2
+        
+        return trajectory

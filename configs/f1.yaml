@@ -45,17 +45,16 @@ transformer_model:
   dropout: 0.1
 
 mlp_model:
-  _target_: src.models.models.MLPModelDiscrete
+  _target_: src.models.models.F1MLPModel
   in_size: 76
   device: cuda
   hidden_size: 128
   num_layers: 3
 
 policy:
-  _target_: src.agents.policies.CategoricalPolicy
+  _target_: src.agents.policies.F1NormalTanHPolicy
   log_std_min: -10.0
   log_std_max: 2.0
-  prop_max: 1 # item max quantity
   device: cuda
 
 linear_model:

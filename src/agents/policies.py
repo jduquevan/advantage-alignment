@@ -2,7 +2,49 @@ import torch
 import torch.distributions as D
 import torch.nn as nn
 
-from torch.distributions.transforms import SigmoidTransform
+from torch.distributions.transforms import SigmoidTransform, TanhTransform
+
+class F1NormalTanHPolicy(nn.Module):
+    def __init__(self, log_std_min, log_std_max, device, model):
+        super(F1NormalTanHPolicy, self).__init__()
+        self.model = model
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+
+        self.acc_log_std = None
+        self.ste_log_std = None
+
+        self.to(device)
+
+    def forward(self, x, h_0=None, use_tranformer=False):
+        if use_tranformer:
+            output, acc, ste = self.model(x, partial_forward=False)
+        else:
+            output, acc_mean, ste_mean = self.model(x, h_0)
+        acc_mean, acc_log_std = acc
+        ste_mean, ste_log_std = ste
+
+        acc_log_std = torch.clamp(acc_log_std, self.log_std_min, self.log_std_max)
+        ste_log_std = torch.clamp(ste_log_std, self.log_std_min, self.log_std_max)
+
+
+        self.acc_log_std = acc_log_std
+        self.ste_log_std = ste_log_std
+
+
+        base_acc_dist = D.normal.Normal(
+            loc = acc_mean.squeeze(0),
+            scale = torch.exp(acc_log_std.squeeze(0))
+        )
+        base_ste_dist = D.normal.Normal(
+            loc = ste_mean.squeeze(0),
+            scale = torch.exp(ste_log_std.squeeze(0))
+        )
+        
+        acc_normal_tanh = D.TransformedDistribution(base_acc_dist, [TanhTransform()])
+        ste_normal_tanh = D.TransformedDistribution(base_ste_dist, [TanhTransform()])
+
+        return output, acc_normal_tanh, ste_normal_tanh
 
 class NormalSigmoidPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, prop_max, device, model):

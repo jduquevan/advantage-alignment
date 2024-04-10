@@ -212,6 +212,43 @@ class MLPModelDiscrete(nn.Module):
 
         return output, term_probs, utte_probs, prop_probs
     
+class F1MLPModel(nn.Module):
+    def __init__(self, in_size, device, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
+        super(F1MLPModel, self).__init__()
+
+        self.num_layers = num_layers
+        self.encoder = encoder
+        self.use_gru = use_gru
+
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
+
+        # Acceleration heads
+        self.acc_mean_head = nn.Linear(hidden_size, 1)
+        self.acc_sde_head = nn.Linear(hidden_size, 1)
+
+        # Steering heads
+        self.ste_mean_head = nn.Linear(hidden_size, 1)
+        self.ste_sde_head = nn.Linear(hidden_size, 1)
+
+        self.to(device)
+
+    def forward(self, x, h_0=None, partial_forward=True):
+        if self.use_gru:
+            h_0, x = self.encoder(x, h_0)
+            x = x.squeeze(0)
+        else:
+            x = self.encoder(x, partial_forward)
+
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
+
+        acc_mean = self.acc_mean_head(x)
+        acc_sde = self.acc_sde_head(x)
+        ste_mean = self.ste_mean_head(x)
+        ste_sde = self.ste_sde_head(x)
+
+        return h_0, (acc_mean, acc_sde), (ste_mean, ste_sde)
+    
 class LinearModel(nn.Module):
     def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True):
         super(LinearModel, self).__init__()

@@ -128,7 +128,9 @@ class TrainingAlgorithm(ABC):
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
 
-            if self.simultaneous:
+            if self.is_f1:
+                trajectory = self.gen_f1()
+            elif self.simultaneous:
                 trajectory = self.gen_sim()
             else:
                 trajectory = self.gen()
