@@ -4,7 +4,7 @@ import wandb
 from omegaconf import DictConfig
 
 from src.algorithms.advantage_alignment import AdvantageAlignment
-from src.envs.eg_vectorized import DiscreteEG
+from src.envs.eg_vectorized import DiscreteEG, ObligatedRatioDiscreteEG
 from src.envs.exchange_game import make_vectorized_env
 from src.utils.utils import seed_all, instantiate_agent
 
@@ -30,8 +30,12 @@ def main(cfg: DictConfig) -> None:
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
         env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=True)
-    else:
+    elif cfg['env']['type'] == 'eg':
         env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+    elif cfg['env']['type'] == 'eg-obligated_ratio':
+        env = ObligatedRatioDiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+    else:
+        raise ValueError(f"Environment type {cfg['env']['type']} not supported.")
 
     if cfg['self_play']:
         agent_1 = agent_2 = instantiate_agent(cfg)

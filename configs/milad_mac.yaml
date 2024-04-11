@@ -9,6 +9,7 @@ hydra:
     dir:  /Users/miladaghajohari/PycharmProjects/advantage-alignment/hydra_dir
 
 env:
+  type: 'eg-obligated_ratio'
   device: cpu
 
 network:
