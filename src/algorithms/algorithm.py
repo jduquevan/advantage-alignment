@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from src.agents.agents import Agent
 from src.utils.utils import (
-    update_target_network, 
-    wandb_stats, 
+    update_target_network,
+    wandb_stats,
     save_checkpoint,
     merge_train_step_metrics
 )
@@ -84,7 +84,7 @@ class TrainingAlgorithm(ABC):
                 "utterance_entropy": actor_loss_dict['utte_ent'].detach(),
                 "prop_entropy": actor_loss_dict['prop_ent'].detach()
             }
-        
+
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
@@ -145,7 +145,7 @@ class TrainingAlgorithm(ABC):
                 )
 
                 train_step_metrics = merge_train_step_metrics(
-                    train_step_metrics_1, 
+                    train_step_metrics_1,
                     train_step_metrics_2,
                     self.is_f1
                 )
@@ -154,7 +154,7 @@ class TrainingAlgorithm(ABC):
                     print(key + ":", value)
 
                 wandb.log(train_step_metrics)
-                
+
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""

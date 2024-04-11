@@ -9,6 +9,7 @@ hydra:
     dir:  /home/mila/a/aghajohm/scratch/advantage-alignment/hydra_dir
 
 env:
+  type: 'eg-obligated_ratio'
   device: cuda
 
 network:
