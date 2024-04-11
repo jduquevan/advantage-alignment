@@ -8,7 +8,12 @@ import wandb
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from src.agents.agents import Agent
-from src.utils.utils import update_target_network, wandb_stats, save_checkpoint
+from src.utils.utils import (
+    update_target_network, 
+    wandb_stats, 
+    save_checkpoint,
+    merge_train_step_metrics
+)
 from tqdm import tqdm
 from torch import nn
 from typing import List
@@ -58,43 +63,36 @@ class TrainingAlgorithm(ABC):
         agent.critic_optimizer.step()
 
         agent.actor_optimizer.zero_grad()
-        actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
-        total_loss = actor_loss - self.train_cfg.entropy_beta * prop_ent
+        if self.is_f1:
+            actor_loss_dict = self.actor_loss(trajectory, is_first)
+            actor_loss = actor_loss_dict['loss']
+            ent = actor_loss_dict['acc_ent'] + actor_loss_dict['ste_ent']
+            train_step_metrics = {
+                "critic_loss": critic_loss.detach(),
+                "actor_loss": actor_loss.detach(),
+                "acc_entropy": actor_loss_dict['acc_ent'].detach(),
+                "ste_entropy": actor_loss_dict['ste_ent'].detach(),
+            }
+        else:
+            actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
+            actor_loss = actor_loss_dict['loss']
+            ent = actor_loss_dict['prop_ent']
+            train_step_metrics = {
+                "critic_loss": critic_loss.detach(),
+                "actor_loss": actor_loss.detach(),
+                "term_entropy": actor_loss_dict['term_ent'].detach(),
+                "utterance_entropy": actor_loss_dict['utte_ent'].detach(),
+                "prop_entropy": actor_loss_dict['prop_ent'].detach()
+            }
+        
+        total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-        train_step_metrics = {
-            "critic_loss": critic_loss.detach(),
-            "actor_loss": actor_loss.detach(),
-            "term_entropy": term_ent.detach(),
-            "utterance_entropy": utte_ent.detach(),
-            "prop_entropy": prop_ent.detach(),
-            "critic_grad_norm": critic_grad_norm.detach(),
-            "actor_grad_norm": actor_grad_norm.detach(),
-        }
-
-        # Self-supervised objectives
-        if self.use_reward_loss:
-            agent.reward_optimizer.zero_grad()
-            reward_loss = self.reward_loss(trajectory, is_first)
-            reward_loss.backward()
-            reward_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.reward.parameters()]))
-            agent.reward_optimizer.step()
-
-            train_step_metrics["reward_loss"] = reward_loss.detach()
-            train_step_metrics["reward_grad_norm"] = reward_grad_norm.detach()
-
-        if self.use_spr_loss:
-            agent.spr_optimizer.zero_grad()
-            spr_loss = self.spr_loss(trajectory, is_first)
-            spr_loss.backward()
-            spr_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.spr.parameters()]))
-            agent.spr_optimizer.step()
-
-            train_step_metrics["spr_loss"] = spr_loss.detach()
-            train_step_metrics["spr_grad_norm"] = spr_grad_norm.detach()
+        train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
+        train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
 
         return train_step_metrics
 
@@ -131,7 +129,7 @@ class TrainingAlgorithm(ABC):
             elif self.simultaneous:
                 trajectory = self.gen_sim()
                 
-            wandb.log(wandb_stats(trajectory))
+            wandb.log(wandb_stats(trajectory, self.is_f1))
 
             for i in range(self.train_cfg.updates_per_batch):
                 train_step_metrics_1 = self.train_step(
@@ -146,59 +144,17 @@ class TrainingAlgorithm(ABC):
                     is_first=False
                 )
 
-                critic_loss_1 = train_step_metrics_1["critic_loss"]
-                actor_loss_1 = train_step_metrics_1["actor_loss"]
-                term_ent_1 = train_step_metrics_1["term_entropy"]
-                utterance_ent_1 = train_step_metrics_1["utterance_entropy"]
-                prop_ent_1 = train_step_metrics_1["prop_entropy"]
-                critic_grad_norm_1 = train_step_metrics_1["critic_grad_norm"]
-                actor_grad_norm_1 = train_step_metrics_1["actor_grad_norm"]
+                train_step_metrics = merge_train_step_metrics(
+                    train_step_metrics_1, 
+                    train_step_metrics_2,
+                    self.is_f1
+                )
 
-                critic_loss_2 = train_step_metrics_2["critic_loss"]
-                actor_loss_2 = train_step_metrics_2["actor_loss"]
-                term_ent_2 = train_step_metrics_2["term_entropy"]
-                utterance_ent_2 = train_step_metrics_2["utterance_entropy"]
-                prop_ent_2 = train_step_metrics_2["prop_entropy"]
-                critic_grad_norm_2 = train_step_metrics_2["critic_grad_norm"]
-                actor_grad_norm_2 = train_step_metrics_2["actor_grad_norm"]
+                for key, value in train_step_metrics.items():
+                    print(key + ":", value)
 
-                print("Agent 1 Metrics:")
-                print("Actor loss 1:", actor_loss_1)
-                print("Critic loss 1:", critic_loss_1)
-                print("Term Entropy 1:", term_ent_1)
-                print("Utterance Entropy 1:", utterance_ent_1)
-                print("Prop Entropy 1:", prop_ent_1)
-                print("Critic Grad Norm 1:", critic_grad_norm_1)
-                print("Actor Grad Norm 1:", actor_grad_norm_1)
-                print()
-
-                print("Agent 2 Metrics:")
-                print("Actor loss 2:", actor_loss_2)
-                print("Critic loss 2:", critic_loss_2)
-                print("Term Entropy 2:", term_ent_2)
-                print("Utterance Entropy 2:", utterance_ent_2)
-                print("Prop Entropy 2:", prop_ent_2)
-                print("Critic Grad Norm 2:", critic_grad_norm_2)
-                print("Actor Grad Norm 2:", actor_grad_norm_2)
-                print()
-
-                wandb.log({
-                    "Actor loss 1": actor_loss_1, 
-                    "Critic loss 1": critic_loss_1,
-                    "Term Entropy 1": term_ent_1,
-                    "Utterance Entropy 1": utterance_ent_1,
-                    "Prop Entropy 1": prop_ent_1,
-                    "Critic Grad Norm 1": critic_grad_norm_1,
-                    "Actor Grad Norm 1": actor_grad_norm_1,
-                    "Actor loss 2": actor_loss_2,
-                    "Critic loss 2": critic_loss_2,
-                    "Term Entropy 2": term_ent_2,
-                    "Utterance Entropy 2": utterance_ent_2,
-                    "Prop Entropy 2": prop_ent_2,
-                    "Critic Grad Norm 2": critic_grad_norm_2,
-                    "Actor Grad Norm 2": actor_grad_norm_2,
-                })
-
+                wandb.log(train_step_metrics)
+                
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""
@@ -209,8 +165,4 @@ class TrainingAlgorithm(ABC):
 
     @abstractmethod
     def critic_loss(batch: dict) -> float:
-        pass
-
-    @abstractmethod
-    def gen(self, num_samples: int, initial=False):
         pass

@@ -208,7 +208,38 @@ def save_checkpoint(agent, epoch, checkpoint_dir):
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved at: {checkpoint_path}")
 
-def wandb_stats(trajectory):
+def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1):
+    merged_metrics = {
+        "Actor loss 1": train_step_metrics_1["actor_loss"],
+        "Critic loss 1": train_step_metrics_1["critic_loss"],
+        "Critic Grad Norm 1": train_step_metrics_1["critic_grad_norm"],
+        "Actor Grad Norm 1": train_step_metrics_1["actor_grad_norm"],
+        "Actor loss 2": train_step_metrics_2["actor_loss"],
+        "Critic loss 2": train_step_metrics_2["critic_loss"],
+        "Critic Grad Norm 2": train_step_metrics_2["critic_grad_norm"],
+        "Actor Grad Norm 2": train_step_metrics_2["actor_grad_norm"]
+    }
+
+    if is_f1:
+        merged_metrics.update({
+            "Acc Entropy 1": train_step_metrics_1["acc_entropy"],
+            "Ste Entropy 1": train_step_metrics_1["ste_entropy"],
+            "Acc Entropy 2": train_step_metrics_2["acc_entropy"],
+            "Ste Entropy 2": train_step_metrics_2["ste_entropy"]
+        })
+    else:
+        merged_metrics.update({
+            "Term Entropy 1": train_step_metrics_1["term_entropy"],
+            "Utterance Entropy 1": train_step_metrics_1["utterance_entropy"],
+            "Prop Entropy 1": train_step_metrics_1["prop_entropy"],
+            "Term Entropy 2": train_step_metrics_2["term_entropy"],
+            "Utterance Entropy 2": train_step_metrics_2["utterance_entropy"],
+            "Prop Entropy 2": train_step_metrics_2["prop_entropy"]
+        })
+
+    return merged_metrics
+
+def wandb_stats(trajectory, is_f1):
     stats = {}
     dones = trajectory.data['dones']
     stats['Average reward 1'] = trajectory.data['rewards_0'].mean().detach()
@@ -218,22 +249,32 @@ def wandb_stats(trajectory):
         trajectory.data['rewards_1']
     ).mean().detach()
     stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
-    stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
-    stats['Average A1 prop1'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A1 prop2'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A1 prop3'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['Average A2 prop1'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A2 prop2'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A2 prop3'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['A1 prop1 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[0]
-    stats['A1 prop2 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[1]
-    stats['A1 prop3 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[2]
-    stats['A2 prop1 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[0]
-    stats['A2 prop2 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[1]
-    stats['A2 prop3 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[2]
-    stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
-    stats['Avg max sum rew ratio'] = trajectory.data['max_sum_reward_ratio'][
-         trajectory.data['dones']
-    ].mean()
+    if is_f1:
+        stats['Average A1 acc'] = trajectory.data['actions_0'][:, :, 0].mean()
+        stats['Average A2 acc'] = trajectory.data['actions_1'][:, :, 0].mean()
+        stats['Average A1 ste'] = trajectory.data['actions_0'][:, :, 1].mean()
+        stats['Average A2 ste'] = trajectory.data['actions_1'][:, :, 1].mean()
+        stats['A1 acc std'] = trajectory.data['actions_0'][:, :, 0].std()
+        stats['A2 acc std'] = trajectory.data['actions_1'][:, :, 0].std()
+        stats['A1 ste std'] = trajectory.data['actions_0'][:, :, 1].std()
+        stats['A2 ste std'] = trajectory.data['actions_1'][:, :, 1].std()
+    else:
+        stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
+        stats['Average A1 prop1'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[0]
+        stats['Average A1 prop2'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[1]
+        stats['Average A1 prop3'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[2]
+        stats['Average A2 prop1'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[0]
+        stats['Average A2 prop2'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[1]
+        stats['Average A2 prop3'] = trajectory.data['a_props_1'].reshape((-1, 3)).mean(dim=0)[2]
+        stats['A1 prop1 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[0]
+        stats['A1 prop2 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[1]
+        stats['A1 prop3 std'] = trajectory.data['a_props_0'].reshape((-1, 3)).std(dim=0)[2]
+        stats['A2 prop1 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[0]
+        stats['A2 prop2 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[1]
+        stats['A2 prop3 std'] = trajectory.data['a_props_1'].reshape((-1, 3)).std(dim=0)[2]
+        stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
+        stats['Avg max sum rew ratio'] = trajectory.data['max_sum_reward_ratio'][
+            trajectory.data['dones']
+        ].mean()
        
     return stats

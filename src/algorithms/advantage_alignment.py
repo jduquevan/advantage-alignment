@@ -51,6 +51,15 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return term_ent, utte_ent, prop_ent
 
+    def get_f1_entropy(self, agent):
+        acc_stds = torch.exp(agent.actor.acc_log_std.squeeze(0))
+        ste_stds = torch.exp(agent.actor.ste_log_std.squeeze(0))
+
+        acc_ent = get_gaussian_entropy(torch.diag_embed(acc_stds))
+        ste_ent = get_gaussian_entropy(torch.diag_embed(ste_stds))
+
+        return acc_ent, ste_ent
+
     def get_entropy(self, term_dist, agent):
         term_probs = term_dist.probs.squeeze(0)
         utte_stds = torch.exp(agent.actor.utte_log_std.squeeze(0))
@@ -76,6 +85,49 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return term_ent, utte_ent, prop_ent
 
+    def get_f1_trajectory_log_ps(self, agent, trajectory, is_first):
+        log_p_list = []
+        if is_first:
+            observation = trajectory.data['obs_0']
+            actions = trajectory.data['actions_0']
+        else:
+            observation = trajectory.data['obs_1']
+            actions = trajectory.data['actions_1']
+        
+        acc_ent = torch.zeros(
+            (self.trajectory_len), 
+            device=self.agent_1.device, 
+            dtype=torch.float32
+        )
+        ste_ent = torch.zeros(
+            (self.trajectory_len), 
+            device=self.agent_1.device, 
+            dtype=torch.float32
+        )
+        hidden = None
+        for t in range(self.trajectory_len):
+            hidden, acc_dist, ste_dist = agent.actor(
+                x=observation[:, t, :],
+                h_0=hidden
+            )
+            hidden = hidden.permute((1, 0, 2))
+            acc_t = actions[:, t, 0].unsqueeze(1)
+            ste_t = actions[:, t, 1].unsqueeze(1)
+            log_p = acc_dist.log_prob(acc_t).squeeze(1) + ste_dist.log_prob(ste_t).squeeze(1)
+
+            acc_en, ste_en = self.get_f1_entropy(agent)
+            acc_ent[t] = acc_en
+            ste_ent[t] = ste_en
+
+            log_p_list.append(log_p)
+        log_ps = torch.stack(log_p_list).permute((1, 0))
+        acc_ent = acc_ent.mean()
+        ste_ent = ste_ent.mean()
+        
+        return log_ps, acc_ent, ste_ent
+
+
+
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
         log_p_list = []
         if self.discrete:
@@ -84,7 +136,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             prop_max = self.agent_1.actor.prop_max
 
         if is_first:
-            # observation = trajectory.data['obs_0']
             terms = trajectory.data['terms_0']
             a_props = trajectory.data['a_props_0']
             uttes = trajectory.data['uttes_0']
@@ -92,7 +143,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             item_and_utility_1 = trajectory.data['i_and_u_0']
             item_and_utility_2 = trajectory.data['i_and_u_1']
         else:
-            # observation = trajectory.data['obs_1']
             terms = trajectory.data['terms_1']
             a_props = trajectory.data['a_props_1']
             uttes = trajectory.data['uttes_1']
@@ -134,17 +184,17 @@ class AdvantageAlignment(TrainingAlgorithm):
 
             log_ps = log_ps_term + log_ps_utte + log_ps_prop
         else:
-            term_ent = torch.empty(
+            term_ent = torch.zeros(
                 (self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
             )
-            utte_ent = torch.empty(
+            utte_ent = torch.zeros(
                 (self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
             )
-            prop_ent = torch.empty(
+            prop_ent = torch.zeros(
                 (self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
@@ -314,6 +364,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return acc_surrogates.mean()
     
     def actor_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
+        actor_loss_dict = {}
         gamma = self.train_cfg.gamma
         vanilla = self.train_cfg.vanilla
         proximal = self.train_cfg.proximal
@@ -361,7 +412,15 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
 
-        log_ps, term_ent, utte_ent, prop_ent = self.get_trajectory_log_ps(agent, trajectory, is_first)
+        if self.is_f1:
+            log_ps, acc_ent, ste_ent = self.get_f1_trajectory_log_ps(agent, trajectory, is_first)
+            actor_loss_dict['acc_ent'] = acc_ent
+            actor_loss_dict['ste_ent'] = ste_ent
+        else:
+            log_ps, term_ent, utte_ent, prop_ent = self.get_trajectory_log_ps(agent, trajectory, is_first)
+            actor_loss_dict['term_ent'] = term_ent
+            actor_loss_dict['utte_ent'] = utte_ent
+            actor_loss_dict['prop_ent'] = prop_ent
 
         A_1s = compute_gae_advantages(rewards_1, V_1s.detach(), gamma)
         A_2s = compute_gae_advantages(rewards_2, V_2s.detach(), gamma)
@@ -384,7 +443,8 @@ class AdvantageAlignment(TrainingAlgorithm):
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         
-        return (loss_1 + loss_2), term_ent, utte_ent, prop_ent
+        actor_loss_dict['loss'] = loss_1 + loss_2
+        return actor_loss_dict
 
 
     def critic_loss(self,
