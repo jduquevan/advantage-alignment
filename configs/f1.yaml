@@ -28,7 +28,7 @@ network:
 
 gru_model:
   _target_: src.models.models.GruModel
-  in_size: 3
+  in_size: 25
   device: cuda
   hidden_size: 64
   num_layers: 3
@@ -46,7 +46,7 @@ transformer_model:
 
 mlp_model:
   _target_: src.models.models.F1MLPModel
-  in_size: 76
+  in_size: 64
   device: cuda
   hidden_size: 128
   num_layers: 3
@@ -59,7 +59,7 @@ policy:
 
 linear_model:
   _target_: src.models.models.LinearModel
-  in_size: 76
+  in_size: 64
   out_size: 1
   device: cuda
   num_hidden: 2

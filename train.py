@@ -11,7 +11,7 @@ from src.utils.utils import seed_all, instantiate_agent
 # import torch
 # torch.autograd.set_detect_anomaly(True)
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="eg.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="f1.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
@@ -29,7 +29,7 @@ def main(cfg: DictConfig) -> None:
     )
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
-        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'])
+        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=True)
     else:
         if cfg['simultaneous']:
             env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])

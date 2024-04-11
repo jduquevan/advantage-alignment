@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -197,12 +198,12 @@ class AdvantageAlignment(TrainingAlgorithm):
                 partial_forward=False
             )[1].permute((1, 0, 2)).squeeze(-1)
         else:
-            values_c = torch.empty(
+            values_c = torch.zeros(
                 (self.batch_size, self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
             )
-            values_t = torch.empty(
+            values_t = torch.zeros(
                 (self.batch_size, self.trajectory_len), 
                 device=self.agent_1.device, 
                 dtype=torch.float32
@@ -599,7 +600,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return trajectory
     
     def gen_f1(self):
-        import pdb; pdb.set_trace()
+        device = self.agent_1.device
         observations, _ = self.env.reset()
         observations_1, observations_2 = observations
 
@@ -608,14 +609,17 @@ class AdvantageAlignment(TrainingAlgorithm):
         trajectory = TrajectoryBatch(
             batch_size=self.batch_size , 
             max_traj_len=self.trajectory_len,
-            device=self.agent_1.device
+            device=device
         )
 
         if self.use_transformer:
             history = deque(maxlen=self.agent_1.actor.model.encoder.max_seq_len)
 
+        observations_1 = torch.tensor(observations_1.reshape((self.batch_size, -1))).to(device)
+        observations_2 = torch.tensor(observations_2.reshape((self.batch_size, -1))).to(device)
+
         for t in range(self.trajectory_len):
-            hidden_state_1, action_1, log_p_1 = self.agent_1.sample_action(
+            hidden_state_1, action_1, log_p_1 = self.agent_1.sample_f1_action(
                 observations=observations_1,
                 h_0=hidden_state_1,
                 history=history,
@@ -623,7 +627,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=True,
                 is_first=True,
             )
-            hidden_state_2, action_2, log_p_2 = self.agent_2.sample_action(
+            hidden_state_2, action_2, log_p_2 = self.agent_2.sample_f1_action(
                 observations=observations_2,
                 h_0=hidden_state_2,
                 history=history,
@@ -631,35 +635,26 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False,
                 is_first=False,
             )
-            observations, rewards, done, _, info = self.env.step((action_1, action_2))
+            actions = np.concatenate([
+                np.expand_dims(action_1, axis=1), 
+                np.expand_dims(action_2, axis=1)],
+                axis=1
+            )
+            observations, rewards, done, _, info = self.env.step(actions)
             observations_1, observations_2 = observations
+            observations_1 = torch.tensor(observations_1.reshape((self.batch_size, -1))).to(device)
+            observations_2 = torch.tensor(observations_2.reshape((self.batch_size, -1))).to(device)
 
-            trajectory.add_step_sim(
-                action=(action_1, action_2), 
+            trajectory.add_step_f1(
+                action=(torch.tensor(action_1).to(device), torch.tensor(action_2).to(device)), 
                 observations=(
                     observations_1,
                     observations_2
                 ), 
-                rewards=rewards,
+                rewards=torch.tensor(rewards).to(device),
                 log_ps=(log_p_1, log_p_2),
-                done=done,
+                done=torch.tensor(done).to(device),
                 info=info,
                 t=t
             )
-
-            item_and_utility_1 = torch.cat(
-                [
-                    observations_1['item_and_utility'],
-                    observations_2['item_and_utility']
-                ], dim=1
-            )
-            item_and_utility_2 = torch.cat(
-                [
-                    observations_2['item_and_utility'],
-                    observations_1['item_and_utility']
-                ], dim=1
-            )
-            observations_1['item_and_utility'] = item_and_utility_1
-            observations_2['item_and_utility'] = item_and_utility_2
-        
         return trajectory

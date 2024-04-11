@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.distributions as D
 import torch.nn as nn
@@ -20,7 +21,7 @@ class F1NormalTanHPolicy(nn.Module):
         if use_tranformer:
             output, acc, ste = self.model(x, partial_forward=False)
         else:
-            output, acc_mean, ste_mean = self.model(x, h_0)
+            output, acc, ste = self.model(x, h_0)
         acc_mean, acc_log_std = acc
         ste_mean, ste_log_std = ste
 
@@ -45,6 +46,26 @@ class F1NormalTanHPolicy(nn.Module):
         ste_normal_tanh = D.TransformedDistribution(base_ste_dist, [TanhTransform()])
 
         return output, acc_normal_tanh, ste_normal_tanh
+
+    def sample_action(self, x, h_0=None, use_transformer=False):
+        output, acc_normal, ste_normal = self.forward(
+            x, 
+            h_0, 
+            use_transformer
+        )
+        acc = acc_normal.sample()
+        ste = ste_normal.sample()
+
+        log_p_acc = acc_normal.log_prob(acc).squeeze(1)
+        log_p_ste = ste_normal.log_prob(ste).squeeze(1)
+        log_p = log_p_acc + log_p_ste 
+
+        action = np.concatenate(
+            [acc.cpu().numpy(), ste.cpu().numpy()],
+            axis=1
+        )
+
+        return output, action, log_p
 
 class NormalSigmoidPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, prop_max, device, model):
