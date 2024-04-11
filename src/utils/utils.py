@@ -230,10 +230,8 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1):
     else:
         merged_metrics.update({
             "Term Entropy 1": train_step_metrics_1["term_entropy"],
-            "Utterance Entropy 1": train_step_metrics_1["utterance_entropy"],
             "Prop Entropy 1": train_step_metrics_1["prop_entropy"],
             "Term Entropy 2": train_step_metrics_2["term_entropy"],
-            "Utterance Entropy 2": train_step_metrics_2["utterance_entropy"],
             "Prop Entropy 2": train_step_metrics_2["prop_entropy"]
         })
 

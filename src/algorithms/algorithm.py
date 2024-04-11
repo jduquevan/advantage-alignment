@@ -74,14 +74,13 @@ class TrainingAlgorithm(ABC):
                 "ste_entropy": actor_loss_dict['ste_ent'].detach(),
             }
         else:
-            actor_loss, term_ent, utte_ent, prop_ent = self.actor_loss(trajectory, is_first)
+            actor_loss_dict = self.actor_loss(trajectory, is_first)
             actor_loss = actor_loss_dict['loss']
             ent = actor_loss_dict['prop_ent']
             train_step_metrics = {
                 "critic_loss": critic_loss.detach(),
                 "actor_loss": actor_loss.detach(),
                 "term_entropy": actor_loss_dict['term_ent'].detach(),
-                "utterance_entropy": actor_loss_dict['utte_ent'].detach(),
                 "prop_entropy": actor_loss_dict['prop_ent'].detach()
             }
 
