@@ -58,14 +58,14 @@ policy:
   device: cuda
 
 linear_model:
-  _target_: src.models.models.LinearModel
+  _target_: src.models.models.F1LinearModel
   in_size: 64
   out_size: 1
   device: cuda
   num_hidden: 2
 
 spr_model:
-  _target_: src.models.models.LinearModel
+  _target_: src.models.models.F1LinearModel
   in_size: 64
   out_size: 64
   device: cuda

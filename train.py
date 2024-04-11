@@ -31,10 +31,7 @@ def main(cfg: DictConfig) -> None:
     if is_f1:
         env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=True)
     else:
-        if cfg['simultaneous']:
-            env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
-        else:
-            env = make_vectorized_env(cfg['batch_size'])
+        env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
 
     if cfg['self_play']:
         agent_1 = agent_2 = instantiate_agent(cfg)
