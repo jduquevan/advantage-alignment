@@ -12,7 +12,7 @@ use_reward_loss: False
 use_spr_loss: False
 
 env:
-  type: 'f1'
+  type: 'eg'
   batch: 2
   device: cuda
 
