@@ -44,8 +44,6 @@ class TrainingAlgorithm(ABC):
             self.batch_size = len(env.env_fns)
         elif self.simultaneous:
             self.batch_size = env.batch_size
-        else:
-            self.batch_size = (len(env.envs))
 
     def train_step(
         self,
@@ -132,8 +130,7 @@ class TrainingAlgorithm(ABC):
                 trajectory = self.gen_f1()
             elif self.simultaneous:
                 trajectory = self.gen_sim()
-            else:
-                trajectory = self.gen()
+                
             wandb.log(wandb_stats(trajectory))
 
             for i in range(self.train_cfg.updates_per_batch):
