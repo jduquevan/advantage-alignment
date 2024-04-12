@@ -354,7 +354,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             action_term = log_ps
         
         acc_surrogates = torch.zeros_like(action_term)
-        carry = torch.zeros_like(action_term[:, 0])
 
         for t in range(0, action_term.size(1) - 1):
             A_1_t = A_1s[:, :t+1]
