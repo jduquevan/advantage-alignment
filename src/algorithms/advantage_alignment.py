@@ -443,7 +443,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
         
-        actor_loss_dict['loss'] = loss_1 + loss_2
+        actor_loss_dict['loss'] = loss_1 + self.train_cfg.aa_weight * loss_2
         return actor_loss_dict
 
 
