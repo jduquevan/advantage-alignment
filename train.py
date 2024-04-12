@@ -29,7 +29,7 @@ def main(cfg: DictConfig) -> None:
     )
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
-        env = gym.vector.make('f1-v0', num_envs=cfg['env']['batch'], asynchronous=True)
+        env = gym.make_vec('f1-v0', num_envs=cfg['env']['batch'])
     elif cfg['env']['type'] == 'eg':
         env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
     elif cfg['env']['type'] == 'eg-obligated_ratio':
