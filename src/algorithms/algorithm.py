@@ -152,6 +152,7 @@ class TrainingAlgorithm(ABC):
 
                 for key, value in train_step_metrics.items():
                     print(key + ":", value)
+                print()
 
                 wandb.log(train_step_metrics)
                 

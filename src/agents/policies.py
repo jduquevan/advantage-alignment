@@ -32,7 +32,6 @@ class F1NormalTanHPolicy(nn.Module):
         self.acc_log_std = acc_log_std
         self.ste_log_std = ste_log_std
 
-
         base_acc_dist = D.normal.Normal(
             loc = acc_mean.squeeze(0),
             scale = torch.exp(acc_log_std.squeeze(0))
@@ -55,6 +54,10 @@ class F1NormalTanHPolicy(nn.Module):
         )
         acc = acc_normal.sample()
         ste = ste_normal.sample()
+
+        # Necessary to prevent log probs from being nan
+        acc = torch.clamp(acc, -1 + 1e-5, 1 - 1e-5)
+        ste = torch.clamp(ste, -1 + 1e-5, 1 - 1e-5)
 
         log_p_acc = acc_normal.log_prob(acc).squeeze(1)
         log_p_ste = ste_normal.log_prob(ste).squeeze(1)

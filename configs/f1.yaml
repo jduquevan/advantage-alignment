@@ -13,7 +13,7 @@ use_spr_loss: False
 
 env:
   type: 'f1'
-  batch: 2
+  batch: 3
   device: cuda
 
 hydra:

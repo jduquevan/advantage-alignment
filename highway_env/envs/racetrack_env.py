@@ -503,7 +503,6 @@ class F1Env(AbstractEnv):
         other_vehicle = 0 if self.compare_positions() else 1
         self.controlled_vehicles[drs_vehicle].MAX_SPEED = self.drs_speed
         self.controlled_vehicles[other_vehicle].MAX_SPEED = self.max_speed
-        print(drs_vehicle)
 
     def _reward(self, action: np.ndarray) -> Tuple[float]:
         if self.steps % self.drs_actions == 0:
