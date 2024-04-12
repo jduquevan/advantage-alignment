@@ -215,7 +215,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         utility_max=5,
         device=None,
         batch_size=128,
-        sampling_type="uniform",
+        sampling_type="no_sampling",
         normalize_rewards=False,
     ):
         super().__init__()
@@ -350,8 +350,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         max_sum_rewards = self._get_max_sum_rewards()
         if self.sampling_type == "cooperative":
             max_reward_1 = max_reward_2 = max_sum_rewards
-        elif self.sampling_type == "uniform":
-
+        elif self.sampling_type in ['uniform', 'competitive', 'no_sampling']: # todo: ask Juan
             max_reward_1 = (self.item_pool * self.utilities_1).sum(dim=-1)
             max_reward_2 = (self.item_pool * self.utilities_2).sum(dim=-1)
         else:
