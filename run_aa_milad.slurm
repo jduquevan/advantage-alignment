@@ -16,8 +16,9 @@
 #SBATCH -n 1 #tasks
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=40G
-#SBATCH --time=0-02:59:00
+#SBATCH --time=0-01:00:00
 #SBATCH --gres=gpu:a100l:1
+#SBATCH --partition=long
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -32,7 +33,6 @@ export WANDB_ENTITY="miladink"
 
 module purge
 eval "$(conda shell.bash hook)"
-conda activate cogames
-module load python/3.9
+conda activate aa_env
 
-python train.py
+python train.py training.vanilla=False sum_rewards=False training.entropy_beta=0.2 training.aa_weight=100. self_play=True --config-name milad_mila.yaml 

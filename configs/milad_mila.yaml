@@ -2,13 +2,15 @@ defaults:
   - eg.yaml
   - _self_
 
-wandb: 'disabled'
+wandb: 'online'
 wandb_dir: /home/mila/a/aghajohm/scratch/advantage-alignment/wandb_dir
 hydra:
   run:
     dir:  /home/mila/a/aghajohm/scratch/advantage-alignment/hydra_dir
 
+self_play: False
 env:
+  type: 'eg-obligated_ratio'
   device: cuda
 
 network:
@@ -34,3 +36,7 @@ spr_model:
 
 agent:
   device: cuda
+
+
+training:
+  aa_weight: 10.0

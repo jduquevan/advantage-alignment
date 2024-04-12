@@ -8,6 +8,7 @@ hydra:
   run:
     dir:  /Users/miladaghajohari/PycharmProjects/advantage-alignment/hydra_dir
 
+self_play: False
 env:
   type: 'eg-obligated_ratio'
   device: cpu
