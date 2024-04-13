@@ -653,12 +653,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False,
                 is_first=False,
             )
-            actions = np.concatenate([
-                np.expand_dims(action_1, axis=1), 
-                np.expand_dims(action_2, axis=1)],
-                axis=1
-            )
-            observations, rewards, done, _, info = self.env.step(actions)
+            observations, rewards, done, _, info = self.env.step((action_1, action_2))
             observations_1, observations_2 = observations
             observations_1 = torch.tensor(observations_1.reshape((self.batch_size, -1))).to(device)
             observations_2 = torch.tensor(observations_2.reshape((self.batch_size, -1))).to(device)
