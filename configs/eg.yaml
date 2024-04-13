@@ -1,9 +1,9 @@
 seed: 42
 batch_size: 512
-wandb: 'disabled'
+wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
-sum_rewards: True
+sum_rewards: False
 simultaneous: True
 discrete: True
 self_play: True
@@ -12,7 +12,7 @@ use_reward_loss: False
 use_spr_loss: False
 
 env:
-  type: 'eg'
+  type: 'eg-obligated_ratio'
   batch: 2
   device: cuda
 
@@ -100,10 +100,11 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.5
-  vanilla: True
+  entropy_beta: 0.2
+  vanilla: False
   updates_per_batch: 2
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
+  aa_weight: 10
