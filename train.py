@@ -5,7 +5,6 @@ from omegaconf import DictConfig
 
 from src.algorithms.advantage_alignment import AdvantageAlignment
 from src.envs.eg_vectorized import DiscreteEG, ObligatedRatioDiscreteEG
-from src.envs.exchange_game import make_vectorized_env
 from src.utils.utils import seed_all, instantiate_agent
 
 # import torch

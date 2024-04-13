@@ -345,20 +345,21 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         A_1s = A_1s[:, :-1]
         A_2s = A_2s[:, 1:]
-        
+
         if proximal:
             # gamma = 1
             ratios = torch.exp(log_ps - old_log_ps.detach())
             action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
         else:
-            action_term = log_ps
+            action_term = torch.exp(log_ps - old_log_ps.detach())
         
         acc_surrogates = torch.zeros_like(action_term)
 
         for t in range(0, action_term.size(1) - 1):
             A_1_t = A_1s[:, :t+1]
             A_2_t = A_2s[:, t].unsqueeze(1) * torch.ones(action_term.size(0), t+1).to(device)
-            acc_surrogates[:, t] = get_cosine_similarity_torch(A_1_t, A_2_t) * action_term[:, t]     
+            adv_alignment = get_cosine_similarity_torch(A_1_t, A_2_t)
+            acc_surrogates[:, t] = torch.min(adv_alignment * action_term[:, t], adv_alignment * log_ps[:, t])   
         
         return acc_surrogates.mean()
     
@@ -431,8 +432,9 @@ class AdvantageAlignment(TrainingAlgorithm):
         
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
-            surrogates = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            loss_1 = -(A_1s * surrogates[:, :-1]).mean()
+            clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
+            surrogates = torch.min(A_1s * clipped_log_ps[:, :-1], A_1s * log_ps[:, :-1])
+            loss_1 = -surrogates.mean()
         else:
             # loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
            loss_1 = -(A_1s * log_ps[:, :-1]).mean()
@@ -488,7 +490,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
             rewards_shifted = rewards_1[:, :-1]
-        
             critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
         elif self.train_cfg.critic_loss_mode == 'MC':
             discounted_returns = compute_discounted_returns(gamma, rewards_1)

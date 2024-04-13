@@ -46,7 +46,7 @@ class TrainingAlgorithm(ABC):
         self.use_spr_loss = use_spr_loss
         self.is_f1 = is_f1
         if self.is_f1:
-            self.batch_size = len(env.env_fns)
+            self.batch_size = env.num_envs
         elif self.simultaneous:
             self.batch_size = env.batch_size
 
