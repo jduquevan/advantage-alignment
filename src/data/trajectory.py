@@ -40,13 +40,7 @@ class TrajectoryBatch():
             "i_and_u_1": 1e7 * torch.ones(
                 (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
             ),
-            "uttes_0": torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
-            ),
-            "uttes_1": torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
-            ),
-            "actions_0": torch.ones(
+            "actions_0": torch.ones(  # todo: remove these for the eg game, or make it the correct actions
                 (batch_size, max_traj_len, 2), device=device, dtype=torch.float32
             ),
             "actions_1": torch.ones(

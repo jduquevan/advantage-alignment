@@ -29,6 +29,7 @@ class DiscreteEG(gym.Env):
         ):
         super(DiscreteEG, self).__init__()
 
+        self.name = 'eg'
         self._max_turns = max_turns
         self.nb_items = nb_items
         self.item_max_quantity = item_max_quantity
@@ -220,6 +221,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
     ):
         super().__init__()
 
+        self.name = 'eg_obligated_ratio'
         self._max_turns = max_turns
         self.nb_items = nb_items
         self.item_max_quantity = item_max_quantity

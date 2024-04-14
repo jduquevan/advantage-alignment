@@ -95,17 +95,8 @@ class TrainingAlgorithm(ABC):
 
         return train_step_metrics
 
-    def eval(self, step: int, start_time: float):
-        eval_res = test_agent(
-            self.env,
-            self.network
-        )
-        eval_res["Step"] = step
-        eval_res["Time (s)"] = time.time() - start_time
-
-        # Log
-        tqdm.write(f"Eval results: {eval_res}")
-        wandb.log(eval_res)
+    def eval(self, agent):
+        pass
 
     def save(self):
         pass
@@ -128,7 +119,7 @@ class TrainingAlgorithm(ABC):
             elif self.simultaneous:
                 trajectory = self.gen_sim()
                 
-            wandb.log(wandb_stats(trajectory, self.is_f1))
+            wandb_metrics = wandb_stats(trajectory, self.is_f1)
 
             for i in range(self.train_cfg.updates_per_batch):
                 train_step_metrics_1 = self.train_step(
@@ -153,7 +144,17 @@ class TrainingAlgorithm(ABC):
                     print(key + ":", value)
                 print()
 
-                wandb.log(train_step_metrics)
+            wandb_metrics.update(train_step_metrics)
+
+
+            # evaluate
+            if not self.is_f1: # we just evaluate the eg games
+                eval_metrics = self.eval(self.agent_1)
+                print("Evaluation metrics:", eval_metrics)
+                wandb_metrics.update(eval_metrics)
+
+            wandb.log(step=step, data=wandb_metrics)
+
 
         return
 
