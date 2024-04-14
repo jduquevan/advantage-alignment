@@ -37,4 +37,5 @@ conda activate cogames
 module load python/3.9
 
 python train.py\
-    seed=${1}
+    seed=${1}\
+    --config-name='eg.yaml'
