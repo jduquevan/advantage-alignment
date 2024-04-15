@@ -694,6 +694,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return metrics
 
 
+MAX_PROP = 5
 
 class AlwaysCooperateAgent(Agent):
     def __init__(self, device):
@@ -714,7 +715,7 @@ class AlwaysCooperateAgent(Agent):
         item_counts = item_and_utility[:, 0:3]
         assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
 
-        ans = torch.where(my_utilities >= your_utilities, 1, 0).to(self.device)
+        ans = torch.where(my_utilities >= your_utilities, MAX_PROP, 0).to(self.device)
         log_p = torch.tensor(0.).to(self.device)
 
         return None, {'prop': ans}, log_p
@@ -738,7 +739,7 @@ class AlwaysDefectAgent(Agent):
         item_counts = item_and_utility[:, 0:3]
         assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
 
-        ans = torch.ones_like(my_utilities).to(self.device)
+        ans = torch.ones_like(my_utilities).to(self.device) * MAX_PROP
         log_p = torch.tensor(0.).to(self.device)
 
         return None, {'prop': ans}, log_p
