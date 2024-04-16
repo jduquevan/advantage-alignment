@@ -17,6 +17,10 @@ env:
   item_max_quantity: 5
   batch: 2
   device: cuda
+  max_turns_lower: 1
+  max_turns_upper: 1
+  max_turns_mean: 1
+
 
 hydra:
   output_subdir: null

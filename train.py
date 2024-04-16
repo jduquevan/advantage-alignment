@@ -38,7 +38,12 @@ def main(cfg: DictConfig) -> None:
                          batch_size=cfg['batch_size'],
                          device=cfg['env']['device'])
     elif cfg['env']['type'] == 'eg-obligated_ratio':
-        env = ObligatedRatioDiscreteEG(item_max_quantity=cfg['env']['item_max_quantity'],
+        env = ObligatedRatioDiscreteEG(max_turns={
+                                        'lower': cfg['env']['max_turns_lower'],
+                                        'mean': cfg['env']['max_turns_mean'],
+                                        'upper': cfg['env']['max_turns_upper']
+                                       },
+                                       item_max_quantity=cfg['env']['item_max_quantity'],
                                        batch_size=cfg['batch_size'],
                                        device=cfg['env']['device'])
     else:
