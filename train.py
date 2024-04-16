@@ -27,7 +27,8 @@ def main(cfg: DictConfig) -> None:
         dir=cfg["wandb_dir"], 
         reinit=True, 
         anonymous="allow",
-        mode=cfg["wandb"]
+        mode=cfg["wandb"],
+        tags=cfg.wandb.tags,
     )
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:

@@ -1,6 +1,7 @@
 seed: 42
 batch_size: 512
 wandb: 'online'
+wandb_tags: []
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
 sum_rewards: False
