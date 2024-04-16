@@ -13,6 +13,7 @@ use_spr_loss: False
 
 env:
   type: 'eg-obligated_ratio'
+  item_max_quantity: 5
   batch: 2
   device: cuda
 
@@ -50,12 +51,10 @@ mlp_model:
   device: cuda
   hidden_size: 128
   num_layers: 3
+  output_size: ${eval:${env.item_max_quantity} + 1}
 
 policy:
   _target_: src.agents.policies.CategoricalPolicy
-  log_std_min: -10.0
-  log_std_max: 2.0
-  prop_max: 1 # item max quantity
   device: cuda
 
 linear_model:

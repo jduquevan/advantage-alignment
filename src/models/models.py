@@ -151,7 +151,7 @@ class MLPModel(nn.Module):
 
     
 class MLPModelDiscrete(nn.Module):
-    def __init__(self, in_size, device, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
+    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
         super(MLPModelDiscrete, self).__init__()
         # self.transformer = transformer
         self.num_layers = num_layers
@@ -167,7 +167,8 @@ class MLPModelDiscrete(nn.Module):
         # self.utte_head = nn.Linear(hidden_size, 6)
 
         # Proposition heads
-        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 6) for _ in range(3)])
+        assert output_size == 6 , f"when designing the game we fixated on 5 being max items, if that changed, remove this: output_size now is: {output_size}"
+        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, output_size) for _ in range(3)])
         self.temp = nn.Parameter(torch.ones(1))
 
         self.to(device)

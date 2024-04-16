@@ -12,6 +12,7 @@ from src.utils.utils import get_cosine_similarity_torch, unit_vector_from_angles
 class DiscreteEG(gym.Env):
     def __init__(
         self,
+        item_max_quantity: int,
         max_turns={
             "lower": 2,
             "mean": 3,
@@ -20,7 +21,6 @@ class DiscreteEG(gym.Env):
         utte_channel=False,
         utte_max_len=6,
         nb_items=3,
-        item_max_quantity=5,
         utility_max=5,
         device=None,
         batch_size=128,
@@ -206,13 +206,13 @@ class DiscreteEG(gym.Env):
 class ObligatedRatioDiscreteEG(gym.Env):
     def __init__(
         self,
+        item_max_quantity,
         max_turns={
             "lower": 3,
             "mean": 3,
             "upper": 3,
         },
         nb_items=3,
-        item_max_quantity=5,
         utility_max=5,
         device=None,
         batch_size=128,
@@ -294,6 +294,10 @@ class ObligatedRatioDiscreteEG(gym.Env):
             utilities_1 = torch.tensor([10, 3, 2]).repeat(self.batch_size, 1).to(self.device)
             utilities_2 = torch.tensor([3, 10, 2]).repeat(self.batch_size, 1).to(self.device)
             item_pool = torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
+        elif self.sampling_type == "high_contrast":
+            utilities_1 = torch.randint(0, 2, (self.batch_size, self.nb_items)) * self.utility_max
+            utilities_2 = self.utility_max - utilities_1
+            item_pool = torch.randint(1, self.item_max_quantity + 1, (self.batch_size, self.nb_items))
         else:
             raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
 
@@ -348,11 +352,11 @@ class ObligatedRatioDiscreteEG(gym.Env):
         rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
         rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
 
-        assert (self.utilities_1 > 0).all() and (self.utilities_2 > 0).all()
+        assert (self.utilities_1 >= 0).all() and (self.utilities_2 >= 0).all()
         max_sum_rewards = self._get_max_sum_rewards()
         if self.sampling_type == "cooperative":
             max_reward_1 = max_reward_2 = max_sum_rewards
-        elif self.sampling_type in ['uniform', 'competitive', 'no_sampling']: # todo: ask Juan
+        elif self.sampling_type in ['uniform', 'competitive', 'no_sampling', 'high_contrast']: # todo: ask Juan
             max_reward_1 = (self.item_pool * self.utilities_1).sum(dim=-1)
             max_reward_2 = (self.item_pool * self.utilities_2).sum(dim=-1)
         else:

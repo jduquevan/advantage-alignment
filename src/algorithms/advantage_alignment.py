@@ -675,30 +675,57 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     def eval(self, agent):
         # todo: assert eg, check the code, etc
-        assert  self.env.name == 'eg_obligated_ratio'
+        assert self.env.name == 'eg_obligated_ratio'
         # evaluate against always cooperate and always defect
-        always_cooperate_agent = AlwaysCooperateAgent(device=agent.device)
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len, agent_1=agent, agent_2=always_cooperate_agent, use_transformer=self.use_transformer)
-        ac_rewards_agent = trajectory.data['rewards_0'].mean().item()
-        ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
-        always_defect_agent = AlwaysDefectAgent(device=agent.device)
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len, agent_1=agent, agent_2=always_defect_agent, use_transformer=self.use_transformer)
-        ad_rewards_agent = trajectory.data['rewards_0'].mean().item()
-        ad_rewards_ad = trajectory.data['rewards_1'].mean().item()
+        always_cooperate_agent = AlwaysCooperateAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
+        always_defect_agent = AlwaysDefectAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=agent, agent_2=always_cooperate_agent, use_transformer=self.use_transformer)
+        agent_vs_ac_rewards_agent = trajectory.data['rewards_0'].mean().item()
+        agent_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=agent, agent_2=always_defect_agent, use_transformer=self.use_transformer)
+        agent_vs_ad_rewards_agent = trajectory.data['rewards_0'].mean().item()
+        agent_vs_ad_rewards_ad = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_defect_agent, agent_2=always_defect_agent, use_transformer=False)
+        ad_vs_ad_rewards_ad_0 = trajectory.data['rewards_0'].mean().item()
+        ad_vs_ad_rewards_ad_1 = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_cooperate_agent, agent_2=always_cooperate_agent, use_transformer=False)
+        ac_vs_ac_rewards_ac_0 = trajectory.data['rewards_0'].mean().item()
+        ac_vs_ac_rewards_ac_1 = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_defect_agent, agent_2=always_cooperate_agent, use_transformer=False)
+        ad_vs_ac_rewards_ad = trajectory.data['rewards_0'].mean().item()
+        ad_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
+
         metrics = {
-            'ac_rewards_agent': ac_rewards_agent,
-            'ac_rewards_ac': ac_rewards_ac,
-            'ad_rewards_agent': ad_rewards_agent,
-            'ad_rewards_ad': ad_rewards_ad
+            'agent_vs_ac_rewards_agent': agent_vs_ac_rewards_agent,
+            'agent_vs_ac_rewards_ac': agent_vs_ac_rewards_ac,
+            'agent_vs_ad_rewards_agent': agent_vs_ad_rewards_agent,
+            'agent_vs_ad_rewards_ad': agent_vs_ad_rewards_ad,
+            'ad_vs_ad_rewards_ad_0': ad_vs_ad_rewards_ad_0,
+            'ad_vs_ad_rewards_ad_1': ad_vs_ad_rewards_ad_1,
+            'ac_vs_ac_rewards_ac_0': ac_vs_ac_rewards_ac_0,
+            'ac_vs_ac_rewards_ac_1': ac_vs_ac_rewards_ac_1,
+            'ad_vs_ac_rewards_ac': ad_vs_ac_rewards_ac,
+            'ad_vs_ac_rewards_ad': ad_vs_ac_rewards_ad
         }
         return metrics
 
 
-MAX_PROP = 5
-
 class AlwaysCooperateAgent(Agent):
-    def __init__(self, device):
+    def __init__(self,
+                 max_possible_prop,
+                 device):
         self.device = device
+        self.max_possible_prop = max_possible_prop
 
     def sample_action(self,
                       observations,
@@ -715,15 +742,21 @@ class AlwaysCooperateAgent(Agent):
         item_counts = item_and_utility[:, 0:3]
         assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
 
-        ans = torch.where(my_utilities >= your_utilities, MAX_PROP, 0).to(self.device)
+        if is_first:
+            ans = torch.where(my_utilities >= your_utilities, self.max_possible_prop, 0).to(self.device)
+        else:
+            ans = torch.where(my_utilities > your_utilities, self.max_possible_prop, 0).to(self.device)
         log_p = torch.tensor(0.).to(self.device)
 
         return None, {'prop': ans}, log_p
 
 
 class AlwaysDefectAgent(Agent):
-    def __init__(self, device):
+    def __init__(self,
+                 max_possible_prop,
+                 device):
         self.device = device
+        self.max_possible_prop = max_possible_prop
 
     def sample_action(self,
                       observations,
@@ -739,7 +772,7 @@ class AlwaysDefectAgent(Agent):
         item_counts = item_and_utility[:, 0:3]
         assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
 
-        ans = torch.ones_like(my_utilities).to(self.device) * MAX_PROP
+        ans = torch.ones_like(my_utilities).to(self.device) * self.max_possible_prop
         log_p = torch.tensor(0.).to(self.device)
 
         return None, {'prop': ans}, log_p
@@ -827,21 +860,53 @@ def gen_episodes_between_agents(env, batch_size, trajectory_len,  agent_1, agent
 
 
 if __name__ == '__main__':
-    batch_size=17
-    env = ObligatedRatioDiscreteEG(batch_size=batch_size, device='cpu')
-    # agent_1 = AlwaysCooperateAgent('cpu')
-    # agent_2 = AlwaysCooperateAgent('cpu')
-    agent_1 = AlwaysDefectAgent('cpu')
-    agent_2 = AlwaysDefectAgent('cpu')
+    batch_size=128
+    item_max_quantity=5
+    env = ObligatedRatioDiscreteEG(item_max_quantity=item_max_quantity, batch_size=batch_size, device='cpu', sampling_type=
+                                   'high_contrast')
+    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
     trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
     print(trajectory.data.keys())
     # print rewards
-    print(trajectory.data['rewards_0'])
-    print(trajectory.data['rewards_1'])
-    print((trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean())
+    print("Always Cooperate vs Always Cooperate")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
     # print actions
-    print(trajectory.data['a_props_0'][-1])
-    print(trajectory.data['a_props_1'][-1])
+    #print(trajectory.data['a_props_0'][-1])
+    #print(trajectory.data['a_props_1'][-1])
+
+    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Defect vs Always Defect")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
+    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Cooperate vs Always Defect")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
+    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Defect vs Always Cooperate")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
 
 
 

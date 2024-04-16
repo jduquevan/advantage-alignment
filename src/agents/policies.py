@@ -144,7 +144,7 @@ class NormalSigmoidPolicy(nn.Module):
         return output, action, log_p
 
 class CategoricalPolicy(nn.Module):
-    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
+    def __init__(self, device, model):
         super(CategoricalPolicy, self).__init__()
         self.model = model
         self.to(device)
