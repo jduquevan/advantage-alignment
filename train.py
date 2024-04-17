@@ -43,6 +43,7 @@ def main(cfg: DictConfig) -> None:
                                         'mean': cfg['env']['max_turns_mean'],
                                         'upper': cfg['env']['max_turns_upper']
                                        },
+                                       sampling_type=cfg['env']['sampling_type'],
                                        item_max_quantity=cfg['env']['item_max_quantity'],
                                        batch_size=cfg['batch_size'],
                                        device=cfg['env']['device'])

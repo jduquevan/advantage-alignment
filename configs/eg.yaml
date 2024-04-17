@@ -20,6 +20,7 @@ env:
   max_turns_lower: 1
   max_turns_upper: 1
   max_turns_mean: 1
+  sampling_type: 'high_contrast'
 
 
 hydra:
