@@ -295,9 +295,9 @@ class ObligatedRatioDiscreteEG(gym.Env):
             utilities_2 = torch.tensor([3, 10, 2]).repeat(self.batch_size, 1).to(self.device)
             item_pool = torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
         elif self.sampling_type == "high_contrast":
-            utilities_1 = torch.randint(0, 2, (self.batch_size, self.nb_items)) * self.utility_max
+            utilities_1 = torch.randint(0, 2, (self.batch_size, self.nb_items)).to(self.device) * self.utility_max
             utilities_2 = self.utility_max + 1 - utilities_1
-            item_pool = torch.randint(1, self.item_max_quantity + 1, (self.batch_size, self.nb_items))
+            item_pool = torch.randint(1, self.item_max_quantity + 1, (self.batch_size, self.nb_items)).to(self.device)
         else:
             raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
 
