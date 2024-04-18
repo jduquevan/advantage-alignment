@@ -9,34 +9,6 @@ hydra:
     dir:  /home/mila/a/aghajohm/scratch/advantage-alignment/hydra_dir
 
 self_play: False
-env:
-  type: 'eg-obligated_ratio'
-  device: cuda
-
-network:
-  device: cuda
-
-gru_model:
-  device: cuda
-
-transformer_model:
-  device: cuda
-
-mlp_model:
-  device: cuda
-
-policy:
-  device: cuda
-
-linear_model:
-  device: cuda
-
-spr_model:
-  device: cuda
-
-agent:
-  device: cuda
-
 
 training:
   aa_weight: 10.0

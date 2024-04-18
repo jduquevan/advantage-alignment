@@ -9,34 +9,6 @@ hydra:
     dir:  /Users/miladaghajohari/PycharmProjects/advantage-alignment/hydra_dir
 
 self_play: False
-env:
-  type: 'eg-obligated_ratio'
-  device: cpu
-
-network:
-  device: cpu
-
-gru_model:
-  device: cpu
-
-transformer_model:
-  device: cpu
-
-mlp_model:
-  device: cpu
-
-policy:
-  device: cpu
-
-linear_model:
-  device: cpu
-
-spr_model:
-  device: cpu
-
-agent:
-  _target_: src.agents.agents.AdvantageAlignmentAgent
-  device: cpu
 
 training:
   critic_loss_mode: 'MC'

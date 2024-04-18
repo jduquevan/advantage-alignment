@@ -3,20 +3,20 @@ batch_size: 512
 wandb: 'online'
 wandb_tags: []
 wandb_dir: /network/scratch/j/juan.duque/wandb/
-use_transformer: False
+
 sum_rewards: False
 simultaneous: True
 discrete: True
 self_play: True
 share_encoder: True
-use_reward_loss: False
-use_spr_loss: False
+use_gru: True
+device: cpu
 
 env:
   type: 'eg-obligated_ratio'
   item_max_quantity: 5
   batch: 2
-  device: cuda
+  device: ${device}
   max_turns_lower: 1
   max_turns_upper: 1
   max_turns_mean: 1
@@ -28,53 +28,31 @@ hydra:
   run:
     dir: /network/scratch/j/juan.duque/hydra/
 
-# Architecture hyperparameters
-network:
-  _target_: src.networks.gru_network.GruIPD
-  device: cuda
-
-gru_model:
-  _target_: src.models.models.GruModel
-  in_size: 3
-  device: cuda
+encoder:
+  _target_: train.GruModel
+  in_size: 15
+  device: ${device}
   hidden_size: 64
   num_layers: 3
 
-transformer_model:
-  _target_: src.models.models.StableTransformer
-  in_size: 3
-  d_model: 64
-  device: cuda
-  dim_feedforward: 128
-  num_layers: 1
-  nhead: 4
-  max_seq_len: 50
-  dropout: 0.1
-
 mlp_model:
-  _target_: src.models.models.MLPModelDiscrete
-  in_size: 76
-  device: cuda
+  _target_: train.MLPModelDiscrete
+  in_size: 64
+  device: ${device}
   hidden_size: 128
   num_layers: 3
   output_size: ${eval:${env.item_max_quantity} + 1}
 
 policy:
-  _target_: src.agents.policies.CategoricalPolicy
-  device: cuda
+  _target_: train.CategoricalPolicy
+  device: ${device}
 
 linear_model:
-  _target_: src.models.models.LinearModel
-  in_size: 76
-  out_size: 1
-  device: cuda
-  num_hidden: 2
-
-spr_model:
-  _target_: src.models.models.LinearModel
+  _target_: train.LinearModel
   in_size: 64
-  out_size: 64
-  device: cuda
+  out_size: 1
+  device: ${device}
+  num_hidden: 2
 
 optimizer_actor:
   _target_: torch.optim.Adam
@@ -84,17 +62,9 @@ optimizer_critic:
   _target_: torch.optim.Adam
   lr: 0.001
 
-optimizer_reward:
-  _target_: torch.optim.Adam
-  lr: 1e-4
-
-optimizer_spr:
-  _target_: torch.optim.Adam
-  lr: 1e-3
-
 agent:
-  _target_: src.agents.agents.AdvantageAlignmentAgent
-  device: cuda
+  _target_: train.AdvantageAlignmentAgent
+  device: ${device}
 
 training:
   gamma: 0.96
@@ -108,7 +78,6 @@ training:
   entropy_beta: 0.2
   vanilla: False
   updates_per_batch: 2
-  use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
