@@ -152,7 +152,7 @@ class DiscreteEG(gym.Env):
         prop_1 = actions_1["prop"]
         prop_2 = actions_2["prop"]
 
-        obs = self._get_obs((prop_2, prop_1))
+        obs = self._get_obs((prop_2, prop_1)) # todo: Ask Juan why is this like this
 
         filtered_items_1 = torch.where(self.utilities_1 >= 0, self.item_pool, 0).float()
 
@@ -297,7 +297,12 @@ class ObligatedRatioDiscreteEG(gym.Env):
         elif self.sampling_type == "high_contrast":
             utilities_1 = torch.randint(0, 2, (self.batch_size, self.nb_items)).to(self.device) * (self.utility_max - 1) + 1
             utilities_2 = self.utility_max + 1 - utilities_1
-            item_pool = torch.randint(1, self.item_max_quantity + 1, (self.batch_size, self.nb_items)).to(self.device)
+            item_pool = torch.tensor([[1, 1, 1]]).repeat(self.batch_size, 1).to(self.device)
+            #item_pool = torch.randint(1, self.item_max_quantity + 1, (self.batch_size, self.nb_items)).to(self.device)
+        elif self.sampling_type == "high_contrast_no_sampling":
+            utilities_1 = torch.tensor([[5, 5, 1]]).repeat(self.batch_size, 1).to(self.device)
+            utilities_2 = torch.tensor([[1, 1, 5]]).repeat(self.batch_size, 1).to(self.device)
+            item_pool = torch.tensor([[1, 1, 1]]).repeat(self.batch_size, 1).to(self.device)
         else:
             raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
 
@@ -347,7 +352,6 @@ class ObligatedRatioDiscreteEG(gym.Env):
         prop_1 = actions_1["prop"]
         prop_2 = actions_2["prop"]
 
-        obs = self._get_obs((prop_1, prop_2))  # todo: check with Juan if the change I made is correct
 
         rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
         rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
@@ -356,7 +360,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         max_sum_rewards = self._get_max_sum_rewards()
         if self.sampling_type == "cooperative":
             max_reward_1 = max_reward_2 = max_sum_rewards
-        elif self.sampling_type in ['uniform', 'competitive', 'no_sampling', 'high_contrast']: #    todo: ask Juan
+        elif self.sampling_type in ['uniform', 'competitive', 'no_sampling', 'high_contrast', 'high_contrast_no_sampling']: #    todo: ask Juan
             max_reward_1 = (self.item_pool * self.utilities_1).sum(dim=-1)
             max_reward_2 = (self.item_pool * self.utilities_2).sum(dim=-1)
         else:
@@ -390,6 +394,8 @@ class ObligatedRatioDiscreteEG(gym.Env):
         self.info["max_sum_rewards"] = max_sum_rewards
         self.info["max_sum_reward_ratio"] = max_sum_reward_ratio
         self.info["cos_sims"] = get_cosine_similarity_torch(self.utilities_1, self.utilities_2)
+
+        obs = self._get_obs((prop_1, prop_2))  # todo: check with Juan if the change I made is correct
 
         return obs, (rewards_1, rewards_2), done, None, self.info
 

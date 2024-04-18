@@ -128,8 +128,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         
         return log_ps, acc_ent, ste_ent
 
-
-
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
         log_p_list = []
         if self.discrete:
@@ -153,7 +151,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if self.use_transformer:
             props = props.permute((1, 0, 2))
 
-        item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
+        item_and_utility = item_and_utility_1
 
         observation = {'prop': props, 'item_and_utility': item_and_utility}
 
@@ -400,11 +398,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             props_2 = props_2.permute((1, 0, 2))
 
         if not self.is_f1:
-            item_and_utility_1_cat = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
-            item_and_utility_2_cat = torch.cat([item_and_utility_2, item_and_utility_1], dim=-1)
-
-            observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1_cat}
-            observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2_cat}
+            observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1}
+            observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2}
 
         if self.sum_rewards:
             rewards_1 = rewards_2 = rewards_1 + rewards_2
@@ -459,7 +454,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_0']
             observation = trajectory.data['obs_0']
             item_and_utility_1 = trajectory.data['i_and_u_0']
-            item_and_utility_2 = trajectory.data['i_and_u_1']
             rewards_1 = trajectory.data['rewards_0']
             rewards_2 = trajectory.data['rewards_1']
         else:
@@ -467,7 +461,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_1']
             observation = trajectory.data['obs_1']
             item_and_utility_1 = trajectory.data['i_and_u_1']
-            item_and_utility_2 = trajectory.data['i_and_u_0']
             rewards_1 = trajectory.data['rewards_1']
             rewards_2 = trajectory.data['rewards_0']
 
@@ -475,7 +468,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             if self.use_transformer:
                 props= props.permute((1, 0, 2))
             
-            item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
+            item_and_utility = item_and_utility_1
 
             observation = {
                 'prop': props,
@@ -586,7 +579,6 @@ class AdvantageAlignment(TrainingAlgorithm):
                 is_first=False,
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
-            observations_1, observations_2 = observations
 
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
@@ -600,6 +592,8 @@ class AdvantageAlignment(TrainingAlgorithm):
                 info=info,
                 t=t
             )
+
+            observations_1, observations_2 = observations
 
             item_and_utility_1 = torch.cat(
                 [
@@ -825,8 +819,7 @@ def gen_episodes_between_agents(env, batch_size, trajectory_len,  agent_1, agent
             extend_history=False,
             is_first=False,
         )
-        observations, rewards, done, _, info = env.step((action_1, action_2))
-        observations_1, observations_2 = observations
+        new_observations, rewards, done, _, info = env.step((action_1, action_2))
 
         trajectory.add_step_sim(
             action=(action_1, action_2),
@@ -840,6 +833,10 @@ def gen_episodes_between_agents(env, batch_size, trajectory_len,  agent_1, agent
             info=info,
             t=t
         )
+
+        observations_1, observations_2 = new_observations
+
+
 
         item_and_utility_1 = torch.cat(
             [
@@ -860,13 +857,14 @@ def gen_episodes_between_agents(env, batch_size, trajectory_len,  agent_1, agent
 
 
 if __name__ == '__main__':
-    batch_size=128
+    batch_size=1024
     item_max_quantity=5
+    trajectory_len=50
     env = ObligatedRatioDiscreteEG(item_max_quantity=item_max_quantity, batch_size=batch_size, device='cpu', sampling_type=
                                    'high_contrast')
     agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
     agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
     print(trajectory.data.keys())
     # print rewards
     print("Always Cooperate vs Always Cooperate")
@@ -879,7 +877,7 @@ if __name__ == '__main__':
 
     agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
     agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
     print(trajectory.data.keys())
     # print rewards
     print("Always Defect vs Always Defect")
@@ -889,7 +887,7 @@ if __name__ == '__main__':
 
     agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
     agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
     print(trajectory.data.keys())
     # print rewards
     print("Always Cooperate vs Always Defect")
@@ -899,7 +897,7 @@ if __name__ == '__main__':
 
     agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
     agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, 10, agent_1, agent_2)
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
     print(trajectory.data.keys())
     # print rewards
     print("Always Defect vs Always Cooperate")
