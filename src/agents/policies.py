@@ -17,8 +17,8 @@ class F1NormalTanHPolicy(nn.Module):
 
         self.to(device)
 
-    def forward(self, x, h_0=None, use_tranformer=False):
-        if use_tranformer:
+    def forward(self, x, h_0=None, use_transformer=False):
+        if use_transformer:
             output, acc, ste = self.model(x, partial_forward=False)
         else:
             output, acc, ste = self.model(x, h_0)
