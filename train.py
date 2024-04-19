@@ -781,6 +781,9 @@ class ObligatedRatioDiscreteEG(gym.Env):
     def _get_obs(item_pool, utilities_1, utilities_2, prop_1, prop_2):
         item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float()
         item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()
+        # scale them down
+        item_context_1 = item_context_1 / 100 # todo: milad, check if this is necessary
+        item_context_2 = item_context_2 / 100
         return item_context_1, item_context_2
 
     def _sample_utilities(self):
