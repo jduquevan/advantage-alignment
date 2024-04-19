@@ -491,19 +491,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             hidden_t = hidden_t.permute((1, 0, 2))
         return values_c, values_t
 
-    def get_trajectory_rewards(self, agent, observation):
-        rewards = torch.empty(
-            (self.batch_size, self.trajectory_len),
-            device=self.agent_1.device,
-            dtype=torch.float32
-        )
-        hidden = None
-        for t in range(self.trajectory_len):
-            hidden, reward = agent.reward(observation[:, t, :])
-            rewards[:, t] = reward.reshape(self.batch_size)
-            hidden = hidden.permute((1, 0, 2))
-        return rewards
-
     def linear_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
@@ -781,9 +768,6 @@ class ObligatedRatioDiscreteEG(gym.Env):
     def _get_obs(item_pool, utilities_1, utilities_2, prop_1, prop_2):
         item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float()
         item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()
-        # scale them down
-        item_context_1 = item_context_1 / 100 # todo: milad, check if this is necessary
-        item_context_2 = item_context_2 / 100
         return item_context_1, item_context_2
 
     def _sample_utilities(self):
@@ -867,6 +851,10 @@ class ObligatedRatioDiscreteEG(gym.Env):
 
         rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
         rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
+
+        # scale down the rewards
+        rewards_1 = rewards_1 / 100
+        rewards_2 = rewards_2 / 100
 
         assert (self.utilities_1 >= 0).all() and (self.utilities_2 >= 0).all()
         max_sum_rewards = self._get_max_sum_rewards()
