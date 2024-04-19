@@ -10,5 +10,7 @@ hydra:
 
 self_play: False
 
+device: cuda
+
 training:
   aa_weight: 10.0
