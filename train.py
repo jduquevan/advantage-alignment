@@ -569,6 +569,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             old_log_ps = trajectory.data['log_ps_1']
 
         if self.sum_rewards:
+            print("Summing rewards, yes...")
             rewards_1 = rewards_2 = rewards_1 + rewards_2
 
         _, V_1s = self.get_trajectory_values(agent, observation_1)
@@ -754,7 +755,6 @@ class ObligatedRatioDiscreteEG(gym.Env):
         self.device = device
         self.batch_size = batch_size
         self.sampling_type = sampling_type
-        self.normalize_rewards = normalize_rewards
         self.info = {}
 
     def _get_max_sum_rewards(self):
@@ -852,24 +852,13 @@ class ObligatedRatioDiscreteEG(gym.Env):
         rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
         rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
 
+        hundred = 100
         # scale down the rewards
-        rewards_1 = rewards_1 / 100
-        rewards_2 = rewards_2 / 100
+        rewards_1 = rewards_1 / hundred
+        rewards_2 = rewards_2 / hundred
 
         assert (self.utilities_1 >= 0).all() and (self.utilities_2 >= 0).all()
-        max_sum_rewards = self._get_max_sum_rewards()
-        if self.sampling_type in ['uniform', 'no_sampling', 'high_contrast', 'high_contrast_no_sampling']:
-            max_reward_1 = (self.item_pool * self.utilities_1).sum(dim=-1)
-            max_reward_2 = (self.item_pool * self.utilities_2).sum(dim=-1)
-        else:
-            raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
-
-        if self.normalize_rewards:
-            norm_rewards_1 = rewards_1 / max_reward_1
-            norm_rewards_2 = rewards_2 / max_reward_2
-        else:
-            norm_rewards_1 = rewards_1
-            norm_rewards_2 = rewards_2
+        max_sum_rewards = self._get_max_sum_rewards() / hundred
 
         max_sum_reward_ratio = (rewards_1 + rewards_2) / max_sum_rewards
 
@@ -877,8 +866,8 @@ class ObligatedRatioDiscreteEG(gym.Env):
 
         new_utilities_1, new_utilities_2, new_item_pool = self._sample_utilities()
 
-        rewards_1 = torch.where(done, norm_rewards_1, 0)
-        rewards_2 = torch.where(done, norm_rewards_2, 0)
+        rewards_1 = torch.where(done, rewards_1, 0)
+        rewards_2 = torch.where(done, rewards_2, 0)
 
         reset = done.unsqueeze(1).repeat(1, 3)
         self.utilities_1 = torch.where(reset, new_utilities_1, self.utilities_1)
