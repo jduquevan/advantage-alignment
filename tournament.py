@@ -78,8 +78,8 @@ def main(cfg: DictConfig):
     out = process_agent_pairs(pairs_to_run)
     out_dict = {k: v for d in out for k, v in d.items()}
     to_json(out_dict, cfg.tournament_out)
-    return out
+    return
     
 if __name__ == '__main__':
-    out = main()
+    main()
     
