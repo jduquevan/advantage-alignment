@@ -126,3 +126,10 @@ class TrajectoryBatch():
         self.data['log_ps_0'][:, t] = log_ps[0]
         self.data['log_ps_1'][:, t] = log_ps[1]
         self.data['dones'][:, t] = done
+
+    def detach_and_move_to_cpu(self):
+        """Detaches all tensors in the data dictionary and moves them to CPU."""
+        for key in self.data:
+            if self.data[key].requires_grad:
+                self.data[key] = self.data[key].detach()  # Detach from current graph
+            self.data[key] = self.data[key].cpu().numpy().tolist()  # Move to CPU

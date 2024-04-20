@@ -1,0 +1,100 @@
+seed: 42
+batch_size: 512
+wandb: 0
+# wandb_dir: /network/scratch/j/juan.duque/wandb/
+wandb_dir: ./wandb/
+use_transformer: False
+sum_rewards: False
+simultaneous: True
+discrete: True
+self_play: True
+share_encoder: True
+use_reward_loss: False
+use_spr_loss: False
+tournament_out: ./torunament_results.json
+device: cpu
+
+env:
+  type: "eg-obligated_ratio"
+  batch: 2
+
+hydra:
+  output_subdir: null
+  run:
+    # dir: /network/scratch/j/juan.duque/hydra/
+    dir: ./hydra/
+
+# Architecture hyperparameters
+network:
+  _target_: src.networks.gru_network.GruIPD
+  device: cpu
+
+gru_model:
+  _target_: src.models.models.GruModel
+  in_size: 3
+  device: cpu
+  hidden_size: 64
+  num_layers: 3
+
+transformer_model:
+  _target_: src.models.models.StableTransformer
+  in_size: 3
+  d_model: 64
+  device: cpu
+  dim_feedforward: 128
+  num_layers: 1
+  nhead: 4
+  max_seq_len: 50
+  dropout: 0.1
+
+mlp_model:
+  _target_: src.models.models.MLPModelDiscrete
+  in_size: 76
+  device: cpu
+  hidden_size: 128
+  num_layers: 3
+
+policy:
+  _target_: src.agents.policies.CategoricalPolicy
+  log_std_min: -10.0
+  log_std_max: 2.0
+  prop_max: 1 # item max quantity
+  device: cpu
+
+linear_model:
+  _target_: src.models.models.LinearModel
+  in_size: 76
+  out_size: 1
+  device: cpu
+  num_hidden: 2
+
+spr_model:
+  _target_: src.models.models.LinearModel
+  in_size: 64
+  out_size: 64
+  device: cpu
+
+optimizer_actor:
+  _target_: torch.optim.Adam
+  lr: 0.0001
+
+optimizer_critic:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+optimizer_reward:
+  _target_: torch.optim.Adam
+  lr: 1e-4
+
+optimizer_spr:
+  _target_: torch.optim.Adam
+  lr: 1e-3
+
+agent:
+  _target_: src.agents.agents.AdvantageAlignmentAgent
+  device: cpu
+
+agent_pool:
+  types: ["aa", "ppo", "ac", "ad"] # agent types: advantage alignment, proximal policy optimization, always coop, always defect
+  aa_pths: ["./models/aa1model1400.pth", "./models/aa5model1400.pth"] # paths to aa agents
+  ppo_pths: ["./models/ppo1model1400.pth", "./models/ppo1model1400.pth"] # paths to ppo agents
