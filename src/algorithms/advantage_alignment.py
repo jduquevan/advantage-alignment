@@ -621,7 +621,11 @@ class AdvantageAlignment(TrainingAlgorithm):
     def gen_f1(self):
         device = self.agent_1.device
         observations, _ = self.env.reset()
-        observations_1, observations_2 = observations
+        obs_1, obs_2 = observations
+        obs_1 = torch.tensor(obs_1.reshape((self.batch_size, -1))).to(device)
+        obs_2 = torch.tensor(obs_2.reshape((self.batch_size, -1))).to(device)
+        observations_1 = torch.cat([obs_1, obs_2], dim=1)
+        observations_2 = torch.cat([obs_2, obs_1], dim=1)
 
         hidden_state_1, hidden_state_2 = None, None
         history = None
@@ -655,9 +659,11 @@ class AdvantageAlignment(TrainingAlgorithm):
                 is_first=False,
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
-            observations_1, observations_2 = observations
-            observations_1 = torch.tensor(observations_1.reshape((self.batch_size, -1))).to(device)
-            observations_2 = torch.tensor(observations_2.reshape((self.batch_size, -1))).to(device)
+            obs_1, obs_2 = observations
+            obs_1 = torch.tensor(obs_1.reshape((self.batch_size, -1))).to(device)
+            obs_2 = torch.tensor(obs_2.reshape((self.batch_size, -1))).to(device)
+            observations_1 = torch.cat([obs_1, obs_2], dim=1)
+            observations_2 = torch.cat([obs_2, obs_1], dim=1)
 
             trajectory.add_step_f1(
                 action=(torch.tensor(action_1).to(device), torch.tensor(action_2).to(device)), 

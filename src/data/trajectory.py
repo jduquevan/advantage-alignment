@@ -127,8 +127,8 @@ class TrajectoryBatch():
         self.data['obs_1'][:, t, :] = observations[1]
         self.data['actions_0'][:, t, :] = action[0]
         self.data['actions_1'][:, t, :] = action[1]
-        self.data['rewards_0'][:, t] = rewards[0]
-        self.data['rewards_1'][:, t] = rewards[1]
+        self.data['rewards_0'][:, t] = rewards[:, 0]
+        self.data['rewards_1'][:, t] = rewards[:, 1]
         self.data['log_ps_0'][:, t] = log_ps[0]
         self.data['log_ps_1'][:, t] = log_ps[1]
         self.data['dones'][:, t] = done

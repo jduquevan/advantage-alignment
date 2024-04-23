@@ -1,6 +1,6 @@
 seed: 42
 batch_size: 512
-wandb: 'disabled'
+wandb: 'online'
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
 sum_rewards: True
@@ -13,7 +13,7 @@ use_spr_loss: False
 
 env:
   type: 'f1'
-  batch: 2
+  batch: 30
   device: cuda
 
 hydra:
@@ -28,7 +28,7 @@ network:
 
 gru_model:
   _target_: src.models.models.GruModel
-  in_size: 25
+  in_size: 50
   device: cuda
   hidden_size: 64
   num_layers: 3
@@ -46,7 +46,7 @@ transformer_model:
 
 mlp_model:
   _target_: src.models.models.F1MLPModel
-  in_size: 64
+  in_size: 114
   device: cuda
   hidden_size: 128
   num_layers: 3
@@ -59,7 +59,8 @@ policy:
 
 linear_model:
   _target_: src.models.models.F1LinearModel
-  in_size: 64
+  in_size: 114
+  hidden_size: 64
   out_size: 1
   device: cuda
   num_hidden: 2
@@ -67,6 +68,7 @@ linear_model:
 spr_model:
   _target_: src.models.models.F1LinearModel
   in_size: 64
+  hidden_size: 64
   out_size: 64
   device: cuda
 
@@ -99,9 +101,9 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.5
-  vanilla: False
-  updates_per_batch: 2
+  entropy_beta: 0.001
+  vanilla: True
+  updates_per_batch: 1
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 200

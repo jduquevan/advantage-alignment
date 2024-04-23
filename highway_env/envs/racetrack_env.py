@@ -1,13 +1,16 @@
-from typing import Dict, Text, Tuple, Optional
+from typing import Dict, Text, Tuple, Optional, TypeVar
 
 import numpy as np
 
 from highway_env import utils
+from highway_env.envs.common.action import Action
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.road.lane import CircularLane, LineType, StraightLane
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.vehicle.behavior import IDMVehicle, RockVehicle
 
+Observation = TypeVar("Observation")
+LaneIndex = Tuple[str, str, int]
 
 class RacetrackEnv(AbstractEnv):
     """
@@ -497,6 +500,59 @@ class F1Env(AbstractEnv):
             )
         return zero_greater
 
+    def step(self, action: Action) -> Tuple[Observation, float, bool, bool, dict]:
+        """
+        Perform an action and step the environment dynamics.
+
+        The action is executed by the ego-vehicle, and all other vehicles on the road performs their default behaviour
+        for several simulation timesteps until the next decision making step.
+
+        :param action: the action performed by the ego-vehicle
+        :return: a tuple (observation, reward, terminated, truncated, info)
+        """
+        if self.road is None or self.vehicle is None:
+            raise NotImplementedError(
+                "The road and vehicle must be initialized in the environment implementation"
+            )
+
+        self.time += 1 / self.config["policy_frequency"]
+        self._simulate(action)
+
+        for vehicle in self.controlled_vehicles:
+            distance_to_lane = self.get_closest_lane_distance(vehicle.position, vehicle.heading)
+            if distance_to_lane > 10:
+                vehicle.crashed = True
+
+        obs = self.observation_type.observe()
+        reward = self._reward(action)
+        terminated = self._is_terminated()
+        truncated = self._is_truncated()
+        info = self._info(obs, action)
+        if self.render_mode == "human":
+            self.render()
+
+        if terminated:
+            self.reset()
+
+        return obs, reward, terminated, truncated, info
+
+    def get_closest_lane_distance(
+        self, position: np.ndarray, heading: Optional[float] = None
+    ) -> LaneIndex:
+        """
+        Get the index of the lane closest to a world position.
+
+        :param position: a world position [m].
+        :param heading: a heading angle [rad].
+        :return: the index of the closest lane.
+        """
+        indexes, distances = [], []
+        for _from, to_dict in self.road.network.graph.items():
+            for _to, lanes in to_dict.items():
+                for _id, l in enumerate(lanes):
+                    distances.append(l.distance_with_heading(position, heading))
+                    indexes.append((_from, _to, _id))
+        return np.min(distances)
 
     def compute_drs(self):
         drs_vehicle = 1 if self.compare_positions() else 0
@@ -538,7 +594,11 @@ class F1Env(AbstractEnv):
         return tuple(rewards)
 
     def _is_terminated(self) -> bool:
-        return self.vehicle.crashed
+        is_terminated = True
+        for vehicle in self.controlled_vehicles:
+            if not vehicle.crashed:
+                is_terminated = False
+        return is_terminated
 
     def _is_truncated(self) -> bool:
         return self.time >= self.config["duration"]

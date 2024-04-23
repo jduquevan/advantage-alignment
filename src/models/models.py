@@ -28,6 +28,27 @@ class GruModel(nn.Module):
             x = F.relu(layer(x))
         return x
 
+class LstmModel(nn.Module):
+    def __init__(self, in_size, device, hidden_size=40, num_layers=1):
+        super(LstmModel, self).__init__()
+
+        self.in_size = in_size
+        self.device = device
+        self.hidden_size = hidden_size
+        
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
+        self.lstm = nn.LSTM(hidden_size, hidden_size, 1, batch_first=True)
+        self.to(device)
+
+    def forward(self, x, h_0=None):
+        self.lstm.flatten_parameters()
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
+        # Reshape x to match LSTM input shape
+        x = x.unsqueeze(1)
+        output, (h_n, c_n) = self.lstm(x, h_0)
+        return output, (h_n, c_n)
+
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
 
@@ -233,12 +254,14 @@ class F1MLPModel(nn.Module):
         self.to(device)
 
     def forward(self, x, h_0=None, partial_forward=True):
+        in_x = x
         if self.use_gru:
             h_0, x = self.encoder(x, h_0)
             x = x.squeeze(0)
         else:
             x = self.encoder(x, partial_forward)
 
+        x = torch.cat([x, in_x], dim=1)
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
@@ -291,19 +314,20 @@ class LinearModel(nn.Module):
         return output, self.linear(x)
 
 class F1LinearModel(nn.Module):
-    def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True):
+    def __init__(self, in_size, hidden_size, out_size, device, num_hidden=1, encoder=None, use_gru=True):
         super(F1LinearModel, self).__init__()
         self.encoder = encoder
 
         self.use_gru = use_gru
         self.in_size = in_size
 
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, in_size) for i in range(num_hidden)])
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_hidden)])
 
-        self.linear = nn.Linear(in_size, out_size)
+        self.linear = nn.Linear(hidden_size, out_size)
         self.to(device)
 
     def forward(self, x, h_0=None, partial_forward=True):
+        in_x = x
         output = None
         if self.use_gru:
             output, x = self.encoder(x, h_0)
@@ -312,7 +336,7 @@ class F1LinearModel(nn.Module):
             x = self.encoder(x, partial_forward)
 
         x = x/torch.linalg.norm(x)
-
+        x = torch.cat([x, in_x], dim=1)
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
