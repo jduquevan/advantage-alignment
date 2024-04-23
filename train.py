@@ -405,8 +405,9 @@ class TrainingAlgorithm(ABC):
                 "rewards_1": trajectory.data['rewards_1'][0:2, 0:10],
             }
 
+            if step % 50 == 0:
+                print("Mini trajectory:", mini_trajectory)
             wandb.log(step=step, data=wandb_metrics)
-            wandb_metrics.update({"mini_trajectory": mini_trajectory})
 
         return
 
