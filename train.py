@@ -397,7 +397,16 @@ class TrainingAlgorithm(ABC):
             print("Evaluation metrics:", eval_metrics)
             wandb_metrics.update(eval_metrics)
 
+            mini_trajectory = {
+                "item_pool": trajectory.data['item_pool'][0:2, 0:10, :],
+                "utility_1": trajectory.data['utility_1'][0:2, 0:10, :],
+                "utility_2": trajectory.data['utility_2'][0:2, 0:10, :],
+                "rewards_0": trajectory.data['rewards_0'][0:2, 0:10],
+                "rewards_1": trajectory.data['rewards_1'][0:2, 0:10],
+            }
+
             wandb.log(step=step, data=wandb_metrics)
+            wandb_metrics.update({"mini_trajectory": mini_trajectory})
 
         return
 
