@@ -9,8 +9,10 @@ from collections import deque
 from torch import nn
 from tqdm import tqdm
 
+from src.agents.agents import Agent
 from src.algorithms.algorithm import TrainingAlgorithm
 from src.data.trajectory import TrajectoryBatch
+from src.envs.eg_vectorized import ObligatedRatioDiscreteEG
 from src.utils.utils import (
     compute_discounted_returns,
     cat_observations,
@@ -126,8 +128,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         
         return log_ps, acc_ent, ste_ent
 
-
-
     def get_trajectory_log_ps(self, agent, trajectory, is_first):
         log_p_list = []
         if self.discrete:
@@ -138,14 +138,12 @@ class AdvantageAlignment(TrainingAlgorithm):
         if is_first:
             terms = trajectory.data['terms_0']
             a_props = trajectory.data['a_props_0']
-            uttes = trajectory.data['uttes_0']
             props = trajectory.data['props_0']
             item_and_utility_1 = trajectory.data['i_and_u_0']
             item_and_utility_2 = trajectory.data['i_and_u_1']
         else:
             terms = trajectory.data['terms_1']
             a_props = trajectory.data['a_props_1']
-            uttes = trajectory.data['uttes_1']
             props = trajectory.data['props_1']
             item_and_utility_1 = trajectory.data['i_and_u_1']
             item_and_utility_2 = trajectory.data['i_and_u_0']
@@ -153,7 +151,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if self.use_transformer:
             props = props.permute((1, 0, 2))
 
-        item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
+        item_and_utility = item_and_utility_1
 
         observation = {'prop': props, 'item_and_utility': item_and_utility}
 
@@ -400,11 +398,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             props_2 = props_2.permute((1, 0, 2))
 
         if not self.is_f1:
-            item_and_utility_1_cat = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
-            item_and_utility_2_cat = torch.cat([item_and_utility_2, item_and_utility_1], dim=-1)
-
-            observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1_cat}
-            observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2_cat}
+            observation_1 = {'prop': props_1, 'item_and_utility': item_and_utility_1}
+            observation_2 = {'prop': props_2, 'item_and_utility': item_and_utility_2}
 
         if self.sum_rewards:
             rewards_1 = rewards_2 = rewards_1 + rewards_2
@@ -459,7 +454,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_0']
             observation = trajectory.data['obs_0']
             item_and_utility_1 = trajectory.data['i_and_u_0']
-            item_and_utility_2 = trajectory.data['i_and_u_1']
             rewards_1 = trajectory.data['rewards_0']
             rewards_2 = trajectory.data['rewards_1']
         else:
@@ -467,7 +461,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             props = trajectory.data['props_1']
             observation = trajectory.data['obs_1']
             item_and_utility_1 = trajectory.data['i_and_u_1']
-            item_and_utility_2 = trajectory.data['i_and_u_0']
             rewards_1 = trajectory.data['rewards_1']
             rewards_2 = trajectory.data['rewards_0']
 
@@ -475,7 +468,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             if self.use_transformer:
                 props= props.permute((1, 0, 2))
             
-            item_and_utility = torch.cat([item_and_utility_1, item_and_utility_2], dim=-1)
+            item_and_utility = item_and_utility_1
 
             observation = {
                 'prop': props,
@@ -586,7 +579,6 @@ class AdvantageAlignment(TrainingAlgorithm):
                 is_first=False,
             )
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
-            observations_1, observations_2 = observations
 
             trajectory.add_step_sim(
                 action=(action_1, action_2), 
@@ -600,6 +592,8 @@ class AdvantageAlignment(TrainingAlgorithm):
                 info=info,
                 t=t
             )
+
+            observations_1, observations_2 = observations
 
             item_and_utility_1 = torch.cat(
                 [
@@ -678,3 +672,245 @@ class AdvantageAlignment(TrainingAlgorithm):
                 t=t
             )
         return trajectory
+
+    def eval(self, agent):
+        # todo: assert eg, check the code, etc
+        assert self.env.name == 'eg_obligated_ratio'
+        # evaluate against always cooperate and always defect
+        always_cooperate_agent = AlwaysCooperateAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
+        always_defect_agent = AlwaysDefectAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=agent, agent_2=always_cooperate_agent, use_transformer=self.use_transformer)
+        agent_vs_ac_rewards_agent = trajectory.data['rewards_0'].mean().item()
+        agent_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=agent, agent_2=always_defect_agent, use_transformer=self.use_transformer)
+        agent_vs_ad_rewards_agent = trajectory.data['rewards_0'].mean().item()
+        agent_vs_ad_rewards_ad = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_defect_agent, agent_2=always_defect_agent, use_transformer=False)
+        ad_vs_ad_rewards_ad_0 = trajectory.data['rewards_0'].mean().item()
+        ad_vs_ad_rewards_ad_1 = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_cooperate_agent, agent_2=always_cooperate_agent, use_transformer=False)
+        ac_vs_ac_rewards_ac_0 = trajectory.data['rewards_0'].mean().item()
+        ac_vs_ac_rewards_ac_1 = trajectory.data['rewards_1'].mean().item()
+
+        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
+                                                 agent_1=always_defect_agent, agent_2=always_cooperate_agent, use_transformer=False)
+        ad_vs_ac_rewards_ad = trajectory.data['rewards_0'].mean().item()
+        ad_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
+
+        metrics = {
+            'agent_vs_ac_rewards_agent': agent_vs_ac_rewards_agent,
+            'agent_vs_ac_rewards_ac': agent_vs_ac_rewards_ac,
+            'agent_vs_ad_rewards_agent': agent_vs_ad_rewards_agent,
+            'agent_vs_ad_rewards_ad': agent_vs_ad_rewards_ad,
+            'ad_vs_ad_rewards_ad_0': ad_vs_ad_rewards_ad_0,
+            'ad_vs_ad_rewards_ad_1': ad_vs_ad_rewards_ad_1,
+            'ac_vs_ac_rewards_ac_0': ac_vs_ac_rewards_ac_0,
+            'ac_vs_ac_rewards_ac_1': ac_vs_ac_rewards_ac_1,
+            'ad_vs_ac_rewards_ac': ad_vs_ac_rewards_ac,
+            'ad_vs_ac_rewards_ad': ad_vs_ac_rewards_ad
+        }
+        return metrics
+
+
+class AlwaysCooperateAgent(Agent):
+    def __init__(self,
+                 max_possible_prop,
+                 device):
+        self.device = device
+        self.max_possible_prop = max_possible_prop
+
+    def sample_action(self,
+                      observations,
+                      is_first: bool,
+                      *args,
+                      **kwargs):
+
+        item_and_utility = observations['item_and_utility']
+        assert item_and_utility.shape[1] == 12
+        # this is the format: [number of  item 1, ..., number of item 3, utility item 1 for me, ..., utility item 3 for me, utility item 1 for you, ..., utility item 3 for you]
+        # grab the utilities for me
+        my_utilities = item_and_utility[:, 3:6]
+        your_utilities = item_and_utility[:, 9:12]
+        item_counts = item_and_utility[:, 0:3]
+        assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
+
+        if is_first:
+            ans = torch.where(my_utilities >= your_utilities, self.max_possible_prop, 0).to(self.device)
+        else:
+            ans = torch.where(my_utilities > your_utilities, self.max_possible_prop, 0).to(self.device)
+        log_p = torch.tensor(0.).to(self.device)
+
+        return None, {'prop': ans}, log_p
+
+
+class AlwaysDefectAgent(Agent):
+    def __init__(self,
+                 max_possible_prop,
+                 device):
+        self.device = device
+        self.max_possible_prop = max_possible_prop
+
+    def sample_action(self,
+                      observations,
+                      is_first: bool,
+                        *args,
+                        **kwargs):
+        item_and_utility = observations['item_and_utility']
+        assert item_and_utility.shape[1] == 12
+        # this is the format: [number of  item 1, ..., number of item 3, utility item 1 for me, ..., utility item 3 for me, utility item 1 for you, ..., utility item 3 for you]
+        # grab the utilities for me
+        my_utilities = item_and_utility[:, 3:6]
+        your_utilities = item_and_utility[:, 9:12]
+        item_counts = item_and_utility[:, 0:3]
+        assert torch.allclose(item_counts, item_and_utility[:, 6:9])  # check that the counts are the same, as they should be, they are copy paste of each other
+
+        ans = torch.ones_like(my_utilities).to(self.device) * self.max_possible_prop
+        log_p = torch.tensor(0.).to(self.device)
+
+        return None, {'prop': ans}, log_p
+
+
+def gen_episodes_between_agents(env, batch_size, trajectory_len,  agent_1, agent_2, use_transformer=False):
+    observations, _ = env.reset()
+    observations_1, observations_2 = observations
+
+    item_and_utility_1 = torch.cat(
+        [
+            observations_1['item_and_utility'],
+            observations_2['item_and_utility']
+        ], dim=1
+    )
+    item_and_utility_2 = torch.cat(
+        [
+            observations_2['item_and_utility'],
+            observations_1['item_and_utility']
+        ], dim=1
+    )
+    observations_1['item_and_utility'] = item_and_utility_1
+    observations_2['item_and_utility'] = item_and_utility_2
+
+    hidden_state_1, hidden_state_2 = None, None
+    history = None
+    trajectory = TrajectoryBatch(
+        batch_size=batch_size,
+        max_traj_len=trajectory_len,
+        device=agent_1.device
+    )
+
+    if use_transformer:
+        history = deque(maxlen=agent_1.actor.model.encoder.max_seq_len)
+
+    for t in range(trajectory_len):
+        hidden_state_1, action_1, log_p_1 = agent_1.sample_action(
+            observations=observations_1,
+            h_0=hidden_state_1,
+            history=history,
+            use_transformer=use_transformer,
+            extend_history=True,
+            is_first=True,
+        )
+        hidden_state_2, action_2, log_p_2 = agent_2.sample_action(
+            observations=observations_2,
+            h_0=hidden_state_2,
+            history=history,
+            use_transformer=use_transformer,
+            extend_history=False,
+            is_first=False,
+        )
+        new_observations, rewards, done, _, info = env.step((action_1, action_2))
+
+        trajectory.add_step_sim(
+            action=(action_1, action_2),
+            observations=(
+                observations_1,
+                observations_2
+            ),
+            rewards=rewards,
+            log_ps=(log_p_1, log_p_2),
+            done=done,
+            info=info,
+            t=t
+        )
+
+        observations_1, observations_2 = new_observations
+
+
+
+        item_and_utility_1 = torch.cat(
+            [
+                observations_1['item_and_utility'],
+                observations_2['item_and_utility']
+            ], dim=1
+        )
+        item_and_utility_2 = torch.cat(
+            [
+                observations_2['item_and_utility'],
+                observations_1['item_and_utility']
+            ], dim=1
+        )
+        observations_1['item_and_utility'] = item_and_utility_1
+        observations_2['item_and_utility'] = item_and_utility_2
+
+    return trajectory
+
+
+if __name__ == '__main__':
+    batch_size=1024
+    item_max_quantity=5
+    trajectory_len=50
+    env = ObligatedRatioDiscreteEG(item_max_quantity=item_max_quantity, batch_size=batch_size, device='cpu', sampling_type=
+                                   'high_contrast')
+    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Cooperate vs Always Cooperate")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+    # print actions
+    #print(trajectory.data['a_props_0'][-1])
+    #print(trajectory.data['a_props_1'][-1])
+
+    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Defect vs Always Defect")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
+    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Cooperate vs Always Defect")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
+    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
+    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
+    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
+    print(trajectory.data.keys())
+    # print rewards
+    print("Always Defect vs Always Cooperate")
+    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
+    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
+    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
+
+
+
+

@@ -14,6 +14,44 @@ class Agent(ABC):
     def sample_action(self):
         pass
 
+    def to(self, device):
+        for attribute_name in dir(self):
+            attribute = getattr(self, attribute_name)
+            if isinstance(attribute, nn.Module):
+                setattr(self, attribute_name, attribute.to(device))
+
+    def eval(self):
+        for attribute_name in dir(self):
+            attribute = getattr(self, attribute_name)
+            if isinstance(attribute, nn.Module):
+                attribute.eval()
+
+    def train(self):
+        for attribute_name in dir(self):
+            attribute = getattr(self, attribute_name)
+            if isinstance(attribute, nn.Module):
+                attribute.train()
+
+    def load_state_dicts(self, checkpoint):
+        if isinstance(checkpoint, str):
+            checkpoint = torch.load(checkpoint)  # Load the checkpoint
+        for attribute_name in dir(self):
+            # Check if the attribute is an nn.Module and the key exists in the checkpoint
+            key = f"{attribute_name}_state_dict"
+            if isinstance(getattr(self, attribute_name, None), nn.Module) and key in checkpoint:
+                # Get the attribute and load the state dict
+                getattr(self, attribute_name).load_state_dict(checkpoint[key])
+
+    def save_checkpoint(self, path):
+        checkpoint = {'epoch': self.epoch}
+        for attribute_name in dir(self):
+            attribute = getattr(self, attribute_name)
+            if isinstance(attribute, nn.Module):
+                checkpoint[f'{attribute_name}_state_dict'] = attribute.state_dict()
+        
+        torch.save(checkpoint, path)
+        return
+    
 class AdvantageAlignmentAgent(Agent):
     def __init__(
         self,
@@ -39,7 +77,7 @@ class AdvantageAlignmentAgent(Agent):
         self.actor_optimizer = actor_optimizer
         self.reward_optimizer = reward_optimizer
         self.spr_optimizer = spr_optimizer
-    
+
     def sample_action(
         self, 
         observations, 

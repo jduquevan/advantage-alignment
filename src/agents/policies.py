@@ -17,8 +17,8 @@ class F1NormalTanHPolicy(nn.Module):
 
         self.to(device)
 
-    def forward(self, x, h_0=None, use_tranformer=False):
-        if use_tranformer:
+    def forward(self, x, h_0=None, use_transformer=False):
+        if use_transformer:
             output, acc, ste = self.model(x, partial_forward=False)
         else:
             output, acc, ste = self.model(x, h_0)
@@ -144,7 +144,7 @@ class NormalSigmoidPolicy(nn.Module):
         return output, action, log_p
 
 class CategoricalPolicy(nn.Module):
-    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
+    def __init__(self, device, model):
         super(CategoricalPolicy, self).__init__()
         self.model = model
         self.to(device)

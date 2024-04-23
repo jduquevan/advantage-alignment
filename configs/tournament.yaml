@@ -1,8 +1,8 @@
 seed: 42
 batch_size: 512
-wandb: 'online'
-wandb_tags: []
-wandb_dir: /network/scratch/j/juan.duque/wandb/
+wandb: 0
+# wandb_dir: /network/scratch/j/juan.duque/wandb/
+wandb_dir: ./wandb/
 use_transformer: False
 sum_rewards: False
 simultaneous: True
@@ -11,32 +11,28 @@ self_play: True
 share_encoder: True
 use_reward_loss: False
 use_spr_loss: False
+tournament_out: ./torunament_results.json
+device: cpu
 
 env:
-  type: 'eg-obligated_ratio'
-  item_max_quantity: 5
+  type: "eg-obligated_ratio"
   batch: 2
-  device: cuda
-  max_turns_lower: 1
-  max_turns_upper: 1
-  max_turns_mean: 1
-  sampling_type: 'high_contrast'
-
 
 hydra:
   output_subdir: null
   run:
-    dir: /network/scratch/j/juan.duque/hydra/
+    # dir: /network/scratch/j/juan.duque/hydra/
+    dir: ./hydra/
 
 # Architecture hyperparameters
 network:
   _target_: src.networks.gru_network.GruIPD
-  device: cuda
+  device: cpu
 
 gru_model:
   _target_: src.models.models.GruModel
   in_size: 3
-  device: cuda
+  device: cpu
   hidden_size: 64
   num_layers: 3
 
@@ -44,7 +40,7 @@ transformer_model:
   _target_: src.models.models.StableTransformer
   in_size: 3
   d_model: 64
-  device: cuda
+  device: cpu
   dim_feedforward: 128
   num_layers: 1
   nhead: 4
@@ -54,27 +50,29 @@ transformer_model:
 mlp_model:
   _target_: src.models.models.MLPModelDiscrete
   in_size: 76
-  device: cuda
+  device: cpu
   hidden_size: 128
   num_layers: 3
-  output_size: ${eval:${env.item_max_quantity} + 1}
 
 policy:
   _target_: src.agents.policies.CategoricalPolicy
-  device: cuda
+  log_std_min: -10.0
+  log_std_max: 2.0
+  prop_max: 1 # item max quantity
+  device: cpu
 
 linear_model:
   _target_: src.models.models.LinearModel
   in_size: 76
   out_size: 1
-  device: cuda
+  device: cpu
   num_hidden: 2
 
 spr_model:
   _target_: src.models.models.LinearModel
   in_size: 64
   out_size: 64
-  device: cuda
+  device: cpu
 
 optimizer_actor:
   _target_: torch.optim.Adam
@@ -94,22 +92,9 @@ optimizer_spr:
 
 agent:
   _target_: src.agents.agents.AdvantageAlignmentAgent
-  device: cuda
+  device: cpu
 
-training:
-  gamma: 0.96
-  tau: 0.005
-  max_traj_len: 50
-  batch_size: 512 # Training batch size
-  total_steps: 10000000 # Number of optimization steps to train for
-  eval_every: 100 # Number of optimization steps before evaluation
-  proximal: True
-  clip_range: 0.15
-  entropy_beta: 0.2
-  vanilla: False
-  updates_per_batch: 2
-  use_mlm: True
-  critic_loss_mode: 'MC'
-  save_every: 200
-  checkpoint_dir: './experiments'
-  aa_weight: 10
+agent_pool:
+  types: ["aa", "ppo", "ac", "ad"] # agent types: advantage alignment, proximal policy optimization, always coop, always defect
+  aa_pths: ["./models/aa1model1400.pth", "./models/aa5model1400.pth"] # paths to aa agents
+  ppo_pths: ["./models/ppo1model1400.pth", "./models/ppo1model1400.pth"] # paths to ppo agents

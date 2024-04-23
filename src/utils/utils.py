@@ -5,7 +5,7 @@ import os
 import random
 import torch
 import wandb
-
+import json
 from omegaconf import DictConfig
 
 def seed_all(seed):
@@ -107,6 +107,12 @@ def torchify_actions(action, device):
     action_torch['utte'] = torch.tensor(action['utte'], device=device)
     action_torch['prop'] = torch.tensor(action['prop'], device=device)
     return action_torch
+
+def resume_agent(cfg, checkpoint_path):
+    init_agent = instantiate_agent(cfg)
+    init_agent.load_state_dicts(checkpoint_path)
+    init_agent.load_state_dicts(checkpoint_path)
+    return init_agent
 
 def instantiate_agent(cfg: DictConfig):
     if cfg.use_transformer:
@@ -276,3 +282,11 @@ def wandb_stats(trajectory, is_f1):
         ].mean()
        
     return stats
+
+def to_json(data, filename):
+    with open(filename, 'w') as file:
+        json.dump(data, file)
+
+def from_json(filename):
+    with open(filename, 'r') as file:
+        return json.load(file)

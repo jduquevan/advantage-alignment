@@ -35,18 +35,12 @@ class TrajectoryBatch():
                 (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
             ),
             "i_and_u_0": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
+                (batch_size, max_traj_len, 12), device=device, dtype=torch.float32
             ),
             "i_and_u_1": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
+                (batch_size, max_traj_len, 12), device=device, dtype=torch.float32
             ),
-            "uttes_0": torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
-            ),
-            "uttes_1": torch.ones(
-                (batch_size, max_traj_len, 6), device=device, dtype=torch.float32
-            ),
-            "actions_0": torch.ones(
+            "actions_0": torch.ones(  # todo: remove these for the eg game, or make it the correct actions
                 (batch_size, max_traj_len, 2), device=device, dtype=torch.float32
             ),
             "actions_1": torch.ones(
@@ -132,3 +126,10 @@ class TrajectoryBatch():
         self.data['log_ps_0'][:, t] = log_ps[0]
         self.data['log_ps_1'][:, t] = log_ps[1]
         self.data['dones'][:, t] = done
+
+    def detach_and_move_to_cpu(self):
+        """Detaches all tensors in the data dictionary and moves them to CPU."""
+        for key in self.data:
+            if self.data[key].requires_grad:
+                self.data[key] = self.data[key].detach()  # Detach from current graph
+            self.data[key] = self.data[key].cpu().numpy().tolist()  # Move to CPU

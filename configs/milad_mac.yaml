@@ -40,3 +40,4 @@ agent:
 
 training:
   critic_loss_mode: 'MC'
+  aa_weight: 10

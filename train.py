@@ -1,7 +1,10 @@
 import gymnasium as gym
-import hydra
 import wandb
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
+import hydra
+
+OmegaConf.register_new_resolver("eval", eval)
+
 
 from src.algorithms.advantage_alignment import AdvantageAlignment
 from src.envs.eg_vectorized import DiscreteEG, ObligatedRatioDiscreteEG
@@ -24,15 +27,26 @@ def main(cfg: DictConfig) -> None:
         dir=cfg["wandb_dir"], 
         reinit=True, 
         anonymous="allow",
-        mode=cfg["wandb"]
+        mode=cfg["wandb"],
+        tags=cfg.wandb_tags,
     )
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
         env = gym.make_vec('f1-v0', num_envs=cfg['env']['batch'])
     elif cfg['env']['type'] == 'eg':
-        env = DiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+        env = DiscreteEG(item_max_quantity=cfg['env']['item_max_quantity'],
+                         batch_size=cfg['batch_size'],
+                         device=cfg['env']['device'])
     elif cfg['env']['type'] == 'eg-obligated_ratio':
-        env = ObligatedRatioDiscreteEG(batch_size=cfg['batch_size'], device=cfg['env']['device'])
+        env = ObligatedRatioDiscreteEG(max_turns={
+                                        'lower': cfg['env']['max_turns_lower'],
+                                        'mean': cfg['env']['max_turns_mean'],
+                                        'upper': cfg['env']['max_turns_upper']
+                                       },
+                                       sampling_type=cfg['env']['sampling_type'],
+                                       item_max_quantity=cfg['env']['item_max_quantity'],
+                                       batch_size=cfg['batch_size'],
+                                       device=cfg['env']['device'])
     else:
         raise ValueError(f"Environment type {cfg['env']['type']} not supported.")
 
