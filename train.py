@@ -13,7 +13,7 @@ from src.utils.utils import seed_all, instantiate_agent
 # import torch
 # torch.autograd.set_detect_anomaly(True)
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="f1.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="eg.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
