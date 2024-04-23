@@ -204,18 +204,19 @@ class AdvantageAlignmentAgent(Agent):
         return self.actor.sample_action(observations, h_0)
 
 class TrajectoryBatch():
-    def __init__(self, batch_size: int, max_traj_len: int, device: torch.device) -> None:
+    def __init__(self, sample_observation_1, batch_size: int, max_traj_len: int, device: torch.device) -> None:
         self.batch_size = batch_size
         self.max_traj_len = max_traj_len
         self.device = device
+        obs_size = sample_observation_1.size(-1)
         self.data = {
             "obs_0": torch.ones(
-                (batch_size, max_traj_len, 15),
+                (batch_size, max_traj_len, obs_size),
                 dtype=torch.float32,
                 device=device,
             ),
             "obs_1": torch.ones(
-                (batch_size, max_traj_len, 15),
+                (batch_size, max_traj_len, obs_size),
                 dtype=torch.float32,
                 device=device,
             ),
@@ -646,6 +647,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         hidden_state_1, hidden_state_2 = None, None
         history = None
         trajectory = TrajectoryBatch(
+            sample_observation_1=observations_1,
             batch_size=batch_size,
             max_traj_len=trajectory_len,
             device=agent_1.device
@@ -658,7 +660,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                                                                       item_pool=env.item_pool, utilities_1=env.utilities_1, utilities_2=env.utilities_2)
             utilities_1 = env.utilities_1
             utilities_2 = env.utilities_2  # storing them for putting them in the trajectory later, step method modifies them
-
+            item_pool = env.item_pool
             next_observations, rewards, done, _, info = env.step((action_1, action_2))
 
             trajectory.add_step_sim(
@@ -672,7 +674,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 done=done,
                 info=info,
                 t=t,
-                item_pool=env.item_pool,
+                item_pool=item_pool,
                 utilities_1=utilities_1,
                 utilities_2=utilities_2,
             )
@@ -738,16 +740,17 @@ class ObligatedRatioDiscreteEG(gym.Env):
             "mean": 3,
             "upper": 3,
         },
+        obs_mode="full",
         nb_items=3,
         utility_max=5,
         device=None,
         batch_size=128,
         sampling_type="no_sampling",
-        normalize_rewards=False,
     ):
         super().__init__()
 
         self.name = 'eg_obligated_ratio'
+        self.obs_mode = obs_mode
         self._max_turns = max_turns
         self.nb_items = nb_items
         self.item_max_quantity = item_max_quantity
@@ -764,10 +767,15 @@ class ObligatedRatioDiscreteEG(gym.Env):
         max_sum_rewards = (agent_1_gets * self.utilities_1).sum(dim=-1) + (agent_2_gets * self.utilities_2).sum(dim=-1)
         return max_sum_rewards
 
-    @staticmethod
-    def _get_obs(item_pool, utilities_1, utilities_2, prop_1, prop_2):
-        item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float()
-        item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()
+    def _get_obs(self, item_pool, utilities_1, utilities_2, prop_1, prop_2):
+        if self.obs_mode == "raw":
+            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float()
+            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()
+        elif self.obs_mode == "just_utility_diff":
+            item_context_1 = (utilities_1 - utilities_2).float()
+            item_context_2 = (utilities_2 - utilities_1).float()
+        else:
+            raise Exception(f"Unsupported observation mode: '{self.obs_mode}'.")
         return item_context_1, item_context_2
 
     def _sample_utilities(self):
@@ -852,13 +860,15 @@ class ObligatedRatioDiscreteEG(gym.Env):
         rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
         rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
 
-        hundred = 100
+        def normalize_reward(reward):
+            MAX_REWARD = self.utility_max * self.nb_items
+            return (reward / MAX_REWARD) * 2 - 1
         # scale down the rewards
-        rewards_1 = rewards_1 / hundred
-        rewards_2 = rewards_2 / hundred
+        rewards_1 = normalize_reward(rewards_1)
+        rewards_2 = normalize_reward(rewards_2)
 
         assert (self.utilities_1 >= 0).all() and (self.utilities_2 >= 0).all()
-        max_sum_rewards = self._get_max_sum_rewards() / hundred
+        max_sum_rewards = normalize_reward(self._get_max_sum_rewards())
 
         max_sum_reward_ratio = (rewards_1 + rewards_2) / max_sum_rewards
 
@@ -1029,7 +1039,9 @@ def main(cfg: DictConfig) -> None:
         tags=cfg.wandb_tags,
     )
     if cfg['env']['type'] == 'eg-obligated_ratio':
-        env = ObligatedRatioDiscreteEG(max_turns={
+        env = ObligatedRatioDiscreteEG(
+            obs_mode=cfg['env']['obs_mode'],
+            max_turns={
             'lower': cfg['env']['max_turns_lower'],
             'mean': cfg['env']['max_turns_mean'],
             'upper': cfg['env']['max_turns_upper']

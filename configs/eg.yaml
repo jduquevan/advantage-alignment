@@ -21,6 +21,7 @@ env:
   max_turns_upper: 1
   max_turns_mean: 1
   sampling_type: 'high_contrast'
+  obs_mode: 'just_utility_diff'
 
 
 hydra:
@@ -30,17 +31,16 @@ hydra:
 
 encoder:
   _target_: train.GruModel
-  in_size: 15
   device: ${device}
   hidden_size: 64
-  num_layers: 3
+  num_layers: 1
 
 mlp_model:
   _target_: train.MLPModelDiscrete
   in_size: 64
   device: ${device}
   hidden_size: 128
-  num_layers: 3
+  num_layers: 1
   output_size: ${eval:${env.item_max_quantity} + 1}
 
 policy:
@@ -69,7 +69,7 @@ agent:
 training:
   gamma: 0.96
   tau: 0.005
-  max_traj_len: 50
+  max_traj_len: 1
   batch_size: 512 # Training batch size
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation

@@ -66,8 +66,15 @@ def instantiate_agent(cfg: DictConfig):
 
     assert cfg.use_gru is True, "Only GRU is supported for now."
     use_gru = True
-    encoder = hydra.utils.instantiate(cfg.encoder)
-    encoder_t = hydra.utils.instantiate(cfg.encoder)
+    if cfg['env']['obs_mode'] == 'full':
+        encoder_in_size = 15
+    elif cfg['env']['obs_mode'] == 'just_utility_diff':
+        encoder_in_size = 3
+    else:
+        raise f"Unknown obs_mode, don't know the size: {cfg['env']['obs_mode']}"
+
+    encoder = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+    encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
 
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model,
