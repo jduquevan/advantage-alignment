@@ -400,10 +400,10 @@ class TrainingAlgorithm(ABC):
             for i in range(10):
                 mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities", "props", "rewards"])
                 mini_trajectory = {
-                    "item_pool": trajectory.data['item_pool'][i, 0:10, :].reshape(-1),
-                    "utilities": torch.cat((trajectory.data['utility_1'][i, 0:10, :],trajectory.data['utility_2'][i, 0:10, :])),
-                    "props": torch.cat((trajectory.data['props_0'][i, 0:10, :], trajectory.data['props_1'][i, 0:10, :])),
-                    "rewards": torch.cat((trajectory.data['rewards_0'][i, 0:10], trajectory.data['rewards_1'][i, 0:10])),
+                    "item_pool": trajectory.data['item_pool'][i, 0:10, :],
+                    "utilities": torch.cat((trajectory.data['utility_1'][i, 0:10, :],trajectory.data['utility_2'][i, 0:10, :]), dim=0),
+                    "props": torch.cat((trajectory.data['props_0'][i, 0:10, :], trajectory.data['props_1'][i, 0:10, :]), dim=0),
+                    "rewards": torch.cat((trajectory.data['rewards_0'][i, 0:10], trajectory.data['rewards_1'][i, 0:10]), dim=0),
                 }
                 def torch_to_str(x):
                     return str(x.cpu().numpy().tolist())
@@ -513,27 +513,23 @@ class AdvantageAlignment(TrainingAlgorithm):
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
 
-        A_1s = A_1s[:, :-1]
         A_2s = A_2s[:, 1:]
+        A_1s = torch.cumsum(A_1s[:, :-1], dim=1)
+        log_ps = log_ps[:, 1:]
+        old_log_ps = old_log_ps[:, 1:]
+
+        batch, time = A_1s.shape
+        A_1s = A_1s / torch.arange(1, A_1s.shape[1] + 1).repeat(batch, 1).to(A_1s.device)
 
         if proximal:
-            # gamma = 1
             ratios = torch.exp(log_ps - old_log_ps.detach())
-            action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
+            clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
+            surrogates = torch.min(A_1s * A_2s * clipped_log_ps, A_1s * A_2s * log_ps)
+            aa_loss = surrogates.mean()
         else:
-            action_term = log_ps
+            aa_loss = (A_1s * A_2s * log_ps).mean()
 
-        acc_surrogates = torch.empty_like(action_term)
-        carry = torch.zeros_like(action_term[:, 0])
-
-        for t in reversed(range(action_term.size(1) - 1)):
-            carry = A_2s[:, t] * action_term[:, t] + gamma * carry
-            acc_surrogates[:, t] = A_1s[:, t] * carry
-
-        if torch.any(torch.isnan(acc_surrogates)):
-            acc_surrogates = torch.nan_to_num(acc_surrogates)
-
-        return acc_surrogates.mean()
+        return aa_loss
 
     def dot_product_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
         gamma = self.train_cfg.gamma
@@ -613,7 +609,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             loss_1 = -(A_1s * log_ps[:, :-1]).mean()
 
         if not vanilla:
-            loss_2 = -self.dot_product_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
+            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
             loss_2 = torch.zeros(1, device=loss_1.device)
 

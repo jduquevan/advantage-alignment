@@ -11,5 +11,6 @@ hydra:
 self_play: False
 
 training:
+  vanilla: False
   critic_loss_mode: 'MC'
   aa_weight: 10
