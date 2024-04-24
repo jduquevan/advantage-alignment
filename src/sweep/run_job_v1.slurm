@@ -34,10 +34,6 @@ python train.py \
     training.entropy_beta=${3} \
     training.clip_range=${4} \
     training.updates_per_batch=${5} \
-    transformer_model.d_model=${6} \
-    mlp_model.in_size=${6} \
-    mlp_model.hidden_size=${6} \
-    linear_model.in_size=${6} \
-    spr_model.in_size=${6} \
-    spr_model.out_size=${6} \
-    transformer_model.num_layers=${7}
+    training.aa_weight=${6} \
+    --config-name='eg.yaml' \
+

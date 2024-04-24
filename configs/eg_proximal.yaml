@@ -78,7 +78,7 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0005
+  lr: 0.001
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -112,4 +112,4 @@ training:
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
-  aa_weight: 0.035
+  aa_weight: 0.05

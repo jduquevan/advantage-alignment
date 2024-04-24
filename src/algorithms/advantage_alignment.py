@@ -309,7 +309,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         return embeds
 
     def linear_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
-        # TODO: Implement proximal aa_losss
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
@@ -317,10 +316,18 @@ class AdvantageAlignment(TrainingAlgorithm):
         A_2s = A_2s[:, 1:]
         A_1s = torch.cumsum(A_1s[:, :-1], dim=1)
         log_ps = log_ps[:, 1:]
+        old_log_ps = old_log_ps[:, 1:]
 
         batch, time = A_1s.shape
         A_1s = A_1s / torch.arange(1, A_1s.shape[1] + 1).repeat(batch, 1).to(A_1s.device)
-        aa_loss = (A_1s * A_2s * log_ps).mean()
+
+        if proximal:
+            ratios = torch.exp(log_ps - old_log_ps.detach())
+            clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
+            surrogates = torch.min(A_1s * A_2s * clipped_log_ps, A_1s * A_2s* log_ps)
+            aa_loss = surrogates.mean()
+        else:
+            aa_loss = (A_1s * A_2s * log_ps).mean()
         
         return aa_loss
 
