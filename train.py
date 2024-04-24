@@ -398,7 +398,7 @@ class TrainingAlgorithm(ABC):
             wandb_metrics.update(eval_metrics)
 
             for i in range(10):
-                mini_traj_table = wandb.Table(columns=["step", "item_pool", "utilities", "props", "rewards"])
+                mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities", "props", "rewards"])
                 mini_trajectory = {
                     "item_pool": trajectory.data['item_pool'][i, 0:10, :].reshape(-1),
                     "utilities": torch.cat((trajectory.data['utility_1'][i, 0:10, :],trajectory.data['utility_2'][i, 0:10, :])),
@@ -408,7 +408,7 @@ class TrainingAlgorithm(ABC):
                 def torch_to_str(x):
                     return str(x.cpu().numpy().tolist())
                 mini_trajectory = {k: torch_to_str(v) for k, v in mini_trajectory.items()}
-                mini_traj_table.add_data(step,mini_trajectory["item_pool"], mini_trajectory["utilities"], mini_trajectory["props"], mini_trajectory["rewards"])
+                mini_traj_table.add_data(i,step,mini_trajectory["item_pool"], mini_trajectory["utilities"], mini_trajectory["props"], mini_trajectory["rewards"])
 
             if step % 50 == 0:
                 print("Mini trajectory:", mini_trajectory)
