@@ -47,7 +47,7 @@ mlp_model:
   device: ${device}
   hidden_size: 128
   num_layers: 1
-  output_size: ${eval:${env.item_max_quantity} + 1}
+  output_size: ${eval:${env_conf.item_max_quantity} + 1}
 
 policy:
   _target_: train.CategoricalPolicy
