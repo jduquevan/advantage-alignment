@@ -66,7 +66,7 @@ def instantiate_agent(cfg: DictConfig):
 
     assert cfg.use_gru is True, "Only GRU is supported for now."
     use_gru = True
-    if cfg['env']['obs_mode'] == 'full':
+    if cfg['env']['obs_mode'] == 'raw':
         encoder_in_size = 15
     elif cfg['env']['obs_mode'] == 'just_utility_diff':
         encoder_in_size = 3
