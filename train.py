@@ -204,78 +204,101 @@ class AdvantageAlignmentAgent(Agent):
         return self.actor.sample_action(observations, h_0)
 
 class TrajectoryBatch():
-    def __init__(self, sample_observation_1, batch_size: int, max_traj_len: int, device: torch.device) -> None:
+    def __init__(self, sample_observation_1, batch_size: int, max_traj_len: int, device: torch.device, data=None) -> None:
         self.batch_size = batch_size
         self.max_traj_len = max_traj_len
         self.device = device
         obs_size = sample_observation_1.size(-1)
-        self.data = {
-            "obs_0": torch.ones(
-                (batch_size, max_traj_len, obs_size),
-                dtype=torch.float32,
-                device=device,
-            ),
-            "obs_1": torch.ones(
-                (batch_size, max_traj_len, obs_size),
-                dtype=torch.float32,
-                device=device,
-            ),
-            "props_0": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-            ),
-            "props_1": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-            ),
-            "item_pool": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-            ),
-            "utility_1": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-            ),
-            "utility_2": 1e7 * torch.ones(
-                (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-            ),
-            "rewards_0": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "rewards_1": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "log_ps_0": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "log_ps_1": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "dones": torch.empty(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.bool,
-            ),
-            "cos_sims": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "max_sum_rewards": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-            "max_sum_reward_ratio": torch.ones(
-                (batch_size, max_traj_len),
-                device=device,
-                dtype=torch.float32,
-            ),
-        }
+        if data is None:
+            self.data = {
+                "obs_0": torch.ones(
+                    (batch_size, max_traj_len, obs_size),
+                    dtype=torch.float32,
+                    device=device,
+                ),
+                "obs_1": torch.ones(
+                    (batch_size, max_traj_len, obs_size),
+                    dtype=torch.float32,
+                    device=device,
+                ),
+                "props_0": 1e7 * torch.ones(
+                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+                ),
+                "props_1": 1e7 * torch.ones(
+                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+                ),
+                "item_pool": 1e7 * torch.ones(
+                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+                ),
+                "utility_1": 1e7 * torch.ones(
+                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+                ),
+                "utility_2": 1e7 * torch.ones(
+                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
+                ),
+                "rewards_0": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "rewards_1": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "log_ps_0": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "log_ps_1": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "dones": torch.empty(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.bool,
+                ),
+                "cos_sims": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "max_sum_rewards": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+                "max_sum_reward_ratio": torch.ones(
+                    (batch_size, max_traj_len),
+                    device=device,
+                    dtype=torch.float32,
+                ),
+            }
+        else:
+            self.data = data
+            for key in self.data.keys():
+                assert self.data[key].size(0) == batch_size
+                assert self.data[key].size(1) == max_traj_len
+
+    def subsample(self, batch_size: int):
+        idxs = torch.randint(0, self.batch_size, (batch_size,))
+        return TrajectoryBatch.create_from_data({k: v[idxs] for k, v in self.data.items()})
+
+    @staticmethod
+    def create_from_data(data):
+        batch_size = data['obs_0'].size(0)
+        max_traj_len = data['obs_0'].size(1)
+        sample_obs = data['obs_0']
+        device = data['obs_0'].device
+        for key in data.keys():
+            assert data[key].size(0) == batch_size
+            assert data[key].size(1) == max_traj_len
+        return TrajectoryBatch(sample_obs, batch_size, max_traj_len, device, data)
+
+
 
     def add_step_sim(self, action, observations, rewards, log_ps, done, info, t, item_pool, utilities_1, utilities_2):
         self.data['props_0'][:, t, :] = action[0]['prop']
@@ -294,6 +317,42 @@ class TrajectoryBatch():
         self.data['cos_sims'][:, t] = info['cos_sims']
         self.data['dones'][:, t] = done
 
+    def merge_two_trajectories(self, other):
+        for key in self.data.keys():
+            self.data[key] = torch.cat((self.data[key], other.data[key]), dim=0)
+        self.batch_size += other.batch_size
+        return self
+
+
+class ReplayBuffer():
+    def __init__(self,
+                 env,
+                 replay_buffer_size: int,
+                 trajectory_len: int,
+                 device: torch.device,):
+        (obs_1, _), _ = env.reset()
+        self.replay_buffer_size = replay_buffer_size
+        self.marker = 0
+        self.number_of_added_trajectories = 0
+        self.trajectory_len = trajectory_len
+        self.device = device
+        self.trajectory_batch = TrajectoryBatch(obs_1, self.replay_buffer_size, self.trajectory_len, self.device)
+
+    def add_trajectory_batch(self, new_batch: TrajectoryBatch):
+        B = new_batch.data['obs_0'].size(0)
+        assert (self.marker + B) <= self.replay_buffer_size # WARNING: we are assuming new data always comes in the same size, and the replay buffer is a multiple of that size
+        for key in self.trajectory_batch.data.keys():
+            self.trajectory_batch.data[key][self.marker:self.marker+B] = new_batch.data[key]
+        self.marker = (self.marker + B) % self.replay_buffer_size
+        self.number_of_added_trajectories += B
+
+    def sample(self, batch_size: int):
+        idxs = torch.randint(0, self.__len__(), (batch_size,))
+        return TrajectoryBatch.create_from_data({k: v[idxs] for k, v in self.trajectory_batch.data.items()})
+
+    def __len__(self):
+        return min(self.number_of_added_trajectories, self.replay_buffer_size)
+
 
 class TrainingAlgorithm(ABC):
     def __init__(
@@ -305,6 +364,10 @@ class TrainingAlgorithm(ABC):
         sum_rewards: bool,
         simultaneous: bool,
         discrete: bool,
+        use_replay_buffer: bool,
+        replay_buffer_size: int,
+        replay_buffer_update_size: int,
+        off_policy_ratio: float,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
@@ -316,6 +379,13 @@ class TrainingAlgorithm(ABC):
         self.discrete = discrete
         if self.simultaneous:
             self.batch_size = env.batch_size
+        self.use_replay_buffer = use_replay_buffer
+        self.replay_buffer_size = replay_buffer_size
+        self.replay_buffer_update_size = replay_buffer_update_size
+        self.off_policy_ratio = off_policy_ratio
+
+        if self.use_replay_buffer:
+            self.replay_buffer = ReplayBuffer(self.env, self.replay_buffer_size, self.trajectory_len, self.env.device)
 
     def train_step(
         self,
@@ -370,14 +440,24 @@ class TrainingAlgorithm(ABC):
             wandb_metrics = wandb_stats(trajectory)
 
             for i in range(self.train_cfg.updates_per_batch):
+                if self.use_replay_buffer:
+                    off_policy_size = int(self.batch_size * self.off_policy_ratio)
+                    if len(self.replay_buffer) > off_policy_size:
+                        off_policy_trajectories = self.replay_buffer.sample(off_policy_size)
+                        augmented_trajectories = trajectory.subsample(self.batch_size - off_policy_size).merge_two_trajectories(off_policy_trajectories)
+                    else:
+                        augmented_trajectories = trajectory
+                else:
+                    augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
+
                 train_step_metrics_1 = self.train_step(
-                    trajectory=trajectory,
+                    trajectory=augmented_trajectories,
                     agent=self.agent_1,
                     is_first=True
                 )
 
                 train_step_metrics_2 = self.train_step(
-                    trajectory=trajectory,
+                    trajectory=augmented_trajectories,
                     agent=self.agent_2,
                     is_first=False
                 )
@@ -390,6 +470,10 @@ class TrainingAlgorithm(ABC):
                 for key, value in train_step_metrics.items():
                     print(key + ":", value)
                 print()
+
+            # update replay buffer
+            if self.use_replay_buffer:
+                self.replay_buffer.add_trajectory_batch(trajectory.subsample(self.replay_buffer_update_size))
 
             wandb_metrics.update(train_step_metrics)
 
@@ -414,6 +498,7 @@ class TrainingAlgorithm(ABC):
                 print("Mini trajectory:", mini_trajectory)
                 wandb_metrics.update({"mini_trajectory_table": mini_traj_table})
             wandb.log(step=step, data=wandb_metrics)
+
 
         return
 
@@ -1050,26 +1135,33 @@ def main(cfg: DictConfig) -> None:
         mode=cfg["wandb"],
         tags=cfg.wandb_tags,
     )
-    if cfg['env']['type'] == 'eg-obligated_ratio':
+    if cfg['env_conf']['type'] == 'eg-obligated_ratio':
         env = ObligatedRatioDiscreteEG(
-            obs_mode=cfg['env']['obs_mode'],
+            obs_mode=cfg['env_conf']['obs_mode'],
             max_turns={
-            'lower': cfg['env']['max_turns_lower'],
-            'mean': cfg['env']['max_turns_mean'],
-            'upper': cfg['env']['max_turns_upper']
+            'lower': cfg['env_conf']['max_turns_lower'],
+            'mean': cfg['env_conf']['max_turns_mean'],
+            'upper': cfg['env_conf']['max_turns_upper']
         },
-            sampling_type=cfg['env']['sampling_type'],
-            item_max_quantity=cfg['env']['item_max_quantity'],
+            sampling_type=cfg['env_conf']['sampling_type'],
+            item_max_quantity=cfg['env_conf']['item_max_quantity'],
             batch_size=cfg['batch_size'],
-            device=cfg['env']['device'])
+            device=cfg['env_conf']['device'])
     else:
-        raise ValueError(f"Environment type {cfg['env']['type']} not supported.")
+        raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
     if cfg['self_play']:
         agent_1 = agent_2 = instantiate_agent(cfg)
     else:
         agent_1 = instantiate_agent(cfg)
         agent_2 = instantiate_agent(cfg)
+
+    if cfg['replay_buffer']['mode'] == 'enabled':
+        use_replay_buffer = True
+    elif cfg['replay_buffer']['mode'] == 'disabled':
+        use_replay_buffer = False
+    else:
+        raise ValueError(f"Replay buffer mode {cfg['replay_buffer']['mode']} not supported.")
 
     algorithm = AdvantageAlignment(
         env=env,
@@ -1079,6 +1171,10 @@ def main(cfg: DictConfig) -> None:
         sum_rewards=cfg['sum_rewards'],
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
+        use_replay_buffer=use_replay_buffer,
+        replay_buffer_size=cfg['replay_buffer']['size'],
+        replay_buffer_update_size=cfg['replay_buffer']['update_size'],
+        off_policy_ratio=cfg['replay_buffer']['off_policy_ratio'],
     )
     algorithm.train_loop()
 

@@ -11,8 +11,14 @@ self_play: True
 share_encoder: True
 use_gru: True
 device: cpu
+replay_buffer:
+  mode: 'enabled'
+  size: 10000
+  update_size: 100
+  off_policy_ratio: 0.1
 
-env:
+
+env_conf:
   type: 'eg-obligated_ratio'
   item_max_quantity: 5
   batch: 2
