@@ -878,7 +878,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
 
         def normalize_reward(reward):
             MAX_REWARD = self.utility_max * self.nb_items
-            return (reward / MAX_REWARD) * 2 - 1
+            return (reward / MAX_REWARD)
         # scale down the rewards
         rewards_1 = normalize_reward(rewards_1)
         rewards_2 = normalize_reward(rewards_2)
