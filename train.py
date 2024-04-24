@@ -397,8 +397,8 @@ class TrainingAlgorithm(ABC):
             print("Evaluation metrics:", eval_metrics)
             wandb_metrics.update(eval_metrics)
 
-            mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities", "props", "rewards"])
             for i in range(10):
+                mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities", "props", "rewards"])
                 mini_trajectory = {
                     "item_pool": trajectory.data['item_pool'][i, 0:10, :].reshape(-1),
                     "utilities": torch.cat((trajectory.data['utility_1'][i, 0:10, :],trajectory.data['utility_2'][i, 0:10, :])),
