@@ -310,8 +310,8 @@ class TrajectoryBatch():
         self.data['obs_1'][:, t, :] = observations[1]
         self.data['rewards_0'][:, t] = rewards[0]
         self.data['rewards_1'][:, t] = rewards[1]
-        self.data['log_ps_0'][:, t] = log_ps[0]
-        self.data['log_ps_1'][:, t] = log_ps[1]
+        self.data['log_ps_0'][:, t] = log_ps[0].detach()
+        self.data['log_ps_1'][:, t] = log_ps[1].detach()
         self.data['max_sum_rewards'][:, t] = info['max_sum_rewards']
         self.data['max_sum_reward_ratio'][:, t] = info['max_sum_reward_ratio']
         self.data['cos_sims'][:, t] = info['cos_sims']
