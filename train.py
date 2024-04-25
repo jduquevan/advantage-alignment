@@ -298,8 +298,6 @@ class TrajectoryBatch():
             assert data[key].size(1) == max_traj_len
         return TrajectoryBatch(sample_obs, batch_size, max_traj_len, device, data)
 
-
-
     def add_step_sim(self, action, observations, rewards, log_ps, done, info, t, item_pool, utilities_1, utilities_2):
         self.data['props_0'][:, t, :] = action[0]['prop']
         self.data['props_1'][:, t, :] = action[1]['prop']
@@ -482,17 +480,20 @@ class TrainingAlgorithm(ABC):
             wandb_metrics.update(eval_metrics)
 
             for i in range(10):
-                mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities", "props", "rewards"])
+                mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities_1", "utilities_2", "props_1", "props_2", "rewards_1", "rewards_2"])
                 mini_trajectory = {
                     "item_pool": trajectory.data['item_pool'][i, 0:10, :],
-                    "utilities": torch.cat((trajectory.data['utility_1'][i, 0:10, :],trajectory.data['utility_2'][i, 0:10, :]), dim=0),
-                    "props": torch.cat((trajectory.data['props_0'][i, 0:10, :], trajectory.data['props_1'][i, 0:10, :]), dim=0),
-                    "rewards": torch.cat((trajectory.data['rewards_0'][i, 0:10], trajectory.data['rewards_1'][i, 0:10]), dim=0),
+                    "utilities_1": trajectory.data['utility_1'][i, 0:10, :],
+                    "utilities_2": trajectory.data['utility_2'][i, 0:10, :],
+                    "props_1": trajectory.data['props_0'][i, 0:10, :],
+                    "props_2": trajectory.data['props_1'][i, 0:10, :],
+                    "rewards_1": trajectory.data['rewards_0'][i, 0:10],
+                    "rewards_2": trajectory.data['rewards_1'][i, 0:10],
                 }
                 def torch_to_str(x):
                     return str(x.cpu().numpy().tolist())
                 mini_trajectory = {k: torch_to_str(v) for k, v in mini_trajectory.items()}
-                mini_traj_table.add_data(i,step,mini_trajectory["item_pool"], mini_trajectory["utilities"], mini_trajectory["props"], mini_trajectory["rewards"])
+                mini_traj_table.add_data(i,step, mini_trajectory["item_pool"], mini_trajectory["utilities_1"], mini_trajectory["utilities_2"], mini_trajectory["props_1"], mini_trajectory["props_2"], mini_trajectory["rewards_1"], mini_trajectory["rewards_2"])
 
             if step % 50 == 0:
                 print("Mini trajectory:", mini_trajectory)
