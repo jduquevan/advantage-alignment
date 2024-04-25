@@ -1118,7 +1118,7 @@ def test_fixed_agents():
     print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
 
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="f1.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="eg.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
