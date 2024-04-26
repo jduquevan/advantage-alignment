@@ -59,6 +59,7 @@ linear_model:
   out_size: 1
   device: ${device}
   num_hidden: 2
+  append_time: False
 
 optimizer_actor:
   _target_: torch.optim.Adam
