@@ -159,6 +159,11 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2):
         "Target Values 2": train_step_metrics_2["target_values"],
     }
 
+    if 'loss_1_grad_norm' in train_step_metrics_1:
+        merged_metrics.update({
+            "Loss 1 Grad Norm": train_step_metrics_1["loss_1_grad_norm"],
+            "Loss 2 Grad Norm": train_step_metrics_2["loss_2_grad_norm"]
+        })
 
     merged_metrics.update({
         "Prop Entropy 1": train_step_metrics_1["prop_entropy"],

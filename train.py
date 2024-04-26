@@ -396,7 +396,8 @@ class TrainingAlgorithm(ABC):
         self,
         trajectory,
         agent,
-        is_first=True
+        is_first=True,
+        compute_aux=True,
     ):
         agent.critic_optimizer.zero_grad()
         critic_loss, aux = self.critic_loss(trajectory, is_first)
@@ -412,6 +413,7 @@ class TrainingAlgorithm(ABC):
 
         actor_loss_dict = self.actor_loss(trajectory, is_first)
         actor_loss = actor_loss_dict['loss']
+
         ent = actor_loss_dict['prop_ent']
         train_step_metrics = {
             "critic_loss": critic_loss.detach(),
@@ -420,6 +422,16 @@ class TrainingAlgorithm(ABC):
             "critic_values": critic_values.mean().detach(),
             "target_values": target_values.mean().detach(),
         }
+
+        if compute_aux:
+            actor_loss_1 = actor_loss_dict['loss_1']
+            actor_loss_2 = actor_loss_dict['loss_2']
+            loss_1_grads = torch.autograd.grad(actor_loss_1, agent.actor.parameters(), create_graph=False, retain_graph=True)
+            loss_2_grads = torch.autograd.grad(actor_loss_2, agent.actor.parameters(), create_graph=False, retain_graph=True)
+            loss_1_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_1_grads]))
+            loss_2_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_2_grads]))
+            train_step_metrics["loss_1_grad_norm"] = loss_1_norm.detach()
+            train_step_metrics["loss_2_grad_norm"] = loss_2_norm.detach()
 
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
@@ -466,13 +478,15 @@ class TrainingAlgorithm(ABC):
                 train_step_metrics_1 = self.train_step(
                     trajectory=augmented_trajectories,
                     agent=self.agent_1,
-                    is_first=True
+                    is_first=True,
+                    compute_aux=(i % 20 == 0),
                 )
 
                 train_step_metrics_2 = self.train_step(
                     trajectory=augmented_trajectories,
                     agent=self.agent_2,
-                    is_first=False
+                    is_first=False,
+                    compute_aux=(i % 20 == 0),
                 )
 
                 train_step_metrics = merge_train_step_metrics(
@@ -716,6 +730,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             loss_2 = torch.zeros(1, device=loss_1.device)
 
         actor_loss_dict['loss'] = loss_1 + self.train_cfg.aa_weight * loss_2
+        actor_loss_dict['loss_1'] = loss_1
+        actor_loss_dict['loss_2'] = loss_2
         return actor_loss_dict
 
     def critic_loss(self,
