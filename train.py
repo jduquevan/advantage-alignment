@@ -39,22 +39,27 @@ from abc import ABC, abstractmethod
 
 
 class LinearModel(nn.Module):
-    def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True):
+    def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True, append_time: bool = False):
         super(LinearModel, self).__init__()
         self.encoder = encoder
 
         self.use_gru = use_gru
-        self.in_size = in_size
+        self.in_size = in_size + (1 if append_time else 0)
 
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, in_size) for i in range(num_hidden)])
+        self.hidden_layers = nn.ModuleList([nn.Linear(self.in_size, self.in_size) for i in range(num_hidden)])
 
-        self.linear = nn.Linear(in_size, out_size)
+        self.linear = nn.Linear(self.in_size, out_size)
+        self.append_time = append_time
         self.to(device)
 
-    def forward(self, x, h_0=None, partial_forward=True):
+    def forward(self, x, h_0=None, partial_forward=True, t: int = None):
         assert self.use_gru
         output, x = self.encoder(x, h_0)
         x = x.squeeze(0)
+        if self.append_time:
+            assert t is not None
+            batch_size = x.size(0)
+            x = torch.cat((x, torch.tensor(t, device=x.device).repeat(batch_size).unsqueeze(-1)), dim=-1)
 
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
@@ -394,7 +399,9 @@ class TrainingAlgorithm(ABC):
         is_first=True
     ):
         agent.critic_optimizer.zero_grad()
-        critic_loss = self.critic_loss(trajectory, is_first)
+        critic_loss, aux = self.critic_loss(trajectory, is_first)
+        critic_values = aux['critic_values']
+        target_values = aux['target_values']
         critic_loss.backward()
         if self.clip_grad_norm is not None:
             torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
@@ -409,7 +416,9 @@ class TrainingAlgorithm(ABC):
         train_step_metrics = {
             "critic_loss": critic_loss.detach(),
             "actor_loss": actor_loss.detach(),
-            "prop_entropy": actor_loss_dict['prop_ent'].detach()
+            "prop_entropy": actor_loss_dict['prop_ent'].detach(),
+            "critic_values": critic_values.mean().detach(),
+            "target_values": target_values.mean().detach(),
         }
 
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
@@ -480,6 +489,7 @@ class TrainingAlgorithm(ABC):
                 self.replay_buffer.add_trajectory_batch(trajectory.subsample(self.replay_buffer_update_size))
 
             wandb_metrics.update(train_step_metrics)
+            print(f"train step metrics: {train_step_metrics}")
 
             eval_metrics = self.eval(self.agent_1)
             print("Evaluation metrics:", eval_metrics)
@@ -592,8 +602,8 @@ class AdvantageAlignment(TrainingAlgorithm):
         hidden_c, hidden_t = None, None
         for t in range(self.trajectory_len):
             obs = get_observation(observation, t)
-            hidden_c, value_c = agent.critic(obs, h_0=hidden_c)
-            hidden_t, value_t = agent.target(obs, h_0=hidden_t)
+            hidden_c, value_c = agent.critic(obs, h_0=hidden_c, t=t)
+            hidden_t, value_t = agent.target(obs, h_0=hidden_t, t=t)
             values_c[:, t] = value_c.reshape(self.batch_size)
             values_t[:, t] = value_t.reshape(self.batch_size)
             hidden_c = hidden_c.permute((1, 0, 2))
@@ -738,7 +748,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             discounted_returns = compute_discounted_returns(gamma, rewards_1)
             critic_loss = F.huber_loss(values_c, discounted_returns)
 
-        return critic_loss
+        return critic_loss, {'target_values': values_t, 'critic_values': values_c}
 
     def gen_sim(self):
         return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2)
