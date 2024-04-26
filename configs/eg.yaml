@@ -1,5 +1,5 @@
 seed: 42
-batch_size: 512
+batch_size: 16384
 wandb: 'online'
 wandb_tags: []
 wandb_dir: /network/scratch/j/juan.duque/wandb/
@@ -13,9 +13,9 @@ use_gru: True
 device: cpu
 replay_buffer:
   mode: 'enabled'
-  size: 10000
-  update_size: 100
-  off_policy_ratio: 0.1
+  size: 100000
+  update_size: 500
+  off_policy_ratio: 0.05
 
 
 env_conf:
@@ -27,7 +27,7 @@ env_conf:
   max_turns_upper: 1
   max_turns_mean: 1
   sampling_type: 'high_contrast'
-  obs_mode: 'just_utility_diff'
+  obs_mode: 'raw'
 
 
 hydra:
@@ -62,7 +62,7 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.001
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -80,11 +80,11 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.15
-  entropy_beta: 0.2
+  entropy_beta: 0.005
   vanilla: False
   updates_per_batch: 2
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
-  aa_weight: 10
+  aa_weight: 3
   clip_grad_norm: 1.0
