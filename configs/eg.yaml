@@ -10,11 +10,11 @@ discrete: True
 self_play: True
 share_encoder: True
 use_gru: True
-device: cuda
+device: cpu
 replay_buffer:
   mode: 'enabled'
-  size: 50000
-  update_size: 200
+  size: 10000
+  update_size: 100
   off_policy_ratio: 0.1
 
 
@@ -38,15 +38,15 @@ hydra:
 encoder:
   _target_: train.GruModel
   device: ${device}
-  hidden_size: 128
-  num_layers: 2
+  hidden_size: 64
+  num_layers: 1
 
 mlp_model:
   _target_: train.MLPModelDiscrete
-  in_size: 128
+  in_size: 64
   device: ${device}
   hidden_size: 128
-  num_layers: 2
+  num_layers: 1
   output_size: ${eval:${env_conf.item_max_quantity} + 1}
 
 policy:
@@ -55,14 +55,14 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 128
+  in_size: 64
   out_size: 1
   device: ${device}
   num_hidden: 2
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 0.0001
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -75,16 +75,15 @@ agent:
 training:
   gamma: 0.96
   tau: 0.005
-  max_traj_len: 50
-  batch_size: 512 # Training batch size
+  max_traj_len: 7
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
-  proximal: False
+  proximal: True
   clip_range: 0.15
-  entropy_beta: 0.01
+  entropy_beta: 0.2
   vanilla: False
   updates_per_batch: 2
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
-  aa_weight: 1
+  aa_weight: 10
