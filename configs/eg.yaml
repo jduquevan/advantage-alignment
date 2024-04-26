@@ -87,3 +87,4 @@ training:
   save_every: 200
   checkpoint_dir: './experiments'
   aa_weight: 10
+  clip_grad_norm: 1.0

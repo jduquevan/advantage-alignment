@@ -366,6 +366,7 @@ class TrainingAlgorithm(ABC):
         replay_buffer_size: int,
         replay_buffer_update_size: int,
         off_policy_ratio: float,
+        clip_grad_norm: float = None,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
@@ -394,6 +395,8 @@ class TrainingAlgorithm(ABC):
         agent.critic_optimizer.zero_grad()
         critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
+        if self.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
         critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.critic.parameters()]))
         agent.critic_optimizer.step()
 
@@ -410,6 +413,8 @@ class TrainingAlgorithm(ABC):
 
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
+        if self.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.actor.parameters(), self.train_cfg.clip_grad_norm)
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
 
@@ -1176,6 +1181,7 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['replay_buffer']['size'],
         replay_buffer_update_size=cfg['replay_buffer']['update_size'],
         off_policy_ratio=cfg['replay_buffer']['off_policy_ratio'],
+        clip_grad_norm=cfg['clip_grad_norm'],
     )
     algorithm.train_loop()
 
