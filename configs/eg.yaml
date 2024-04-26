@@ -76,7 +76,6 @@ training:
   gamma: 0.96
   tau: 0.005
   max_traj_len: 7
-  batch_size: 512 # Training batch size
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
