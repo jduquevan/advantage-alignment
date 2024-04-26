@@ -738,7 +738,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2)
 
     @staticmethod
-    @torch.compile
     def _gen_sim(env, batch_size, trajectory_len, agent_1, agent_2):
         observations, _ = env.reset()
         observations_1, observations_2 = observations
