@@ -25,11 +25,12 @@ def run_job(command, fake_submit: bool = True, partition: str = 'long'):
 
 def main(fake_submit: bool = True, partition='long', test=True):
     commands = []
-    actor_lr = random.choice([1e-3]) / 3.
-    critic_lr = random.choice([1e-3]) / 3.
+    actor_lr = random.choice([1e-3])  #
+    critic_lr = random.choice([1e-3])  #
     entropy_beta = random.choice([0.005])
     aa_weight = random.choice([3.])
     off_policy_ratio = random.choice([0.05])
+    clip_grad_norm = random.choice([1.0])  #
 
     commands.append(
         f"python train.py training.vanilla=False"
@@ -50,6 +51,7 @@ def main(fake_submit: bool = True, partition='long', test=True):
         f" training.aa_weight={aa_weight}"
         f" self_play=True"
         f" batch_size=16384"
+        f" training.clip_grad_norm={clip_grad_norm}"
         f" --config-name milad_mila.yaml"
     )
 
