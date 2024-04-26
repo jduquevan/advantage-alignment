@@ -382,6 +382,7 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer_size = replay_buffer_size
         self.replay_buffer_update_size = replay_buffer_update_size
         self.off_policy_ratio = off_policy_ratio
+        self.clip_grad_norm = clip_grad_norm
 
         if self.use_replay_buffer:
             self.replay_buffer = ReplayBuffer(self.env, self.replay_buffer_size, self.trajectory_len, self.env.device)
@@ -1181,7 +1182,7 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['replay_buffer']['size'],
         replay_buffer_update_size=cfg['replay_buffer']['update_size'],
         off_policy_ratio=cfg['replay_buffer']['off_policy_ratio'],
-        clip_grad_norm=cfg['clip_grad_norm'],
+        clip_grad_norm=cfg['training']['clip_grad_norm'],
     )
     algorithm.train_loop()
 
