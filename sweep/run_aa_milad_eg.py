@@ -20,16 +20,16 @@ def run_job(command, fake_submit: bool = True, partition: str = 'long'):
     if fake_submit:
         print('fake submit')
     else:
-        command = f'sbatch --time=8:00:0 --partition={partition} --gres=gpu:a100l:1 --mem=32Gb -c 4 sweep_temp_job.sh'
+        command = f'sbatch --time=2:00:0 --partition={partition} --gres=gpu:a100l:1 --mem=32Gb -c 4 sweep_temp_job.sh'
         os.system(command)
 
 def main(fake_submit: bool = True, partition='long', test=True):
     commands = []
     actor_lr = random.choice([1e-3, 3e-4])
     critic_lr = random.choice([1e-3, 3e-3])
-    entropy_beta = random.choice([0.1, 0.2, 1.0, 3.0])
-    aa_weight = random.choice([1., 10.])
-    off_policy_ratio = random.choice([0.1, 0.3, 0.5])
+    entropy_beta = random.choice([0.005, 0.01, 0.03, 0.1])
+    aa_weight = random.choice([1., 3.,  10.])
+    off_policy_ratio = random.choice([0.05, 0.1, 0.2, 0.3, 0.5])
 
     commands.append(
         f"python train.py training.vanilla=False"
