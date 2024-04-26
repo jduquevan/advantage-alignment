@@ -961,8 +961,8 @@ class ObligatedRatioDiscreteEG(gym.Env):
         prop_1 = actions_1["prop"]
         prop_2 = actions_2["prop"]
 
-        rewards_1 = ((prop_1 / torch.clip(prop_1 + prop_2, min=5.)) * self.item_pool * self.utilities_1).sum(dim=-1)
-        rewards_2 = ((prop_2 / torch.clip(prop_1 + prop_2, min=5.)) * self.item_pool * self.utilities_2).sum(dim=-1)
+        rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
+        rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
 
         def normalize_reward(reward):
             MAX_REWARD = self.utility_max * self.nb_items
