@@ -528,6 +528,9 @@ class TrainingAlgorithm(ABC):
             if step % 50 == 0:
                 print("Mini trajectory:", mini_trajectory)
                 wandb_metrics.update({"mini_trajectory_table": mini_traj_table})
+
+            # log temperature of actor's softmax
+            wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
             wandb.log(step=step, data=wandb_metrics)
 
 
