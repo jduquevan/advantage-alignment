@@ -28,6 +28,7 @@ env_conf:
   max_turns_mean: 1
   sampling_type: 'high_contrast'
   obs_mode: 'raw'
+  prop_mode: 'divide_when_above'
 
 
 hydra:

@@ -879,6 +879,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         device=None,
         batch_size=128,
         sampling_type="no_sampling",
+        prop_mode='divide_when_above',
     ):
         super().__init__()
 
@@ -891,6 +892,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         self.device = device
         self.batch_size = batch_size
         self.sampling_type = sampling_type
+        self.prop_mode = prop_mode
         self.info = {}
 
     def _get_max_sum_rewards(self):
@@ -990,8 +992,14 @@ class ObligatedRatioDiscreteEG(gym.Env):
         prop_1 = actions_1["prop"]
         prop_2 = actions_2["prop"]
 
-        rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
-        rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
+        if self.prop_mode == 'proportion':
+            rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
+            rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
+        elif self.prop_mode == 'divide_when_above':
+            rewards_1 = ((prop_1 / torch.max(prop_1 + prop_2, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_1).sum(dim=-1)
+            rewards_2 = ((prop_2 / torch.max(prop_2 + prop_1, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_2).sum(dim=-1)
+        else:
+            raise Exception(f"Unsupported prop mode: '{self.prop_mode}'.")
 
         def normalize_reward(reward):
             MAX_REWARD = self.utility_max * self.nb_items
@@ -1182,7 +1190,9 @@ def main(cfg: DictConfig) -> None:
             sampling_type=cfg['env_conf']['sampling_type'],
             item_max_quantity=cfg['env_conf']['item_max_quantity'],
             batch_size=cfg['batch_size'],
-            device=cfg['env_conf']['device'])
+            device=cfg['env_conf']['device'],
+            prop_mode=cfg['env_conf']['prop_mode'],
+        )
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
