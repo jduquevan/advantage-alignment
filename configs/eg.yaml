@@ -17,6 +17,12 @@ replay_buffer:
   update_size: 500
   off_policy_ratio: 0.05
 
+agent_replay_buffer:
+  mode: 'disabled'
+  size: 200
+  update_every_step: 20
+  off_policy_ratio: 0.5
+
 
 env_conf:
   type: 'eg-obligated_ratio'
