@@ -367,7 +367,7 @@ class AgentReplayBuffer:
         self.marker = 0
         self.num_added_agents = 0
         self.agents = []
-        for i in range(agent_number):
+        for i in range(replay_buffer_size):
             self.agents.append(None) # create a [None, ..., None] list
         self.agent_number = agent_number
 
