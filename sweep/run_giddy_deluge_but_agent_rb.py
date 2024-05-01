@@ -41,7 +41,7 @@ def main(fake_submit: bool = True, partition='long', test=True):
         f" env_conf.obs_mode=raw"
         f" encoder.num_layers=2"
         f" mlp_model.num_layers=2"
-        f" replay_buffer.mode=enabled"
+        f" replay_buffer.mode=disabled"
         f" replay_buffer.size=100000"
         f" replay_buffer.update_size=500"
         f" replay_buffer.off_policy_ratio={off_policy_ratio}"
