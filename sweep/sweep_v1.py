@@ -10,13 +10,13 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [1e-4, 5e-4, 1e-3, 5e-3],
-        'optimizer_critic.lr': [5e-4, 1e-3, 5e-3],
-        'training.entropy_beta': [0.02],
-        'training.clip_range': [0.3],
-        'training.updates_per_batch': [1],
-        'training.aa_weight': [1],
-        'batch_size': [4096],
+        'optimizer_actor.lr': [1e-5, 1e-4, 5e-4, 1e-3, 5e-3],
+        'optimizer_critic.lr': [1e-5, 1e-4, 5e-4, 1e-3, 5e-3],
+        'training.entropy_beta': [0.005, 0.01, 0.05, 0.1],
+        'training.clip_range': [0.1, 0.15, 0.2, 0.3],
+        'training.updates_per_batch': [1, 2, 3],
+        'training.aa_weight': [1, 3, 5],
+        'batch_size': [16384],
         'replay_buffer.off_policy_ratio': [0.05, 0.1, 0.15, 0.2],
         'hidden_size': [64, 128, 256],
     }
