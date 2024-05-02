@@ -146,12 +146,13 @@ class GruModel(nn.Module):
 
 
 class MLPModelDiscrete(nn.Module):
-    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
+    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True, soften_more=False):
         super(MLPModelDiscrete, self).__init__()
         # self.transformer = transformer
         self.num_layers = num_layers
         self.encoder = encoder
         self.use_gru = use_gru
+        self.soften_more = soften_more
 
         self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
 
@@ -170,13 +171,15 @@ class MLPModelDiscrete(nn.Module):
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
-        # Prop
-        prop_probs = [F.softmax(prop_head(x) / self.temp, dim=-1) for prop_head in self.prop_heads]
+        if self.soften_more:
+            prop_probs = [F.softmax(torch.sigmoid(prop_head(x)) * 5. / self.temp, dim=-1) for prop_head in self.prop_heads]
+        else:
+            prop_probs = [F.softmax(prop_head(x) / self.temp, dim=-1) for prop_head in self.prop_heads]
 
         return output, prop_probs
 
 
-class AdvantageAlignmentAgent(Agent):
+class AdvantageAlignmentAgent(Agent, nn.Module):
     def __init__(
         self,
         device: torch.device,
@@ -356,6 +359,36 @@ class ReplayBuffer():
     def __len__(self):
         return min(self.number_of_added_trajectories, self.replay_buffer_size)
 
+class AgentReplayBuffer:
+    def __init__(self,
+                 main_cfg: DictConfig, # to instantiate the agents from
+                 replay_buffer_size: int,
+                 agent_number: int, # either 1 or 2  as it is a two player game
+                 ):
+        self.main_cfg = main_cfg
+        self.replay_buffer_size = replay_buffer_size
+        self.marker = 0
+        self.num_added_agents = 0
+        self.agents = []
+        for i in range(replay_buffer_size):
+            self.agents.append(None) # create a [None, ..., None] list
+        self.agent_number = agent_number
+
+    def add_agent(self, agent):
+        self.agents[self.marker] = agent.state_dict()
+        self.num_added_agents += 1
+        self.marker = (self.marker + 1) % self.replay_buffer_size
+
+    def sample(self):
+        idx = torch.randint(0, self.__len__(), (1,))
+        state_dict = self.agents[idx]
+        agent = instantiate_agent(self.main_cfg)
+        agent.load_state_dict(state_dict)
+        return agent
+
+    def __len__(self):
+        return min(self.num_added_agents, self.replay_buffer_size)
+
 
 class TrainingAlgorithm(ABC):
     def __init__(
@@ -363,6 +396,7 @@ class TrainingAlgorithm(ABC):
         env: gym.Env,
         agent_1: Agent,
         agent_2: Agent,
+        main_cfg: DictConfig,
         train_cfg: DictConfig,
         sum_rewards: bool,
         simultaneous: bool,
@@ -370,12 +404,17 @@ class TrainingAlgorithm(ABC):
         use_replay_buffer: bool,
         replay_buffer_size: int,
         replay_buffer_update_size: int,
+        use_agent_replay_buffer: bool,
+        agent_replay_buffer_size: int,
+        agent_replay_buffer_update_every_step: int,
+        agent_replay_buffer_off_policy_ratio: float,
         off_policy_ratio: float,
         clip_grad_norm: float = None,
     ) -> None:
         self.env = env
         self.agent_1 = agent_1
         self.agent_2 = agent_2
+        self.main_cfg = main_cfg
         self.train_cfg = train_cfg
         self.trajectory_len = train_cfg.max_traj_len
         self.sum_rewards = sum_rewards
@@ -388,9 +427,20 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer_update_size = replay_buffer_update_size
         self.off_policy_ratio = off_policy_ratio
         self.clip_grad_norm = clip_grad_norm
+        self.use_agent_replay_buffer = use_agent_replay_buffer
+        self.agent_replay_buffer_size = agent_replay_buffer_size
+        self.agent_replay_buffer_update_every_step = agent_replay_buffer_update_every_step
+        self.agent_replay_buffer_off_policy_ratio = agent_replay_buffer_off_policy_ratio
 
         if self.use_replay_buffer:
+            assert self.use_agent_replay_buffer == False, "Cannot use both replay buffer and agent replay buffer at the same time."
             self.replay_buffer = ReplayBuffer(self.env, self.replay_buffer_size, self.trajectory_len, self.env.device)
+
+        if self.use_agent_replay_buffer:
+            assert self.use_replay_buffer == False, "Cannot use both replay buffer and agent replay buffer at the same time."
+            self.agent_1_replay_buffer = AgentReplayBuffer(self.main_cfg, self.agent_replay_buffer_size, 1)
+            self.agent_2_replay_buffer = AgentReplayBuffer(self.main_cfg, self.agent_replay_buffer_size, 2)
+
 
     def train_step(
         self,
@@ -453,14 +503,26 @@ class TrainingAlgorithm(ABC):
         pass
 
     def train_loop(self):
-
+        # assert either replay buffer or agent replay buffer is used, but not both
+        assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
         pbar = tqdm(range(self.train_cfg.total_steps))
 
         for step in pbar:
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
 
-            trajectory = self.gen_sim()
+            if self.use_agent_replay_buffer is False or len(self.agent_1_replay_buffer) == 0 or len(self.agent_2_replay_buffer) == 0:
+                trajectory = self.gen_sim()
+            else:
+                print("@@@Using agent replay buffer@@@----")
+                off_policy_agent_size = int(self.batch_size * self.agent_replay_buffer_off_policy_ratio)
+                trajectory = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2).subsample(self.batch_size - off_policy_agent_size)
+                agent_2_sampled = self.agent_2_replay_buffer.sample()
+                trajectory_1 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, agent_2_sampled).subsample(off_policy_agent_size)
+                agent_1_sampled = self.agent_1_replay_buffer.sample()
+                trajectory_2 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, agent_1_sampled, self.agent_2).subsample(off_policy_agent_size)
+                trajectory_1 = trajectory_1.merge_two_trajectories(trajectory)
+                trajectory_2 = trajectory_2.merge_two_trajectories(trajectory)
 
             wandb_metrics = wandb_stats(trajectory)
 
@@ -475,19 +537,34 @@ class TrainingAlgorithm(ABC):
                 else:
                     augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
-                train_step_metrics_1 = self.train_step(
-                    trajectory=augmented_trajectories,
-                    agent=self.agent_1,
-                    is_first=True,
-                    compute_aux=(step % 20 == 0),
-                )
+                if self.use_agent_replay_buffer is False or len(self.agent_1_replay_buffer) == 0 or len(self.agent_2_replay_buffer) == 0:
+                    train_step_metrics_1 = self.train_step(
+                        trajectory=augmented_trajectories,
+                        agent=self.agent_1,
+                        is_first=True,
+                        compute_aux=(step % 20 == 0),
+                    )
 
-                train_step_metrics_2 = self.train_step(
-                    trajectory=augmented_trajectories,
-                    agent=self.agent_2,
-                    is_first=False,
-                    compute_aux=(step % 20 == 0),
-                )
+                    train_step_metrics_2 = self.train_step(
+                        trajectory=augmented_trajectories,
+                        agent=self.agent_2,
+                        is_first=False,
+                        compute_aux=(step % 20 == 0),
+                    )
+                else:
+                    train_step_metrics_1 = self.train_step(
+                        trajectory=trajectory_1,
+                        agent=self.agent_1,
+                        is_first=True,
+                        compute_aux=(step % 20 == 0),
+                    )
+
+                    train_step_metrics_2 = self.train_step(
+                        trajectory=trajectory_2,
+                        agent=self.agent_2,
+                        is_first=False,
+                        compute_aux=(step % 20 == 0),
+                    )
 
                 train_step_metrics = merge_train_step_metrics(
                     train_step_metrics_1,
@@ -501,6 +578,11 @@ class TrainingAlgorithm(ABC):
             # update replay buffer
             if self.use_replay_buffer:
                 self.replay_buffer.add_trajectory_batch(trajectory.subsample(self.replay_buffer_update_size))
+
+            if self.use_agent_replay_buffer:
+                if step % self.agent_replay_buffer_update_every_step == 0:
+                    self.agent_1_replay_buffer.add_agent(self.agent_1)
+                    self.agent_2_replay_buffer.add_agent(self.agent_2)
 
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
@@ -528,6 +610,9 @@ class TrainingAlgorithm(ABC):
             if step % 50 == 0:
                 print("Mini trajectory:", mini_trajectory)
                 wandb_metrics.update({"mini_trajectory_table": mini_traj_table})
+
+            # log temperature of actor's softmax
+            wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
             wandb.log(step=step, data=wandb_metrics)
 
 
@@ -876,6 +961,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         device=None,
         batch_size=128,
         sampling_type="no_sampling",
+        prop_mode='divide_when_above',
     ):
         super().__init__()
 
@@ -888,6 +974,7 @@ class ObligatedRatioDiscreteEG(gym.Env):
         self.device = device
         self.batch_size = batch_size
         self.sampling_type = sampling_type
+        self.prop_mode = prop_mode
         self.info = {}
 
     def _get_max_sum_rewards(self):
@@ -987,8 +1074,14 @@ class ObligatedRatioDiscreteEG(gym.Env):
         prop_1 = actions_1["prop"]
         prop_2 = actions_2["prop"]
 
-        rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
-        rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
+        if self.prop_mode == 'proportion':
+            rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
+            rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
+        elif self.prop_mode == 'divide_when_above':
+            rewards_1 = ((prop_1 / torch.max(prop_1 + prop_2, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_1).sum(dim=-1)
+            rewards_2 = ((prop_2 / torch.max(prop_2 + prop_1, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_2).sum(dim=-1)
+        else:
+            raise Exception(f"Unsupported prop mode: '{self.prop_mode}'.")
 
         def normalize_reward(reward):
             MAX_REWARD = self.utility_max * self.nb_items
@@ -1179,7 +1272,9 @@ def main(cfg: DictConfig) -> None:
             sampling_type=cfg['env_conf']['sampling_type'],
             item_max_quantity=cfg['env_conf']['item_max_quantity'],
             batch_size=cfg['batch_size'],
-            device=cfg['env_conf']['device'])
+            device=cfg['env_conf']['device'],
+            prop_mode=cfg['env_conf']['prop_mode'],
+        )
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
@@ -1196,10 +1291,18 @@ def main(cfg: DictConfig) -> None:
     else:
         raise ValueError(f"Replay buffer mode {cfg['replay_buffer']['mode']} not supported.")
 
+    if cfg['agent_replay_buffer']['mode'] == 'enabled':
+        use_agent_replay_buffer = True
+    elif cfg['agent_replay_buffer']['mode'] == 'disabled':
+        use_agent_replay_buffer = False
+    else:
+        raise ValueError(f"Agent replay buffer mode {cfg['agent_replay_buffer']['mode']} not supported.")
+
     algorithm = AdvantageAlignment(
         env=env,
         agent_1=agent_1,
         agent_2=agent_2,
+        main_cfg=cfg,
         train_cfg=cfg.training,
         sum_rewards=cfg['sum_rewards'],
         simultaneous=cfg['simultaneous'],
@@ -1208,6 +1311,10 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['replay_buffer']['size'],
         replay_buffer_update_size=cfg['replay_buffer']['update_size'],
         off_policy_ratio=cfg['replay_buffer']['off_policy_ratio'],
+        use_agent_replay_buffer=use_agent_replay_buffer,
+        agent_replay_buffer_size=cfg['agent_replay_buffer']['size'],
+        agent_replay_buffer_update_every_step=cfg['agent_replay_buffer']['update_every_step'],
+        agent_replay_buffer_off_policy_ratio=cfg['agent_replay_buffer']['off_policy_ratio'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
     )
     algorithm.train_loop()

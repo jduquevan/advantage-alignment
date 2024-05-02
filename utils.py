@@ -161,8 +161,10 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2):
 
     if 'loss_1_grad_norm' in train_step_metrics_1:
         merged_metrics.update({
-            "Loss 1 Grad Norm": train_step_metrics_1["loss_1_grad_norm"],
-            "Loss 2 Grad Norm": train_step_metrics_2["loss_2_grad_norm"]
+            "Agent 1 Loss 1 Grad Norm": train_step_metrics_1["loss_1_grad_norm"],
+            "Agent 1 Loss 2 Grad Norm": train_step_metrics_1["loss_2_grad_norm"],
+            "Agent 2 Loss 1 Grad Norm": train_step_metrics_2["loss_1_grad_norm"],
+            "Agent 2 Loss 2 Grad Norm": train_step_metrics_2["loss_2_grad_norm"],
         })
 
     merged_metrics.update({
