@@ -511,12 +511,13 @@ class TrainingAlgorithm(ABC):
             if self.use_agent_replay_buffer is False or len(self.agent_1_replay_buffer) == 0 or len(self.agent_2_replay_buffer) == 0:
                 trajectory = self.gen_sim()
             else:
+                print("@@@Using agent replay buffer@@@----")
                 off_policy_agent_size = int(self.batch_size * self.agent_replay_buffer_off_policy_ratio)
                 trajectory = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2).subsample(self.batch_size - off_policy_agent_size)
                 agent_2_sampled = self.agent_2_replay_buffer.sample()
-                trajectory_1 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, agent_2_sampled).subsample(self.batch_size - off_policy_agent_size)
+                trajectory_1 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, agent_2_sampled).subsample(off_policy_agent_size)
                 agent_1_sampled = self.agent_1_replay_buffer.sample()
-                trajectory_2 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, agent_1_sampled, self.agent_2).subsample(self.batch_size - off_policy_agent_size)
+                trajectory_2 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, agent_1_sampled, self.agent_2).subsample(off_policy_agent_size)
                 trajectory_1 = trajectory_1.merge_two_trajectories(trajectory)
                 trajectory_2 = trajectory_2.merge_two_trajectories(trajectory)
 
