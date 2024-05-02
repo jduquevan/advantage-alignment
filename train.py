@@ -146,12 +146,13 @@ class GruModel(nn.Module):
 
 
 class MLPModelDiscrete(nn.Module):
-    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
+    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True, soften_more=False):
         super(MLPModelDiscrete, self).__init__()
         # self.transformer = transformer
         self.num_layers = num_layers
         self.encoder = encoder
         self.use_gru = use_gru
+        self.soften_more = soften_more
 
         self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
 
@@ -170,8 +171,10 @@ class MLPModelDiscrete(nn.Module):
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
-        # Prop
-        prop_probs = [F.softmax(prop_head(x) / self.temp, dim=-1) for prop_head in self.prop_heads]
+        if self.soften_more:
+            prop_probs = [F.softmax(torch.sigmoid(prop_head(x)) * 5. / self.temp, dim=-1) for prop_head in self.prop_heads]
+        else:
+            prop_probs = [F.softmax(prop_head(x) / self.temp, dim=-1) for prop_head in self.prop_heads]
 
         return output, prop_probs
 

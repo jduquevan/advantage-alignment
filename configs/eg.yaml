@@ -20,7 +20,7 @@ replay_buffer:
 agent_replay_buffer:
   mode: 'disabled'
   size: 200
-  update_every_step: 20
+  update_every_step: 1
   off_policy_ratio: 0.2
 
 
@@ -55,6 +55,7 @@ mlp_model:
   hidden_size: 128
   num_layers: 1
   output_size: ${eval:${env_conf.item_max_quantity} + 1}
+  soften_more: True
 
 policy:
   _target_: train.CategoricalPolicy
