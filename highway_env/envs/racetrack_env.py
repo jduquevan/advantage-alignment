@@ -8,6 +8,7 @@ from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.road.lane import CircularLane, LineType, StraightLane
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.vehicle.behavior import IDMVehicle, RockVehicle
+from highway_env.vehicle.objects import Obstacle
 
 Observation = TypeVar("Observation")
 LaneIndex = Tuple[str, str, int]
@@ -940,3 +941,252 @@ class F1Env(AbstractEnv):
                     break
             else:
                 self.road.vehicles.append(vehicle)
+
+class MergingEnv(AbstractEnv):
+    """
+    A continuous control environment.
+
+    The agent needs to learn two skills:
+    - follow the tracks
+    - avoid collisions with other vehicles
+
+    Credits and many thanks to @supperted825 for the idea and initial implementation.
+    See https://github.com/eleurent/highway-env/issues/231
+    """
+
+    def __init__(self, config: dict = None, render_mode: Optional[str] = None) -> None:
+        super().__init__(config=config, render_mode=render_mode)
+        
+        # DRS
+        self.drs_actions = 24  # Multiple of 3
+        self.drs_reset = True
+        self.max_speed = 40.0
+        self.drs_speed = 50.0
+
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "observation": {
+                    "type": "OccupancyGrid",
+                    "features": ["presence", "on_road"],
+                    "grid_size": [[-18, 18], [-18, 18]],
+                    "grid_step": [3, 3],
+                    "as_image": False,
+                    "align_to_vehicle_axes": True,
+                },
+                "action": {
+                    "type": "ContinuousAction",
+                    "longitudinal": False,
+                    "lateral": True,
+                    "target_speeds": [0, 5, 10],
+                },
+                "simulation_frequency": 15,
+                "policy_frequency": 5,
+                "duration": 300,
+                "collision_reward": -1,
+                "lane_centering_cost": 4,
+                "lane_centering_reward": 1,
+                "action_reward": -0.3,
+                "controlled_vehicles": 1,
+                "other_vehicles": 1,
+                "screen_width": 600,
+                "screen_height": 600,
+                "centering_position": [0.5, 0.5],
+            }
+        )
+        return config
+
+    def step(self, action: Action) -> Tuple[Observation, float, bool, bool, dict]:
+        """
+        Perform an action and step the environment dynamics.
+
+        The action is executed by the ego-vehicle, and all other vehicles on the road performs their default behaviour
+        for several simulation timesteps until the next decision making step.
+
+        :param action: the action performed by the ego-vehicle
+        :return: a tuple (observation, reward, terminated, truncated, info)
+        """
+        if self.road is None or self.vehicle is None:
+            raise NotImplementedError(
+                "The road and vehicle must be initialized in the environment implementation"
+            )
+
+        self.time += 1 / self.config["policy_frequency"]
+        self._simulate(action)
+
+        for vehicle in self.controlled_vehicles:
+            distance_to_lane = self.get_closest_lane_distance(vehicle.position, vehicle.heading)
+            if distance_to_lane > 10:
+                vehicle.crashed = True
+
+        obs = self.observation_type.observe()
+        terminated = self._is_terminated()
+        reward = self._reward(action, terminated)
+        truncated = self._is_truncated()
+        info = self._info(obs, action)
+        if self.render_mode == "human":
+            self.render()
+
+        if terminated:
+            self.reset()
+
+        return obs, reward, terminated, truncated, info
+
+    def get_closest_lane_distance(
+        self, position: np.ndarray, heading: Optional[float] = None
+    ) -> LaneIndex:
+        """
+        Get the index of the lane closest to a world position.
+
+        :param position: a world position [m].
+        :param heading: a heading angle [rad].
+        :return: the index of the closest lane.
+        """
+        indexes, distances = [], []
+        for _from, to_dict in self.road.network.graph.items():
+            for _to, lanes in to_dict.items():
+                for _id, l in enumerate(lanes):
+                    distances.append(l.distance_with_heading(position, heading))
+                    indexes.append((_from, _to, _id))
+        return np.min(distances)
+
+    def _reward(self, action: np.ndarray, terminated: bool) -> Tuple[float]:
+        rewards = [0, 0]
+        if terminated:
+            if self.first_vehicle_is_merging:
+                max_reward_0 = 2
+                max_reward_1 = 1
+            else:
+                max_reward_0 = 1
+                max_reward_1 = 2
+
+            if self.controlled_vehicles[0].position[0] > self.controlled_vehicles[1].position[0]:
+                rewards[0] = max_reward_0
+            else:
+                rewards[1] = max_reward_1
+            
+            for idx, vehicle in enumerate(self.controlled_vehicles):
+                if vehicle.crashed:
+                    rewards[idx] = -10
+        return tuple(rewards)
+
+    def _is_terminated(self) -> bool:
+        is_terminated = False
+        for vehicle in self.controlled_vehicles:
+            if vehicle.crashed or (
+                self.controlled_vehicles[0].position[0] > self.obstacle.position[0] and 
+                self.controlled_vehicles[1].position[0] > self.obstacle.position[0]
+            ):
+                is_terminated = True
+        return is_terminated
+
+    def _is_truncated(self) -> bool:
+        return self.time >= self.config["duration"]
+
+    def _reset(self) -> None:
+        self._make_road()
+        self._make_vehicles()
+
+    def _make_road(self) -> None:
+        net = RoadNetwork()
+
+        # Set Speed Limits for Road Sections - Straight, Turn20, Straight, Turn 15, Turn15, Straight, Turn25x2, Turn18
+        speedlimits = [None, 10, 10, 10, 10, 10, 10, 10, 10]
+
+        # Before obstacle
+
+        # Initialise First Lane
+        lane = StraightLane(
+            [-20, 0],
+            [100, 0],
+            line_types=(LineType.CONTINUOUS, LineType.STRIPED),
+            width=5,
+            speed_limit=speedlimits[1],
+        )
+        self.lane = lane
+
+        # Add Lanes to Road Network - Straight Section
+
+        net.add_lane("a", "b", lane)
+        net.add_lane(
+            "a",
+            "b",
+            StraightLane(
+                [-20, 5],
+                [100, 5],
+                line_types=(LineType.STRIPED, LineType.CONTINUOUS),
+                width=5,
+                speed_limit=speedlimits[1],
+            ),
+        )
+
+        # After obstacle
+
+        net.add_lane(
+            "b",
+            "c",
+            StraightLane(
+                [100, 0],
+                [200, 0],
+                line_types=(LineType.CONTINUOUS, LineType.NONE),
+                width=5,
+                speed_limit=speedlimits[1],
+            ),
+        )
+        net.add_lane(
+            "b",
+            "c",
+            StraightLane(
+                [100, 5],
+                [200, 5],
+                line_types=(LineType.STRIPED, LineType.CONTINUOUS),
+                width=5,
+                speed_limit=speedlimits[1],
+            ),
+        )
+
+        road = Road(
+            network=net,
+            np_random=self.np_random,
+            record_history=self.config["show_trajectories"],
+        )
+        self.obstacle = Obstacle(road, [100, 5])
+        road.objects.append(self.obstacle)
+        self.road = road
+
+    def _make_vehicles(self) -> None:
+        """
+        Populate a road with several vehicles on the highway and on the merging lane, as well as an ego-vehicle.
+        """
+        rng = self.np_random
+
+        # Controlled vehicles
+        self.controlled_vehicles = []
+
+        # TODO: Generalize to more than 1 vehicle
+        lower_bound = 0
+        upper_bound = 1
+        num_integers = 2
+
+        random_lanes = np.random.choice(
+            np.arange(lower_bound, upper_bound+1), 
+            size=num_integers, 
+            replace=False
+        )
+
+        self.first_vehicle_is_merging = random_lanes[0]==1
+
+        for i in range(self.config["controlled_vehicles"]):
+            lane_index = (
+                ("a", "b", random_lanes[i])
+                # if i == 0
+                # else self.road.network.random_lane_index(rng)
+            )
+            controlled_vehicle = self.action_type.vehicle_class.make_on_lane(
+                self.road, lane_index, speed=None, longitudinal=60
+            )
+
+            self.controlled_vehicles.append(controlled_vehicle)
+            self.road.vehicles.append(controlled_vehicle)

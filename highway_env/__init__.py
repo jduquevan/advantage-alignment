@@ -99,6 +99,12 @@ def register_highway_envs():
         entry_point = "highway_env.envs:F1Env",
     )
 
+    # merging_env.py
+    register(
+        id="merging-v0",
+        entry_point = "highway_env.envs:MergingEnv",
+    )
+
     # roundabout_env.py
     register(
         id="roundabout-v0",
