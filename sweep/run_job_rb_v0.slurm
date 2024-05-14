@@ -28,17 +28,8 @@ export HYDRA_FULL_ERROR=1
 
 python train.py \
     seed=${1} \
-    optimizer_actor.lr=${2} \
-    optimizer_critic.lr=${3} \
-    training.entropy_beta=${4} \
-    training.clip_range=${5} \
-    training.updates_per_batch=${6} \
-    training.aa_weight=${7} \
-    batch_size=${8} \
-    replay_buffer.off_policy_ratio=${9} \
-    encoder.hidden_size=${10} \
-    mlp_model.in_size=${10} \
-    mlp_model.hidden_size=${10} \
-    linear_model.in_size=${10} \
-    agent_replay_buffer.mode=${11} \
+    agent_replay_buffer.size=${2} \
+    agent_replay_buffer.update_every_step=${3} \
+    agent_replay_buffer.off_policy_ratio=${4} \
+    replay_buffer.mode=disabled \
     --config-name='eg.yaml' \
