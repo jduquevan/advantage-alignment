@@ -1,0 +1,100 @@
+seed: 42
+batch_size: 16384
+wandb: 'online'
+wandb_tags: []
+wandb_dir: /network/scratch/j/juan.duque/wandb/
+
+sum_rewards: False
+simultaneous: True
+discrete: False
+self_play: True
+share_encoder: True
+use_gru: True
+device: cpu
+replay_buffer:
+  mode: 'enabled'
+  size: 100000
+  update_size: 500
+  off_policy_ratio: 0.05
+
+agent_replay_buffer:
+  mode: 'disabled'
+  size: 200
+  update_every_step: 1
+  off_policy_ratio: 0.2
+
+
+env_conf:
+  type: 'eg-obligated_ratio'
+  item_max_quantity: 5
+  batch: 2
+  device: ${device}
+  max_turns_lower: 1
+  max_turns_upper: 1
+  max_turns_mean: 1
+  sampling_type: 'high_contrast'
+  obs_mode: 'raw'
+  prop_mode: 'divide_when_above'
+
+
+hydra:
+  output_subdir: null
+  run:
+    dir: /network/scratch/j/juan.duque/hydra/
+
+encoder:
+  _target_: train.GruModel
+  device: ${device}
+  hidden_size: 64
+  num_layers: 1
+
+mlp_model:
+  _target_: train.MLPModelCont
+  in_size: 64
+  device: ${device}
+  hidden_size: 128
+  num_layers: 1
+
+policy:
+  _target_: train.NormalSigmoidPolicy
+  log_std_min: -2.
+  log_std_max: 2.
+  prop_max: 5
+  device: ${device}
+
+linear_model:
+  _target_: train.LinearModel
+  in_size: 64
+  out_size: 1
+  device: ${device}
+  num_hidden: 2
+  append_time: False
+
+optimizer_actor:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+optimizer_critic:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+agent:
+  _target_: train.AdvantageAlignmentAgent
+  device: ${device}
+
+training:
+  gamma: 0.96
+  tau: 0.005
+  max_traj_len: 7
+  total_steps: 10000000 # Number of optimization steps to train for
+  eval_every: 100 # Number of optimization steps before evaluation
+  proximal: True
+  clip_range: 0.15
+  entropy_beta: 0.005
+  vanilla: False
+  updates_per_batch: 2
+  critic_loss_mode: 'MC'
+  save_every: 200
+  checkpoint_dir: './experiments'
+  aa_weight: 3
+  clip_grad_norm: 1.0

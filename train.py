@@ -26,9 +26,6 @@ from tqdm import tqdm
 
 import torch.distributions as D
 
-
-
-import math
 import torch
 
 import torch.nn as nn
@@ -36,6 +33,7 @@ import torch.nn.functional as F
 
 
 from abc import ABC, abstractmethod
+from torch.distributions.transforms import SigmoidTransform
 
 
 class LinearModel(nn.Module):
@@ -66,6 +64,75 @@ class LinearModel(nn.Module):
 
         return output, self.linear(x)
 
+class MLPModelCont(nn.Module):
+    def __init__(self, in_size, device, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
+        super(MLPModelCont, self).__init__()
+        # self.transformer = transformer
+        self.num_layers = num_layers
+        self.encoder = encoder
+        self.use_gru = use_gru
+
+        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
+
+        # Proposition heads
+        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 2) for _ in range(3)])
+
+        self.to(device)
+
+    def forward(self, x, h_0=None):
+        assert self.use_gru
+        output, x = self.encoder(x, h_0)
+        x = x.squeeze(0)
+
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
+
+        means_and_log_stds = [prop_head(x) for prop_head in self.prop_heads]
+        prop_means = [x[:, 0] for x in means_and_log_stds]
+        prop_log_stds = [x[:, 1] for x in means_and_log_stds]
+
+        prop_means = torch.stack(prop_means, dim=-1)
+        prop_log_stds = torch.stack(prop_log_stds, dim=-1)
+
+        return output, (prop_means, prop_log_stds)
+
+class NormalSigmoidPolicy(nn.Module):
+    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
+        super(NormalSigmoidPolicy, self).__init__()
+        self.model = model
+        self.log_std_min = torch.tensor(log_std_min)
+        self.log_std_max = torch.tensor(log_std_max)
+        self.prop_max = prop_max
+        self.to(device)
+
+    def forward(self, x, h_0=None):
+        output, prop = self.model(x, h_0)
+        prop_mean, prop_log_std = prop
+
+        prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
+
+        self.prop_log_std = prop_log_std
+
+        base_prop_dist = D.normal.Normal(
+            loc=prop_mean.squeeze(0),
+            scale=torch.exp(prop_log_std.squeeze(0))
+        )
+
+        prop_normal_sigmoid = D.TransformedDistribution(base_prop_dist, [SigmoidTransform()])
+        return output, prop_normal_sigmoid
+
+    def sample_action(self, x, h_0=None):
+        action = {}
+
+        output, prop_normal_sigmoid = self.forward(x, h_0)
+        prop = prop_normal_sigmoid.sample()
+
+        log_p_prop = prop_normal_sigmoid.log_prob(prop).sum(dim=-1)  # Sum log probabilities over dimensions
+        log_p = log_p_prop
+
+        action['prop'] = (prop * self.prop_max)
+
+        return output, action, log_p
 
 class CategoricalPolicy(nn.Module):
     def __init__(self, device, model):
@@ -163,7 +230,7 @@ class MLPModelDiscrete(nn.Module):
 
         self.to(device)
 
-    def forward(self, x, h_0=None, partial_forward=True):
+    def forward(self, x, h_0=None):
         assert self.use_gru
         output, x = self.encoder(x, h_0)
         x = x.squeeze(0)
@@ -612,7 +679,8 @@ class TrainingAlgorithm(ABC):
                 wandb_metrics.update({"mini_trajectory_table": mini_traj_table})
 
             # log temperature of actor's softmax
-            wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
+            if self.discrete:
+                wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
             wandb.log(step=step, data=wandb_metrics)
 
 
