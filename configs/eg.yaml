@@ -1,5 +1,5 @@
 seed: 42
-batch_size: 16384
+batch_size: 8192
 wandb: 'online'
 wandb_tags: []
 wandb_dir: /network/scratch/j/juan.duque/wandb/
@@ -20,8 +20,8 @@ replay_buffer:
 agent_replay_buffer:
   mode: 'disabled'
   size: 200
-  update_every_step: 1
-  off_policy_ratio: 0.2
+  update_every_step: 10
+  off_policy_ratio: 0.5
 
 
 env_conf:
@@ -45,14 +45,14 @@ hydra:
 encoder:
   _target_: train.GruModel
   device: ${device}
-  hidden_size: 64
+  hidden_size: 512
   num_layers: 3
 
 mlp_model:
   _target_: train.MLPModelDiscrete
-  in_size: 64
+  in_size: 512
   device: ${device}
-  hidden_size: 128
+  hidden_size: 512
   num_layers: 3
   output_size: ${eval:${env_conf.item_max_quantity} + 1}
   soften_more: True
@@ -63,7 +63,7 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 64
+  in_size: 512
   out_size: 1
   device: ${device}
   num_hidden: 2
@@ -71,11 +71,11 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.0005
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.0005
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -87,13 +87,13 @@ training:
   max_traj_len: 50
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
-  proximal: True
-  clip_range: 0.05
-  entropy_beta: 0.001
+  proximal: False
+  clip_range: 0.1
+  entropy_beta: 0.005
   vanilla: False
-  updates_per_batch: 2
+  updates_per_batch: 1
   critic_loss_mode: 'interpolate'
   save_every: 200
   checkpoint_dir: './experiments'
-  aa_weight: 3
-  clip_grad_norm: 20
+  aa_weight: 0.3
+  clip_grad_norm: 42

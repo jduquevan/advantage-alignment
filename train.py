@@ -504,7 +504,7 @@ class TrainingAlgorithm(ABC):
 
     def train_loop(self):
         # assert either replay buffer or agent replay buffer is used, but not both
-        assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
+        # assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
         pbar = tqdm(range(self.train_cfg.total_steps))
 
         for step in pbar:
@@ -848,6 +848,13 @@ class AdvantageAlignment(TrainingAlgorithm):
         elif self.train_cfg.critic_loss_mode == 'MC':
             discounted_returns = compute_discounted_returns(gamma, rewards_1)
             critic_loss = F.huber_loss(values_c, discounted_returns)
+        elif self.train_cfg.critic_loss_mode == 'interpolate':
+            values_c_shifted = values_c[:, :-1]
+            values_t_shifted = values_t[:, 1:]
+            rewards_shifted = rewards_1[:, :-1]
+            td_0_error = rewards_shifted + gamma * values_t_shifted
+            discounted_returns = compute_discounted_returns(gamma, rewards_1)[:, :-1]
+            critic_loss = F.huber_loss(values_c_shifted, (discounted_returns+td_0_error)/2)
 
         return critic_loss, {'target_values': values_t, 'critic_values': values_c}
 

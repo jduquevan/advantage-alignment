@@ -18,6 +18,7 @@
 #SBATCH --mem=40G
 #SBATCH --time=0-01:59:00   
 #SBATCH --gres=gpu:a100l:1
+#SBATCH --partition=main
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -38,4 +39,5 @@ module load python/3.9
 
 python train.py\
     seed=${1}\
+    training.aa_weight=${2}\
     --config-name='eg.yaml'
