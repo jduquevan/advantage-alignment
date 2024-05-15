@@ -74,7 +74,11 @@ class MLPModelCont(nn.Module):
         self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
 
         # Proposition heads
-        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, 2) for _ in range(3)])
+        self.prop_mean_head = nn.Linear(hidden_size, 3)  # todo: milad, it assumes 3 props and therefore 3 items
+        self.prop_log_std_head = nn.Linear(hidden_size, 3)  # todo: milad, it assumes 3 props and therefore 3 items
+
+        # change the bias of the last layer to be log(3.) so that the initial std is 3.0
+        self.prop_log_std_head.bias.data = torch.ones(3) * torch.log(torch.tensor(3.0))
 
         self.to(device)
 
@@ -86,12 +90,8 @@ class MLPModelCont(nn.Module):
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
-        means_and_log_stds = [prop_head(x) for prop_head in self.prop_heads]
-        prop_means = [x[:, 0] for x in means_and_log_stds]
-        prop_log_stds = [x[:, 1] for x in means_and_log_stds]
-
-        prop_means = torch.stack(prop_means, dim=-1)
-        prop_log_stds = torch.stack(prop_log_stds, dim=-1)
+        prop_means = self.prop_mean_head(x)
+        prop_log_stds = self.prop_log_std_head(x)
 
         return output, (prop_means, prop_log_stds)
 
