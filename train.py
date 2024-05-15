@@ -99,8 +99,8 @@ class NormalSigmoidPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, prop_max, device, model):
         super(NormalSigmoidPolicy, self).__init__()
         self.model = model
-        self.log_std_min = torch.tensor(log_std_min)
-        self.log_std_max = torch.tensor(log_std_max)
+        self.log_std_min = torch.tensor(log_std_min).to(device)
+        self.log_std_max = torch.tensor(log_std_max).to(device)
         self.prop_max = prop_max
         self.to(device)
 
