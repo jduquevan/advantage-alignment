@@ -741,9 +741,8 @@ class AdvantageAlignment(TrainingAlgorithm):
 
                 log_p_prop = prop_dist.log_prob(props[:, t] / prop_max).sum(dim=-1)
 
-                # estimate entropy via KL w.r.t uniform distribution
-                uniform_dist = D.TransformedDistribution(D.normal.Normal(loc=torch.zeros_like(props[:, t]),scale=torch.ones_like(props[:, t])), [SigmoidTransform()])
-                prop_en = (prop_dist.log_prob(props[:, t] / prop_max) - uniform_dist.log_prob(props[:, t] / prop_max)).sum(dim=-1).mean()
+                # estimate entropy via KL w.r.t uniform distribution - which is just expected value of -log(p)
+                prop_en = -1 * (prop_dist.log_prob(props[:, t] / prop_max)).mean()
 
             prop_ent[t] = prop_en
 
