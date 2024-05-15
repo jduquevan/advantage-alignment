@@ -8,7 +8,6 @@ from utils import (
     compute_discounted_returns,
     compute_gae_advantages,
     get_cosine_similarity_torch,
-    get_gaussian_entropy,
     get_observation,
 )
 
@@ -699,11 +698,6 @@ class TrainingAlgorithm(ABC):
 
 class AdvantageAlignment(TrainingAlgorithm):
 
-    def get_entropy(self, agent):
-        prop_stds = torch.exp(agent.actor.prop_log_std.squeeze(0))
-        prop_ent = get_gaussian_entropy(torch.diag_embed(prop_stds))
-        return prop_ent
-
     def get_entropy_discrete(self, prop_dist):
         prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
         prop_ent = (
@@ -744,8 +738,13 @@ class AdvantageAlignment(TrainingAlgorithm):
                     prop_cat_3.log_prob(props[:, t, 2])
                 ).squeeze(0)
             else:
-                prop_en = self.get_entropy(agent)
+
                 log_p_prop = prop_dist.log_prob(props[:, t] / prop_max).sum(dim=-1)
+
+                # estimate entropy via KL w.r.t uniform distribution
+                uniform_dist = D.TransformedDistribution(D.normal.Normal(loc=torch.zeros_like(props[:, t]),scale=torch.ones_like(props[:, t])), [SigmoidTransform()])
+                prop_en = (prop_dist.log_prob(props[:, t] / prop_max) - uniform_dist.log_prob(props[:, t] / prop_max)).sum(dim=-1).mean()
+
             prop_ent[t] = prop_en
 
             log_p = log_p_prop

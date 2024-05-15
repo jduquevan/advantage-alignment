@@ -18,16 +18,6 @@ def seed_all(seed):
 def get_observation(observations, t):
     return observations[:, t, :]
 
-def get_gaussian_entropy(covariance_matrices):
-    """
-    Calculate entropy of a multivariate Gaussian distribution given its covariance matrix.
-    """
-    batch_size = covariance_matrices.size(0)
-    dimension = covariance_matrices.size(-1)
-    det_covariance = torch.det(covariance_matrices)
-    entropy = 0.5 * (dimension * (torch.log(2 * torch.tensor(math.pi)) + 1) + torch.log(det_covariance))
-    return entropy.mean()
-
 def get_cosine_similarity_torch(x1, x2, eps=1e-8):
     dot_product = torch.sum(x1 * x2, dim=-1)
     norm1 = torch.norm(x1.float(), dim=-1)
