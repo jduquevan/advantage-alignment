@@ -74,7 +74,7 @@ def instantiate_agent(cfg: DictConfig):
     actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
 
     if not cfg.share_encoder:
-        encoder_c = hydra.utils.instantiate(cfg.encoder)
+        encoder_c = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
             encoder=encoder_c,
