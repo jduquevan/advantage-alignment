@@ -968,19 +968,18 @@ class MergingEnv(AbstractEnv):
         config = super().default_config()
         config.update(
             {
+                "controlled_vehicles": 2,
                 "observation": {
-                    "type": "OccupancyGrid",
-                    "features": ["presence", "on_road"],
-                    "grid_size": [[-18, 18], [-18, 18]],
-                    "grid_step": [3, 3],
-                    "as_image": False,
-                    "align_to_vehicle_axes": True,
+                    "type": "MultiAgentObservation",
+                    "observation_config": {
+                        "type": "Kinematics",
+                    }
                 },
                 "action": {
-                    "type": "ContinuousAction",
-                    "longitudinal": False,
-                    "lateral": True,
-                    "target_speeds": [0, 5, 10],
+                    "type": "MultiAgentAction",
+                    "action_config": {
+                        "type": "ContinuousAction",
+                    }
                 },
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
@@ -989,7 +988,6 @@ class MergingEnv(AbstractEnv):
                 "lane_centering_cost": 4,
                 "lane_centering_reward": 1,
                 "action_reward": -0.3,
-                "controlled_vehicles": 1,
                 "other_vehicles": 1,
                 "screen_width": 600,
                 "screen_height": 600,
@@ -1056,11 +1054,11 @@ class MergingEnv(AbstractEnv):
         rewards = [0, 0]
         if terminated:
             if self.first_vehicle_is_merging:
-                max_reward_0 = 2
+                max_reward_0 = 5
                 max_reward_1 = 1
             else:
                 max_reward_0 = 1
-                max_reward_1 = 2
+                max_reward_1 = 5
 
             if self.controlled_vehicles[0].position[0] > self.controlled_vehicles[1].position[0]:
                 rewards[0] = max_reward_0
@@ -1175,6 +1173,11 @@ class MergingEnv(AbstractEnv):
             size=num_integers, 
             replace=False
         )
+        initial_positions = np.random.choice(
+            [80, 82, 86, 88, 90], 
+            size=num_integers, 
+            replace=False
+        )
 
         self.first_vehicle_is_merging = random_lanes[0]==1
 
@@ -1185,7 +1188,7 @@ class MergingEnv(AbstractEnv):
                 # else self.road.network.random_lane_index(rng)
             )
             controlled_vehicle = self.action_type.vehicle_class.make_on_lane(
-                self.road, lane_index, speed=None, longitudinal=60
+                self.road, lane_index, speed=None, longitudinal=initial_positions[i]
             )
 
             self.controlled_vehicles.append(controlled_vehicle)

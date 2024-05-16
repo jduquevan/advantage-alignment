@@ -13,7 +13,7 @@ from src.utils.utils import seed_all, instantiate_agent
 # import torch
 # torch.autograd.set_detect_anomaly(True)
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="eg_proximal.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="f1.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
@@ -30,9 +30,10 @@ def main(cfg: DictConfig) -> None:
         mode=cfg["wandb"],
         tags=cfg.wandb_tags,
     )
+    
     is_f1 = cfg['env']['type'] == 'f1'
     if is_f1:
-        env = gym.make_vec('f1-v0', num_envs=cfg['env']['batch'])
+        env = gym.make_vec('merging-v0', num_envs=cfg['env']['batch'])
     elif cfg['env']['type'] == 'eg':
         env = DiscreteEG(item_max_quantity=cfg['env']['item_max_quantity'],
                          batch_size=cfg['batch_size'],

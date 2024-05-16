@@ -28,7 +28,6 @@ class F1NormalTanHPolicy(nn.Module):
         acc_log_std = torch.clamp(acc_log_std, self.log_std_min, self.log_std_max)
         ste_log_std = torch.clamp(ste_log_std, self.log_std_min, self.log_std_max)
 
-
         self.acc_log_std = acc_log_std
         self.ste_log_std = ste_log_std
 

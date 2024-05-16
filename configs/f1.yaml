@@ -1,6 +1,7 @@
 seed: 42
 batch_size: 512
 wandb: 'online'
+wandb_tags: ['f1', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: False
 sum_rewards: True
@@ -13,7 +14,7 @@ use_spr_loss: False
 
 env:
   type: 'f1'
-  batch: 30
+  batch: 6
   device: cuda
 
 hydra:
@@ -30,7 +31,7 @@ gru_model:
   _target_: src.models.models.GruModel
   in_size: 50
   device: cuda
-  hidden_size: 64
+  hidden_size: 512
   num_layers: 3
 
 transformer_model:
@@ -38,7 +39,7 @@ transformer_model:
   in_size: 3
   d_model: 64
   device: cuda
-  dim_feedforward: 128
+  dim_feedforward: 512
   num_layers: 1
   nhead: 4
   max_seq_len: 50
@@ -46,9 +47,9 @@ transformer_model:
 
 mlp_model:
   _target_: src.models.models.F1MLPModel
-  in_size: 114
+  in_size: 512
   device: cuda
-  hidden_size: 128
+  hidden_size: 512
   num_layers: 3
 
 policy:
@@ -59,8 +60,8 @@ policy:
 
 linear_model:
   _target_: src.models.models.F1LinearModel
-  in_size: 114
-  hidden_size: 64
+  in_size: 512
+  hidden_size: 512
   out_size: 1
   device: cuda
   num_hidden: 2
@@ -74,11 +75,11 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 1e-05
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 5e-05
 
 optimizer_reward:
   _target_: torch.optim.Adam
@@ -100,12 +101,12 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.15
-  entropy_beta: 0.001
+  clip_range: 0.1
+  entropy_beta: 0.0001
   vanilla: True
-  updates_per_batch: 1
+  updates_per_batch: 2
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 200
   checkpoint_dir: './experiments'
-  aa_weight: 1
+  aa_weight: 0

@@ -7,12 +7,12 @@ class TrajectoryBatch():
         self.device = device
         self.data = {
             "obs_0": torch.ones(
-                (batch_size, max_traj_len, 25),
+                (batch_size, max_traj_len, 50),
                 dtype=torch.float32,
                 device=device,
             ),
             "obs_1": torch.ones(
-                (batch_size, max_traj_len, 25),
+                (batch_size, max_traj_len, 50),
                 dtype=torch.float32,
                 device=device,
             ),

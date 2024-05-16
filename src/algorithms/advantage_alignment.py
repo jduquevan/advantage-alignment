@@ -115,9 +115,13 @@ class AdvantageAlignment(TrainingAlgorithm):
             hidden = hidden.permute((1, 0, 2))
             acc_t = actions[:, t, 0].unsqueeze(1)
             ste_t = actions[:, t, 1].unsqueeze(1)
-            log_p = acc_dist.log_prob(acc_t).squeeze(1) + ste_dist.log_prob(ste_t).squeeze(1)
+            log_p_acc = acc_dist.log_prob(acc_t).squeeze(1)
+            log_p_ste = ste_dist.log_prob(ste_t).squeeze(1)
 
-            acc_en, ste_en = self.get_f1_entropy(agent)
+            log_p = log_p_acc + log_p_ste
+
+            acc_en = -log_p_acc.mean()
+            ste_en = -log_p_ste.mean()
             acc_ent[t] = acc_en
             ste_ent[t] = ste_en
 

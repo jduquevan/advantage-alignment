@@ -17,7 +17,7 @@
 #SBATCH --mem=40G
 #SBATCH --time=0-00:59:00
 #SBATCH --gres=gpu:a100l
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=6
 
 # Submit jobs.
 module purge
