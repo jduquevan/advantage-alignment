@@ -677,6 +677,8 @@ class TrainingAlgorithm(ABC):
             # log temperature of actor's softmax
             if self.discrete:
                 wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
+            else:
+                wandb_metrics['actor_log_std'] = self.agent_1.actor.model.prop_log_std.item()
             wandb.log(step=step, data=wandb_metrics)
 
 
