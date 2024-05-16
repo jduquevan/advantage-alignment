@@ -58,7 +58,7 @@ mlp_model:
 policy:
   _target_: train.NormalSigmoidPolicy
   log_std_min: -2.
-  log_std_max: 2.
+  log_std_max: 10.
   prop_max: 5
   device: ${device}
 
