@@ -738,6 +738,7 @@ class AdvantageAlignment(TrainingAlgorithm):
                 ).squeeze(0)
             else:
                 log_probs = prop_dist.log_prob(props[:, t] / prop_max)
+                log_probs = torch.clamp_min(log_probs, -10) # todo: milad, check if this is necessary
                 log_p_prop = log_probs.sum(dim=-1)
 
                 # estimate entropy via KL w.r.t uniform distribution - which is just expected value of -log(p)
