@@ -172,31 +172,6 @@ class NormalSigmoidPolicy(nn.Module):
 
         return output, action, log_p
 
-class MixtureDistribution(D.Distribution):
-    def __init__(self, base_dist, uniform_low, uniform_high, mixture_weight):
-        super().__init__()
-        self.base_dist = base_dist
-        self.uniform_dist = D.Uniform(uniform_low, uniform_high)
-        self.mixture_weight = mixture_weight
-
-    def sample(self, sample_shape=torch.Size()):
-        base_samples = self.base_dist.sample(sample_shape)
-        uniform_samples = self.uniform_dist.sample(sample_shape)
-
-        mixture_samples = torch.bernoulli(self.mixture_weight * torch.ones(sample_shape)).bool()
-
-        samples = torch.where(mixture_samples, uniform_samples, base_samples)
-        return samples
-
-    def log_prob(self, value):
-        base_log_prob = self.base_dist.log_prob(value)
-        uniform_log_prob = self.uniform_dist.log_prob(value)
-
-        base_weighted_log_prob = torch.log(self.mixture_weight * torch.exp(base_log_prob))
-        uniform_weighted_log_prob = torch.log((1 - self.mixture_weight) * torch.exp(uniform_log_prob))
-
-        return torch.logsumexp(torch.stack([base_weighted_log_prob, uniform_weighted_log_prob]), dim=0)
-
 
 class CategoricalPolicy(nn.Module):
     def __init__(self, device, model):
