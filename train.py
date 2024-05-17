@@ -134,6 +134,7 @@ class NormalSigmoidPolicy(nn.Module):
     def forward(self, x, h_0=None):
         output, prop = self.model(x, h_0)
         prop_mean, prop_log_std = prop
+        print(f"####prop_mean_mean: {prop_mean.mean()}")
 
         prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
 
