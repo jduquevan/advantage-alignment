@@ -162,6 +162,12 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2):
         "Prop Entropy 2": train_step_metrics_2["prop_entropy"]
     })
 
+    for key in train_step_metrics_1:
+        if key.startswith("auto_merge"):
+            clean_key = key.replace("auto_merge_", "")
+            merged_metrics[clean_key + '_agent1'] = train_step_metrics_1[key]
+            merged_metrics[clean_key + '_agent2'] = train_step_metrics_2[key]
+
     return merged_metrics
 
 def wandb_stats(trajectory):

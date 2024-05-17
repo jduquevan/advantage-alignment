@@ -556,6 +556,8 @@ class TrainingAlgorithm(ABC):
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
         train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
+        for key in actor_loss_dict['log_ps_info'].keys():
+            train_step_metrics['auto_merge_' + key] = actor_loss_dict['log_ps_info'][key].detach()
 
         return train_step_metrics
 
@@ -738,7 +740,9 @@ class AdvantageAlignment(TrainingAlgorithm):
                 ).squeeze(0)
             else:
                 log_probs = prop_dist.log_prob(props[:, t] / prop_max)
-                log_probs = torch.clamp_min(log_probs, -10) # todo: milad, check if this is necessary
+                # count the number of log_probs lower than -10
+                log_probs_lower_than_n10 = torch.where(log_probs < -10, torch.tensor(1.), torch.tensor(0.)).sum()
+                log_probs = torch.clamp_min(log_probs, -10)  # todo: milad, check if this is necessary
                 log_p_prop = log_probs.sum(dim=-1)
 
                 # estimate entropy via KL w.r.t uniform distribution - which is just expected value of -log(p)
@@ -751,7 +755,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             log_ps = torch.stack(log_p_list).permute((1, 0))
         prop_ent = prop_ent.mean()
 
-        return log_ps, prop_ent
+        return log_ps, prop_ent, {'log_probs_lower_than_n10': log_probs_lower_than_n10}
 
     def get_trajectory_values(self, agent, observation):
         values_c = torch.zeros(
@@ -855,7 +859,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, V_1s = self.get_trajectory_values(agent, observation_1)
         _, V_2s = self.get_trajectory_values(other_agent, observation_2)
 
-        log_ps, prop_ent = self.get_trajectory_log_ps(agent, trajectory, is_first)
+        log_ps, prop_ent, log_ps_info = self.get_trajectory_log_ps(agent, trajectory, is_first)
         actor_loss_dict['prop_ent'] = prop_ent
 
         A_1s = compute_gae_advantages(rewards_1, V_1s.detach(), gamma)
@@ -883,6 +887,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         actor_loss_dict['loss'] = loss_1 + self.train_cfg.aa_weight * loss_2
         actor_loss_dict['loss_1'] = loss_1
         actor_loss_dict['loss_2'] = loss_2
+        actor_loss_dict['log_ps_info'] = log_ps_info
         return actor_loss_dict
 
     def critic_loss(self,
@@ -922,7 +927,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             discounted_returns = compute_discounted_returns(gamma, rewards_1)[:, :-1]
             critic_loss = F.huber_loss(values_c_shifted, (discounted_returns+td_0_error)/2)
 
-        return critic_loss, {'target_values': values_t, 'critic_values': values_c}
+        return critic_loss, {'target_values': values_t, 'critic_values': values_c, }
 
     def gen_sim(self):
         return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2)
