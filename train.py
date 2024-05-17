@@ -133,6 +133,53 @@ class NormalSigmoidPolicy(nn.Module):
 
         return output, action, log_p
 
+class NormalTanhDistribution():
+    def __init__(self, scale, bias, base_dist):
+        self.scale = scale
+        self.bias = bias
+        self.base_dist = base_dist
+
+    def sample(self):
+        x_t = self.base_dist.sample()
+        y_t = torch.tanh(x_t)
+        action = y_t * self.scale + self.bias
+        return action
+
+    def log_prob(self, action):
+        y_t = (action - self.bias) / self.scale
+        x_t = torch.atanh(y_t)
+        log_prob = self.base_dist.log_prob(x_t)
+        # Enforcing Action Bound
+        log_prob -= torch.log(self.scale * (1 - y_t.pow(2)) + 1e-6)
+        log_prob = log_prob.sum(dim=-1)
+        return log_prob
+
+class NormalTanhPolicy(nn.Module):
+    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
+        super(NormalTanhPolicy, self).__init__()
+        self.model = model
+        self.log_std_min = torch.tensor(log_std_min).to(device)
+        self.log_std_max = torch.tensor(log_std_max).to(device)
+        self.prop_max = prop_max
+        self.device = device
+        self.action_scale = prop_max / 2.
+        self.action_bias = 2.5
+        self.to(device)
+
+    def forward(self, x, h_0=None):
+        output, prop = self.model(x, h_0)
+        prop_mean, prop_log_std = prop
+        prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
+
+        prop_normal = D.normal.Normal(loc=prop_mean.squeeze(0), scale=torch.exp(prop_log_std.squeeze(0)))
+        action_dist = NormalTanhDistribution(self.action_scale, self.action_bias, prop_normal)
+        return output, action_dist
+
+    def sample_action(self, x, h_0=None):
+        output, action_dist = self.forward(x, h_0=h_0)
+        action = {'prop': action_dist.sample()}
+        log_prob = action_dist.log_prob(action['prop'])
+        return output, action, log_prob
 
 class CategoricalPolicy(nn.Module):
     def __init__(self, device, model):
@@ -744,18 +791,17 @@ class AdvantageAlignment(TrainingAlgorithm):
                     prop_cat_3.log_prob(props[:, t, 2])
                 ).squeeze(0)
             else:
-                log_probs = prop_dist.log_prob(props[:, t] / prop_max)
+                log_probs = prop_dist.log_prob(props[:, t]) # todo: milad, add back /prop_max if normal sigmoid policy
                 # count the number of log_probs lower than -10
                 log_probs_lower_than_n10 = torch.where(log_probs < -10, torch.tensor(1.), torch.tensor(0.)).sum()
                 log_probs = torch.clamp_min(log_probs, -10)  # todo: milad, check if this is necessary
-                log_p_prop = log_probs.sum(dim=-1)
 
                 # estimate entropy via KL w.r.t uniform distribution - which is just expected value of -log(p)
                 prop_en = -1 * torch.clamp_min(log_probs, -10).mean()
 
             prop_ent[t] = prop_en
 
-            log_p = log_p_prop
+            log_p = log_probs # todo: milad, add back a summataion over the last dimension for normal sigmoid policy
             log_p_list.append(log_p)
             log_ps = torch.stack(log_p_list).permute((1, 0))
         prop_ent = prop_ent.mean()
