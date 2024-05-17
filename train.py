@@ -607,28 +607,28 @@ class TrainingAlgorithm(ABC):
                         trajectory=augmented_trajectories,
                         agent=self.agent_1,
                         is_first=True,
-                        compute_aux=(step % 20 == 0),
+                        compute_aux=(step % 1 == 0),
                     )
 
                     train_step_metrics_2 = self.train_step(
                         trajectory=augmented_trajectories,
                         agent=self.agent_2,
                         is_first=False,
-                        compute_aux=(step % 20 == 0),
+                        compute_aux=(step % 1 == 0),
                     )
                 else:
                     train_step_metrics_1 = self.train_step(
                         trajectory=trajectory_1,
                         agent=self.agent_1,
                         is_first=True,
-                        compute_aux=(step % 20 == 0),
+                        compute_aux=(step % 1 == 0),
                     )
 
                     train_step_metrics_2 = self.train_step(
                         trajectory=trajectory_2,
                         agent=self.agent_2,
                         is_first=False,
-                        compute_aux=(step % 20 == 0),
+                        compute_aux=(step % 1 == 0),
                     )
 
                 train_step_metrics = merge_train_step_metrics(
