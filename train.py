@@ -117,10 +117,6 @@ class MixtureDistribution(D.Distribution):
         base_weighted_log_prob = torch.log(1 - self.mixture_weight) + base_log_prob
         uniform_weighted_log_prob = torch.log(self.mixture_weight) + uniform_log_prob
 
-        print(base_weighted_log_prob.shape,
-              uniform_weighted_log_prob.shape,
-              torch.stack([base_weighted_log_prob, uniform_weighted_log_prob]).shape)
-
         return torch.logsumexp(
             torch.stack([base_weighted_log_prob, uniform_weighted_log_prob], axis=-1),
             dim=-1
