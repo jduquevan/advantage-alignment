@@ -92,35 +92,6 @@ class MLPModelCont(nn.Module):
 
         return output, (prop_means, torch.ones_like(prop_means) * self.prop_log_std)
 
-
-class MixtureDistribution(D.Distribution):
-    def __init__(self, base_dist, uniform_low, uniform_high, mixture_weight):
-        super().__init__(validate_args=False)
-        self.base_dist = base_dist
-        self.uniform_dist = D.Uniform(uniform_low, uniform_high)
-        self.mixture_weight = mixture_weight
-
-    def sample(self):
-        base_samples = self.base_dist.sample()
-        uniform_samples = self.uniform_dist.sample(sample_shape=base_samples.shape)
-
-        mixture_samples = torch.bernoulli(self.mixture_weight * torch.ones_like(base_samples)).bool()
-
-        samples = torch.where(mixture_samples, uniform_samples, base_samples)
-        return samples
-
-    def log_prob(self, x):
-        base_log_prob = self.base_dist.log_prob(x)
-        uniform_log_prob = self.uniform_dist.log_prob(x)
-
-        base_weighted_log_prob = torch.log(1 - self.mixture_weight) + base_log_prob
-        uniform_weighted_log_prob = torch.log(self.mixture_weight) + uniform_log_prob
-
-        return torch.logsumexp(
-            torch.stack([base_weighted_log_prob, uniform_weighted_log_prob], dim=-1),
-            dim=-1
-        )
-
 class NormalSigmoidPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, prop_max, device, model):
         super(NormalSigmoidPolicy, self).__init__()
@@ -147,13 +118,7 @@ class NormalSigmoidPolicy(nn.Module):
 
         prop_normal_sigmoid = D.TransformedDistribution(base_prop_dist, [SigmoidTransform()])
 
-        mixture_dist = MixtureDistribution(
-            base_dist=prop_normal_sigmoid,
-            uniform_low=torch.tensor(0.).to(self.device),
-            uniform_high=torch.tensor(1.).to(self.device),
-            mixture_weight=torch.tensor(0.5).to(self.device)
-        )
-        return output, mixture_dist
+        return output, prop_normal_sigmoid
 
     def sample_action(self, x, h_0=None):
         action = {}
