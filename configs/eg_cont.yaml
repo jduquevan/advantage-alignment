@@ -56,7 +56,7 @@ mlp_model:
   num_layers: 1
 
 policy:
-  _target_: train.NormalSigmoidPolicy
+  _target_: train.NormalTanhPolicy
   log_std_min: -2.
   log_std_max: 10.
   prop_max: 5
