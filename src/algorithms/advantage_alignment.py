@@ -120,8 +120,8 @@ class AdvantageAlignment(TrainingAlgorithm):
 
             log_p = log_p_acc + log_p_ste
 
-            acc_en = -log_p_acc.mean()
-            ste_en = -log_p_ste.mean()
+            acc_en = -torch.clamp_min(log_p_acc, -10).mean()
+            ste_en = -torch.clamp_min(log_p_ste, -10).mean()
             acc_ent[t] = acc_en
             ste_ent[t] = ste_en
 
@@ -653,6 +653,8 @@ class AdvantageAlignment(TrainingAlgorithm):
                 extend_history=False,
                 is_first=False,
             )
+            # action_1 = np.random.uniform(-1, 1, size=(6,2))
+            # action_2 = np.random.uniform(-1, 1, size=(6,2))
             observations, rewards, done, _, info = self.env.step((action_1, action_2))
             obs_1, obs_2 = observations
             obs_1 = torch.tensor(obs_1.reshape((self.batch_size, -1))).to(device)

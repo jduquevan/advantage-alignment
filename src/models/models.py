@@ -246,13 +246,13 @@ class F1MLPModel(nn.Module):
 
         # Acceleration heads
         self.acc_mean_head = nn.Linear(hidden_size, 1)
-        # self.acc_sde_head = nn.Linear(hidden_size, 1)
-        self.acc_sde = nn.Parameter(torch.ones(1))
+        self.acc_sde_head = nn.Linear(hidden_size, 1)
+        # self.acc_sde = nn.Parameter(torch.ones(1))
 
         # Steering heads
         self.ste_mean_head = nn.Linear(hidden_size, 1)
-        # self.ste_sde_head = nn.Linear(hidden_size, 1)
-        self.ste_sde = nn.Parameter(torch.ones(1))
+        self.ste_sde_head = nn.Linear(hidden_size, 1)
+        # self.ste_sde = nn.Parameter(torch.ones(1))
 
         self.to(device)
 
@@ -269,12 +269,12 @@ class F1MLPModel(nn.Module):
             x = F.relu(layer(x))
 
         acc_mean = self.acc_mean_head(x)
-        # acc_sde = self.acc_sde_head(x)
-        acc_sde = self.acc_sde
-        
+        acc_sde = self.acc_sde_head(x)
+        # acc_sde = self.acc_sde
+
         ste_mean = self.ste_mean_head(x)
-        # ste_sde = self.ste_sde_head(x)
-        ste_sde = self.ste_sde
+        ste_sde = self.ste_sde_head(x)
+        # ste_sde = self.ste_sde
 
         return h_0, (acc_mean, acc_sde), (ste_mean, ste_sde)
     

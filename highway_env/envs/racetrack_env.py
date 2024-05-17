@@ -942,6 +942,7 @@ class F1Env(AbstractEnv):
             else:
                 self.road.vehicles.append(vehicle)
 
+
 class MergingEnv(AbstractEnv):
     """
     A continuous control environment.
@@ -996,6 +997,27 @@ class MergingEnv(AbstractEnv):
         )
         return config
 
+    def _info(self, obs: Observation, action: Optional[Action] = None) -> dict:
+        """
+        Return a dictionary of additional information
+
+        :param obs: current observation
+        :param action: current action
+        :return: info dict
+        """
+        obstacle_pass = (self.controlled_vehicles[0].position[0] > self.obstacle.position[0] or self.controlled_vehicles[1].position[0] > self.obstacle.position[0])
+        info = {
+            "speed": self.vehicle.speed,
+            "crashed": self.vehicle.crashed,
+            "action": action,
+            "obs_pass": int(obstacle_pass)
+        }
+        try:
+            info["rewards"] = self._rewards(action)
+        except NotImplementedError:
+            pass
+        return info
+
     def step(self, action: Action) -> Tuple[Observation, float, bool, bool, dict]:
         """
         Perform an action and step the environment dynamics.
@@ -1016,7 +1038,7 @@ class MergingEnv(AbstractEnv):
 
         for vehicle in self.controlled_vehicles:
             distance_to_lane = self.get_closest_lane_distance(vehicle.position, vehicle.heading)
-            if distance_to_lane > 10:
+            if distance_to_lane > 3:
                 vehicle.crashed = True
 
         obs = self.observation_type.observe()
@@ -1024,6 +1046,7 @@ class MergingEnv(AbstractEnv):
         reward = self._reward(action, terminated)
         truncated = self._is_truncated()
         info = self._info(obs, action)
+        
         if self.render_mode == "human":
             self.render()
 
@@ -1051,7 +1074,7 @@ class MergingEnv(AbstractEnv):
         return np.min(distances)
 
     def _reward(self, action: np.ndarray, terminated: bool) -> Tuple[float]:
-        rewards = [0, 0]
+        rewards = [-0.1, -0.1]
         if terminated:
             if self.first_vehicle_is_merging:
                 max_reward_0 = 5
@@ -1060,7 +1083,8 @@ class MergingEnv(AbstractEnv):
                 max_reward_0 = 1
                 max_reward_1 = 5
 
-            if self.controlled_vehicles[0].position[0] > self.controlled_vehicles[1].position[0]:
+            if (self.controlled_vehicles[0].position[0] > self.controlled_vehicles[1].position[0] and
+            not self.controlled_vehicles[0].crashed):
                 rewards[0] = max_reward_0
             else:
                 rewards[1] = max_reward_1
@@ -1071,13 +1095,16 @@ class MergingEnv(AbstractEnv):
         return tuple(rewards)
 
     def _is_terminated(self) -> bool:
-        is_terminated = False
-        for vehicle in self.controlled_vehicles:
-            if vehicle.crashed or (
-                self.controlled_vehicles[0].position[0] > self.obstacle.position[0] and 
-                self.controlled_vehicles[1].position[0] > self.obstacle.position[0]
-            ):
-                is_terminated = True
+        obstacle_pass = (
+            self.controlled_vehicles[0].position[0] > self.obstacle.position[0] or 
+            self.controlled_vehicles[1].position[0] > self.obstacle.position[0]
+        )
+        vehicles_crashed = (
+            self.controlled_vehicles[0].crashed and
+            self.controlled_vehicles[1].crashed
+        )
+        is_terminated = obstacle_pass or vehicles_crashed
+
         return is_terminated
 
     def _is_truncated(self) -> bool:
@@ -1089,9 +1116,7 @@ class MergingEnv(AbstractEnv):
 
     def _make_road(self) -> None:
         net = RoadNetwork()
-
-        # Set Speed Limits for Road Sections - Straight, Turn20, Straight, Turn 15, Turn15, Straight, Turn25x2, Turn18
-        speedlimits = [None, 10, 10, 10, 10, 10, 10, 10, 10]
+        speedlimit = 20
 
         # Before obstacle
 
@@ -1101,7 +1126,7 @@ class MergingEnv(AbstractEnv):
             [100, 0],
             line_types=(LineType.CONTINUOUS, LineType.STRIPED),
             width=5,
-            speed_limit=speedlimits[1],
+            speed_limit=speedlimit,
         )
         self.lane = lane
 
@@ -1116,7 +1141,7 @@ class MergingEnv(AbstractEnv):
                 [100, 5],
                 line_types=(LineType.STRIPED, LineType.CONTINUOUS),
                 width=5,
-                speed_limit=speedlimits[1],
+                speed_limit=speedlimit,
             ),
         )
 
@@ -1130,7 +1155,7 @@ class MergingEnv(AbstractEnv):
                 [200, 0],
                 line_types=(LineType.CONTINUOUS, LineType.NONE),
                 width=5,
-                speed_limit=speedlimits[1],
+                speed_limit=speedlimit,
             ),
         )
         net.add_lane(
@@ -1141,7 +1166,7 @@ class MergingEnv(AbstractEnv):
                 [200, 5],
                 line_types=(LineType.STRIPED, LineType.CONTINUOUS),
                 width=5,
-                speed_limit=speedlimits[1],
+                speed_limit=speedlimit,
             ),
         )
 
@@ -1174,7 +1199,7 @@ class MergingEnv(AbstractEnv):
             replace=False
         )
         initial_positions = np.random.choice(
-            [80, 82, 86, 88, 90], 
+            [90, 92, 94, 96, 98], 
             size=num_integers, 
             replace=False
         )

@@ -246,6 +246,7 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1):
 def wandb_stats(trajectory, is_f1):
     stats = {}
     dones = trajectory.data['dones']
+    obstacle_passes = trajectory.data['obstacle_passes']
     stats['Average reward 1'] = trajectory.data['rewards_0'].mean().detach()
     stats['Average reward 2'] = trajectory.data['rewards_1'].mean().detach()
     stats['Average sum rewards'] = (
@@ -262,6 +263,7 @@ def wandb_stats(trajectory, is_f1):
         stats['A2 acc std'] = trajectory.data['actions_1'][:, :, 0].std()
         stats['A1 ste std'] = trajectory.data['actions_0'][:, :, 1].std()
         stats['A2 ste std'] = trajectory.data['actions_1'][:, :, 1].std()
+        stats['Obstacle Pass Sum'] = torch.sum(obstacle_passes).detach()
     else:
         stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
         stats['Average A1 prop1'] = trajectory.data['a_props_0'].reshape((-1, 3)).mean(dim=0)[0]

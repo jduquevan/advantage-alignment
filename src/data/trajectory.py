@@ -81,6 +81,11 @@ class TrajectoryBatch():
                 device=device,
                 dtype=torch.bool,
             ),
+            "obstacle_passes": torch.empty(
+                (batch_size, max_traj_len),
+                device=device,
+                dtype=torch.bool,
+            ),
             "cos_sims": torch.ones(
                 (batch_size, max_traj_len),
                 device=device,
@@ -126,6 +131,8 @@ class TrajectoryBatch():
         self.data['log_ps_0'][:, t] = log_ps[0]
         self.data['log_ps_1'][:, t] = log_ps[1]
         self.data['dones'][:, t] = done
+        # obstacle_passes = [y if y is not None else False for y in info['obs_pass']]
+        # self.data['obstacle_passes'][:, t] = torch.Tensor(obstacle_passes).to(self.device)
 
     def detach_and_move_to_cpu(self):
         """Detaches all tensors in the data dictionary and moves them to CPU."""

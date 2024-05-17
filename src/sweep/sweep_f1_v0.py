@@ -10,9 +10,9 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [1e-6, 5e-5, 1e-5, 5e-4, 1e-4, 5e-3, 1e-3],
-        'optimizer_critic.lr': [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2],
-        'training.entropy_beta': [0, 0.0001, 0.001],
+        'optimizer_actor.lr': [5e-7, 1e-6, 5e-6, 5e-5, 1e-5, 1e-4],
+        'optimizer_critic.lr': [1e-4, 5e-4, 1e-5, 5e-5, 1e-4, 1e-3],
+        'training.entropy_beta': [0, 0.0001, 0.001, 0.007, 0.01],
         'training.clip_range': [0.05, 0.1, 0.15, 0.3],
         'training.updates_per_batch': [1, 2, 3],
         # 'hidden_size': [32, 64, 128, 256],
