@@ -56,17 +56,28 @@ class TrainingAlgorithm(ABC):
         agent,
         is_first=True
     ):
+        agent.actor_optimizer.zero_grad()
+        if self.is_f1:
+            actor_loss_dict = self.actor_loss(trajectory, is_first)
+            actor_loss = actor_loss_dict['loss']
+            ent = actor_loss_dict['acc_ent'] + actor_loss_dict['ste_ent']
+        else:
+            actor_loss_dict = self.actor_loss(trajectory, is_first)
+            actor_loss = actor_loss_dict['loss']
+            ent = actor_loss_dict['prop_ent']
+
+        total_loss = actor_loss - self.train_cfg.entropy_beta * ent
+        total_loss.backward()
+        actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
+        agent.actor_optimizer.step()
+
         agent.critic_optimizer.zero_grad()
         critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
         critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.critic.parameters()]))
         agent.critic_optimizer.step()
 
-        agent.actor_optimizer.zero_grad()
         if self.is_f1:
-            actor_loss_dict = self.actor_loss(trajectory, is_first)
-            actor_loss = actor_loss_dict['loss']
-            ent = actor_loss_dict['acc_ent'] + actor_loss_dict['ste_ent']
             train_step_metrics = {
                 "critic_loss": critic_loss.detach(),
                 "actor_loss": actor_loss.detach(),
@@ -74,20 +85,12 @@ class TrainingAlgorithm(ABC):
                 "ste_entropy": actor_loss_dict['ste_ent'].detach(),
             }
         else:
-            actor_loss_dict = self.actor_loss(trajectory, is_first)
-            actor_loss = actor_loss_dict['loss']
-            ent = actor_loss_dict['prop_ent']
             train_step_metrics = {
                 "critic_loss": critic_loss.detach(),
                 "actor_loss": actor_loss.detach(),
                 "term_entropy": actor_loss_dict['term_ent'].detach(),
                 "prop_entropy": actor_loss_dict['prop_ent'].detach()
             }
-
-        total_loss = actor_loss - self.train_cfg.entropy_beta * ent
-        total_loss.backward()
-        actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
-        agent.actor_optimizer.step()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
