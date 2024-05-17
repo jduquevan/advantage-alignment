@@ -105,7 +105,6 @@ class MixtureDistribution(D.Distribution):
         uniform_samples = self.uniform_dist.sample(sample_shape=base_samples.shape)
 
         mixture_samples = torch.bernoulli(self.mixture_weight * torch.ones_like(base_samples)).bool()
-        print(uniform_samples)
 
         samples = torch.where(mixture_samples, uniform_samples, base_samples)
         return samples
