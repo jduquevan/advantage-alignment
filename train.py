@@ -626,10 +626,6 @@ class TrainingAlgorithm(ABC):
         pbar = tqdm(range(self.train_cfg.total_steps))
 
         for step in pbar:
-            if step > 200:
-                torch.autograd.set_detect_anomaly(True)
-            else:
-                torch.autograd.set_detect_anomaly(False)
 
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
