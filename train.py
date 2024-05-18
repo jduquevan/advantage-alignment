@@ -146,6 +146,7 @@ class NormalTanhDistribution():
 
     def log_prob(self, action):
         y_t = (action - self.bias) / self.scale
+        y_t = torch.clamp(input=y_t, min=-0.99, max=0.99)
         x_t = torch.atanh(y_t)
         log_prob = self.base_dist.log_prob(x_t)
         # Enforcing Action Bound
