@@ -857,7 +857,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         old_log_ps = old_log_ps[:, 1:]
 
         batch, time = A_1s.shape
-        A_1s = A_1s / torch.arange(1, A_1s.shape[1] + 1).repeat(batch, 1).to(A_1s.device)
+        A_1s = A_1s / (torch.arange(1, A_1s.shape[1] + 1).repeat(batch, 1).to(A_1s.device)+1e-6)  # todo: milad, is this 1e-6 necessary?
 
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
