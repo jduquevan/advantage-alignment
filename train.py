@@ -34,6 +34,7 @@ import torch.nn.functional as F
 from abc import ABC, abstractmethod
 from torch.distributions.transforms import SigmoidTransform
 
+torch.autograd.set_detect_anomaly(True)
 
 class LinearModel(nn.Module):
     def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True, append_time: bool = False):

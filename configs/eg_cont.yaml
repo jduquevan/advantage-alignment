@@ -73,6 +73,7 @@ linear_model:
 optimizer_actor:
   _target_: torch.optim.Adam
   lr: 0.001
+  weight_decay: 0.0001
 
 optimizer_critic:
   _target_: torch.optim.Adam
