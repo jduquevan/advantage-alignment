@@ -64,7 +64,6 @@ def instantiate_agent(cfg: DictConfig):
         raise f"Unknown obs_mode, don't know the size: {cfg['env_conf']['obs_mode']}"
 
     encoder = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
-    encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
 
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model,
@@ -87,6 +86,7 @@ def instantiate_agent(cfg: DictConfig):
             use_gru=use_gru
         )
 
+    encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
     target = hydra.utils.instantiate(
         cfg.linear_model, 
         encoder=encoder_t,

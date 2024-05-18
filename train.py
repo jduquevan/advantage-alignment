@@ -34,8 +34,6 @@ import torch.nn.functional as F
 from abc import ABC, abstractmethod
 from torch.distributions.transforms import SigmoidTransform
 
-torch.autograd.set_detect_anomaly(True)
-
 class LinearModel(nn.Module):
     def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True, append_time: bool = False):
         super(LinearModel, self).__init__()
@@ -627,6 +625,11 @@ class TrainingAlgorithm(ABC):
         pbar = tqdm(range(self.train_cfg.total_steps))
 
         for step in pbar:
+            if step > 200:
+                torch.autograd.set_detect_anomaly(True)
+            else:
+                torch.autograd.set_detect_anomaly(False)
+
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
 
