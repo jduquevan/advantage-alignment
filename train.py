@@ -734,10 +734,10 @@ class TrainingAlgorithm(ABC):
             else:
                 wandb_metrics['actor_log_std'] = self.agent_1.actor.model.prop_log_std.item()
 
-            agent1_actor_weight_norms = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in self.agent_1.actor.parameters()]))
-            agent1_critic_weight_norms = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in self.agent_1.critic.parameters()]))
-            agent2_actor_weight_norms = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in self.agent_2.actor.parameters()]))
-            agent2_critic_weight_norms = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in self.agent_2.critic.parameters()]))
+            agent1_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_1.actor.parameters()]))
+            agent1_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_1.critic.parameters()]))
+            agent2_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_2.actor.parameters()]))
+            agent2_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_2.critic.parameters()]))
 
             wandb_metrics.update({
                 "agent1_actor_weight_norms": agent1_actor_weight_norms.detach(),
