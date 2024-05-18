@@ -169,7 +169,7 @@ class NormalTanhPolicy(nn.Module):
     def forward(self, x, h_0=None):
         output, prop = self.model(x, h_0)
         prop_mean, prop_log_std = prop
-        # prop_mean = torch.tanh(prop_mean) * 5. # todo: milad
+        prop_mean = torch.tanh(prop_mean) * 5. # todo: milad
         prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
 
         prop_normal = D.normal.Normal(loc=prop_mean.squeeze(0), scale=torch.exp(prop_log_std.squeeze(0)))
