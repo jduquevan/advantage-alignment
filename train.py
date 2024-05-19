@@ -1143,8 +1143,8 @@ class ObligatedRatioDiscreteEG(gym.Env):
 
     def _get_obs(self, item_pool, utilities_1, utilities_2, prop_1, prop_2):
         if self.obs_mode == "raw":
-            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float()
-            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()
+            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float() / 10. # todo: milad, check if this is necessary
+            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float() / 10. # todo: milad, check if this is necessary
         elif self.obs_mode == "just_utility_diff":
             item_context_1 = (utilities_1 - utilities_2).float()
             item_context_2 = (utilities_2 - utilities_1).float()
