@@ -611,13 +611,13 @@ class TrainingAlgorithm(ABC):
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
 
         # --- log metrics ---
-        train_step_metrics = {
+        train_step_metrics.update({
             "critic_loss": critic_loss.detach(),
             "actor_loss": actor_loss.detach(),
             "prop_entropy": actor_loss_dict['prop_ent'].detach(),
             "critic_values": critic_values.mean().detach(),
             "target_values": target_values.mean().detach(),
-        }
+        })
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
         train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
         for key in actor_loss_dict['log_ps_info'].keys():
@@ -1143,10 +1143,8 @@ class ObligatedRatioDiscreteEG(gym.Env):
 
     def _get_obs(self, item_pool, utilities_1, utilities_2, prop_1, prop_2):
         if self.obs_mode == "raw":
-            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float() # todo: milad, check if this is necessary
-            item_context_1 = item_context_1 / torch.linalg.norm(item_context_1, dim=1, keepdim=True)
-            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float()  # todo: milad, check if this is necessary
-            item_context_2 = item_context_2 / torch.linalg.norm(item_context_2, dim=1, keepdim=True)
+            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float() / 10.  # todo: milad, check if this is necessary
+            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float() / 10.  # todo: milad, check if this is necessary
         elif self.obs_mode == "just_utility_diff":
             item_context_1 = (utilities_1 - utilities_2).float()
             item_context_2 = (utilities_2 - utilities_1).float()
