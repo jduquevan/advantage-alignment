@@ -1175,8 +1175,12 @@ class MergingEnv(AbstractEnv):
             np_random=self.np_random,
             record_history=self.config["show_trajectories"],
         )
-        self.obstacle = Obstacle(road, [100, 5])
+        self.obstacle = Obstacle(road, [100, 3])
+        self.obstacle_2 = Obstacle(road, [100, 5])
+        self.obstacle_3 = Obstacle(road, [100, 7])
         road.objects.append(self.obstacle)
+        road.objects.append(self.obstacle_2)
+        road.objects.append(self.obstacle_3)
         self.road = road
 
     def _make_vehicles(self) -> None:
@@ -1199,7 +1203,7 @@ class MergingEnv(AbstractEnv):
             replace=False
         )
         initial_positions = np.random.choice(
-            [90, 92, 94, 96, 98], 
+            [92, 94, 96, 98], 
             size=num_integers, 
             replace=False
         )

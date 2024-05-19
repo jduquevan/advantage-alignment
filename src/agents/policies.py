@@ -5,6 +5,28 @@ import torch.nn as nn
 
 from torch.distributions.transforms import SigmoidTransform, TanhTransform
 
+class NormalTanhDistribution():
+    def __init__(self, scale, bias, base_dist):
+        self.scale = scale
+        self.bias = bias
+        self.base_dist = base_dist
+
+    def sample(self):
+        x_t = self.base_dist.sample()
+        y_t = torch.tanh(x_t)
+        action = y_t * self.scale + self.bias
+        return action
+
+    def log_prob(self, action):
+        y_t = (action - self.bias) / self.scale
+        y_t = torch.clamp(y_t, -1 + 1e-8, 1 - + 1e-8)
+        x_t = torch.atanh(y_t)
+        log_prob = self.base_dist.log_prob(x_t)
+        # Enforcing Action Bound
+        log_prob -= torch.log(self.scale * (1 - y_t.pow(2)) + 1e-6)
+        log_prob = log_prob.sum(dim=-1)
+        return log_prob
+
 class F1NormalTanHPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, device, model):
         super(F1NormalTanHPolicy, self).__init__()
@@ -40,8 +62,8 @@ class F1NormalTanHPolicy(nn.Module):
             scale = torch.exp(ste_log_std.squeeze(0))
         )
         
-        acc_normal_tanh = D.TransformedDistribution(base_acc_dist, [TanhTransform()])
-        ste_normal_tanh = D.TransformedDistribution(base_ste_dist, [TanhTransform()])
+        acc_normal_tanh = NormalTanhDistribution(scale=1, bias=0, base_dist=base_acc_dist)
+        ste_normal_tanh = NormalTanhDistribution(scale=1, bias=0, base_dist=base_ste_dist)
 
         return output, acc_normal_tanh, ste_normal_tanh
 
@@ -58,8 +80,9 @@ class F1NormalTanHPolicy(nn.Module):
         acc = torch.clamp(acc, -1 + 1e-5, 1 - 1e-5)
         ste = torch.clamp(ste, -1 + 1e-5, 1 - 1e-5)
 
-        log_p_acc = acc_normal.log_prob(acc).squeeze(1)
-        log_p_ste = ste_normal.log_prob(ste).squeeze(1)
+        # import pdb; pdb.set_trace()
+        log_p_acc = acc_normal.log_prob(acc)
+        log_p_ste = ste_normal.log_prob(ste)
         log_p = log_p_acc + log_p_ste 
 
         action = np.concatenate(

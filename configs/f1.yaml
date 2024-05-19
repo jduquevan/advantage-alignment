@@ -31,7 +31,7 @@ gru_model:
   _target_: src.models.models.GruModel
   in_size: 50
   device: cuda
-  hidden_size: 512
+  hidden_size: 1024
   num_layers: 3
 
 transformer_model:
@@ -47,9 +47,9 @@ transformer_model:
 
 mlp_model:
   _target_: src.models.models.F1MLPModel
-  in_size: 512
+  in_size: 1024
   device: cuda
-  hidden_size: 512
+  hidden_size: 1024
   num_layers: 3
 
 policy:
@@ -60,8 +60,8 @@ policy:
 
 linear_model:
   _target_: src.models.models.F1LinearModel
-  in_size: 512
-  hidden_size: 512
+  in_size: 1024
+  hidden_size: 1024
   out_size: 1
   device: cuda
   num_hidden: 2
@@ -75,11 +75,11 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-06
+  lr: 1e-05
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.0005
 
 optimizer_reward:
   _target_: torch.optim.Adam
@@ -101,12 +101,13 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.1
-  entropy_beta: 0.007
+  clip_range: 0.4
+  entropy_beta: 0.0001
   vanilla: True
   updates_per_batch: 3
   use_mlm: True
   critic_loss_mode: 'MC'
-  save_every: 200
+  save_every: 50
   checkpoint_dir: './experiments'
   aa_weight: 0
+  clip_grad_norm: 20

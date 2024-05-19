@@ -264,6 +264,7 @@ class F1MLPModel(nn.Module):
         else:
             x = self.encoder(x, partial_forward)
 
+        x = x/torch.linalg.norm(x)
         # x = torch.cat([x, in_x], dim=1)
         for layer in self.hidden_layers:
             x = F.relu(layer(x))

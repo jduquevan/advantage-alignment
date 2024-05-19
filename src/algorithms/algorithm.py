@@ -68,12 +68,16 @@ class TrainingAlgorithm(ABC):
 
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
+        if self.train_cfg.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.actor.parameters(), self.train_cfg.clip_grad_norm)
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
 
         agent.critic_optimizer.zero_grad()
         critic_loss = self.critic_loss(trajectory, is_first)
         critic_loss.backward()
+        if self.train_cfg.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
         critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.critic.parameters()]))
         agent.critic_optimizer.step()
 

@@ -115,8 +115,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             hidden = hidden.permute((1, 0, 2))
             acc_t = actions[:, t, 0].unsqueeze(1)
             ste_t = actions[:, t, 1].unsqueeze(1)
-            log_p_acc = acc_dist.log_prob(acc_t).squeeze(1)
-            log_p_ste = ste_dist.log_prob(ste_t).squeeze(1)
+            log_p_acc = acc_dist.log_prob(acc_t)
+            log_p_ste = ste_dist.log_prob(ste_t)
 
             log_p = log_p_acc + log_p_ste
 
