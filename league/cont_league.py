@@ -29,7 +29,7 @@ def train_main(seeds: List[int], agent_type: str, fake_submit: bool = True, part
 
     command_base_str = "python train.py training.vanilla={vanilla} " \
     "seed={seed} " \
-    "wandb_tags=[cont_exchange_game_league_v1, agent_type={agent_type}] " \
+    "wandb_tags=[cont_exchange_game_league_v1] " \
     "sum_rewards={sum_rewards} " \
     "training.proximal=False " \
     "training.max_traj_len=50 " \
