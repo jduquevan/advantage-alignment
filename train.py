@@ -564,30 +564,15 @@ class TrainingAlgorithm(ABC):
         agent,
         is_first=True,
         compute_aux=True,
+        optimize_critic=True,
     ):
-        agent.critic_optimizer.zero_grad()
-        critic_loss, aux = self.critic_loss(trajectory, is_first)
-        critic_values = aux['critic_values']
-        target_values = aux['target_values']
-        critic_loss.backward()
-        if self.clip_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
-        critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.critic.parameters()]))
-        agent.critic_optimizer.step()
-
+        train_step_metrics = {}
+        # --- optimize actor ---
         agent.actor_optimizer.zero_grad()
-
         actor_loss_dict = self.actor_loss(trajectory, is_first)
         actor_loss = actor_loss_dict['loss']
 
         ent = actor_loss_dict['prop_ent']
-        train_step_metrics = {
-            "critic_loss": critic_loss.detach(),
-            "actor_loss": actor_loss.detach(),
-            "prop_entropy": actor_loss_dict['prop_ent'].detach(),
-            "critic_values": critic_values.mean().detach(),
-            "target_values": target_values.mean().detach(),
-        }
 
         if compute_aux:
             actor_loss_1 = actor_loss_dict['loss_1']
@@ -606,7 +591,33 @@ class TrainingAlgorithm(ABC):
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
 
+        # --- optimize critic ---
+        agent.critic_optimizer.zero_grad()
+        critic_loss, aux = self.critic_loss(trajectory, is_first)
+        critic_values = aux['critic_values']
+        target_values = aux['target_values']
+        critic_loss.backward()
+        if self.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
+        critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.critic.parameters()]))
+
+        if optimize_critic:
+            agent.critic_optimizer.step()
+        else:
+            agent.critic_optimizer.zero_grad()
+
+        # --- update target network ---
+
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
+
+        # --- log metrics ---
+        train_step_metrics = {
+            "critic_loss": critic_loss.detach(),
+            "actor_loss": actor_loss.detach(),
+            "prop_entropy": actor_loss_dict['prop_ent'].detach(),
+            "critic_values": critic_values.mean().detach(),
+            "target_values": target_values.mean().detach(),
+        }
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
         train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
         for key in actor_loss_dict['log_ps_info'].keys():
@@ -661,28 +672,32 @@ class TrainingAlgorithm(ABC):
                         trajectory=augmented_trajectories,
                         agent=self.agent_1,
                         is_first=True,
-                        compute_aux=(step % 1 == 0),
+                        compute_aux=(step % 20 == 0),
+                        optimize_critic= (i % 2 == 0),
                     )
 
                     train_step_metrics_2 = self.train_step(
                         trajectory=augmented_trajectories,
                         agent=self.agent_2,
                         is_first=False,
-                        compute_aux=(step % 1 == 0),
+                        compute_aux=(step % 20 == 0),
+                        optimize_critic= (i % 2 == 0),
                     )
                 else:
                     train_step_metrics_1 = self.train_step(
                         trajectory=trajectory_1,
                         agent=self.agent_1,
                         is_first=True,
-                        compute_aux=(step % 1 == 0),
+                        compute_aux=(step % 20 == 0),
+                        optimize_critic= (i % 2 == 0),
                     )
 
                     train_step_metrics_2 = self.train_step(
                         trajectory=trajectory_2,
                         agent=self.agent_2,
                         is_first=False,
-                        compute_aux=(step % 1 == 0),
+                        compute_aux=(step % 20 == 0),
+                        optimize_critic= (i % 2 == 0),
                     )
 
                 train_step_metrics = merge_train_step_metrics(
