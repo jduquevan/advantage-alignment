@@ -263,17 +263,17 @@ class F1MLPModel(nn.Module):
             x = x.squeeze(0)
         else:
             x = self.encoder(x, partial_forward)
-
-        x = x/torch.linalg.norm(x)
+            
+        x = x/torch.norm(x, p=2, dim=-1, keepdim=True)
         # x = torch.cat([x, in_x], dim=1)
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
 
-        acc_mean = self.acc_mean_head(x)
+        acc_mean = torch.tanh(self.acc_mean_head(x))
         acc_sde = self.acc_sde_head(x)
         # acc_sde = self.acc_sde
 
-        ste_mean = self.ste_mean_head(x)
+        ste_mean = torch.tanh(self.ste_mean_head(x))
         ste_sde = self.ste_sde_head(x)
         # ste_sde = self.ste_sde
 

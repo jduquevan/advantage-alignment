@@ -31,8 +31,8 @@ gru_model:
   _target_: src.models.models.GruModel
   in_size: 50
   device: cuda
-  hidden_size: 1024
-  num_layers: 3
+  hidden_size: 512
+  num_layers: 4
 
 transformer_model:
   _target_: src.models.models.StableTransformer
@@ -47,9 +47,9 @@ transformer_model:
 
 mlp_model:
   _target_: src.models.models.F1MLPModel
-  in_size: 1024
+  in_size: 512
   device: cuda
-  hidden_size: 1024
+  hidden_size: 512
   num_layers: 3
 
 policy:
@@ -60,8 +60,8 @@ policy:
 
 linear_model:
   _target_: src.models.models.F1LinearModel
-  in_size: 1024
-  hidden_size: 1024
+  in_size: 512
+  hidden_size: 512
   out_size: 1
   device: cuda
   num_hidden: 2
@@ -101,8 +101,8 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.4
-  entropy_beta: 0.0001
+  clip_range: 0.5
+  entropy_beta: 0.007
   vanilla: True
   updates_per_batch: 3
   use_mlm: True

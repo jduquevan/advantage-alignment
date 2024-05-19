@@ -1202,11 +1202,11 @@ class MergingEnv(AbstractEnv):
             size=num_integers, 
             replace=False
         )
-        initial_positions = np.random.choice(
-            [92, 94, 96, 98], 
-            size=num_integers, 
-            replace=False
-        )
+        # initial_positions = np.random.choice(
+        #     [92, 94, 96, 98], 
+        #     size=num_integers, 
+        #     replace=False
+        # )
 
         self.first_vehicle_is_merging = random_lanes[0]==1
 
@@ -1216,8 +1216,14 @@ class MergingEnv(AbstractEnv):
                 # if i == 0
                 # else self.road.network.random_lane_index(rng)
             )
+
+            if random_lanes[i] == 0:
+                initial_position = 86
+            else:
+                initial_position = 90
+
             controlled_vehicle = self.action_type.vehicle_class.make_on_lane(
-                self.road, lane_index, speed=None, longitudinal=initial_positions[i]
+                self.road, lane_index, speed=None, longitudinal=initial_position
             )
 
             self.controlled_vehicles.append(controlled_vehicle)
