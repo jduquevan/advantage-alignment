@@ -957,12 +957,6 @@ class MergingEnv(AbstractEnv):
 
     def __init__(self, config: dict = None, render_mode: Optional[str] = None) -> None:
         super().__init__(config=config, render_mode=render_mode)
-        
-        # DRS
-        self.drs_actions = 24  # Multiple of 3
-        self.drs_reset = True
-        self.max_speed = 40.0
-        self.drs_speed = 50.0
 
     @classmethod
     def default_config(cls) -> dict:
@@ -1033,6 +1027,11 @@ class MergingEnv(AbstractEnv):
                 "The road and vehicle must be initialized in the environment implementation"
             )
 
+        # if self.first_vehicle_is_merging:
+        #     action[1][1] = 0
+        # else:
+        #     action[0][1] = 0
+
         self.time += 1 / self.config["policy_frequency"]
         self._simulate(action)
 
@@ -1072,9 +1071,17 @@ class MergingEnv(AbstractEnv):
                     distances.append(l.distance_with_heading(position, heading))
                     indexes.append((_from, _to, _id))
         return np.min(distances)
-
+    
     def _reward(self, action: np.ndarray, terminated: bool) -> Tuple[float]:
-        rewards = [-0.1, -0.1]
+        position_1 = self.controlled_vehicles[0].position
+        position_2 = self.controlled_vehicles[1].position
+        centering_dist_1 = self.road.network.graph['a']['b'][0].distance_with_heading(position_1, None)
+        centering_dist_2 = self.road.network.graph['a']['b'][0].distance_with_heading(position_2, None)
+        
+        r1 = 0.5/(1 + centering_dist_1) 
+        r2 = 0.5/(1 + centering_dist_2)
+        rewards = [r1 - 0.22, r2 - 0.22]
+
         if terminated:
             if self.first_vehicle_is_merging:
                 max_reward_0 = 5
@@ -1083,8 +1090,7 @@ class MergingEnv(AbstractEnv):
                 max_reward_0 = 1
                 max_reward_1 = 5
 
-            if (self.controlled_vehicles[0].position[0] > self.controlled_vehicles[1].position[0] and
-            not self.controlled_vehicles[0].crashed):
+            if (position_1[0] > position_2[0] and not self.controlled_vehicles[0].crashed):
                 rewards[0] = max_reward_0
             else:
                 rewards[1] = max_reward_1
@@ -1096,8 +1102,8 @@ class MergingEnv(AbstractEnv):
 
     def _is_terminated(self) -> bool:
         obstacle_pass = (
-            self.controlled_vehicles[0].position[0] > self.obstacle.position[0] or 
-            self.controlled_vehicles[1].position[0] > self.obstacle.position[0]
+            self.controlled_vehicles[0].position[0] > (self.obstacle.position[0] + 4) or 
+            self.controlled_vehicles[1].position[0] > (self.obstacle.position[0] + 4)
         )
         vehicles_crashed = (
             self.controlled_vehicles[0].crashed and
@@ -1202,11 +1208,11 @@ class MergingEnv(AbstractEnv):
             size=num_integers, 
             replace=False
         )
-        # initial_positions = np.random.choice(
-        #     [92, 94, 96, 98], 
-        #     size=num_integers, 
-        #     replace=False
-        # )
+        initial_positions = np.random.choice(
+            [86, 88, 90, 92, 94, 96], 
+            size=num_integers, 
+            replace=False
+        )
 
         self.first_vehicle_is_merging = random_lanes[0]==1
 
@@ -1218,9 +1224,9 @@ class MergingEnv(AbstractEnv):
             )
 
             if random_lanes[i] == 0:
-                initial_position = 86
+                initial_position = 76
             else:
-                initial_position = 90
+                initial_position = 80
 
             controlled_vehicle = self.action_type.vehicle_class.make_on_lane(
                 self.road, lane_index, speed=None, longitudinal=initial_position
