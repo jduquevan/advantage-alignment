@@ -95,7 +95,7 @@ training:
   vanilla: False
   updates_per_batch: 2
   critic_loss_mode: 'MC'
-  save_every: 200
+  save_every: 20
   checkpoint_dir: './experiments'
   aa_weight: 3
   clip_grad_norm: 1.0

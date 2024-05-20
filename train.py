@@ -768,6 +768,11 @@ class TrainingAlgorithm(ABC):
             })
             wandb.log(step=step, data=wandb_metrics)
 
+            # early stop if already cooperative
+            if wandb_metrics['Average reward 1'] > 0.4:
+                #save the model
+                save_checkpoint(self.agent_1, 'last', self.train_cfg.checkpoint_dir)
+                break
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""
@@ -1327,6 +1332,9 @@ class AlwaysCooperateAgent(Agent):
 
         return None, {'prop': ans}, log_p
 
+    def to(self, device):
+        pass # just for compatibility with the league
+
 
 class AlwaysDefectAgent(Agent):
     def __init__(self,
@@ -1352,6 +1360,9 @@ class AlwaysDefectAgent(Agent):
         log_p = torch.tensor(0.).to(self.device)  # probability of doing that is 1
 
         return None, {'prop': ans}, log_p
+
+    def to(self, device):
+        pass
 
 
 def test_fixed_agents():
