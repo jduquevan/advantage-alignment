@@ -101,6 +101,18 @@ class TrainingAlgorithm(ABC):
                 "prop_entropy": actor_loss_dict['prop_ent'].detach()
             }
 
+        if self.use_spr_loss:
+            agent.spr_optimizer.zero_grad()
+            spr_loss = self.spr_loss(trajectory, is_first)
+            spr_loss.backward()
+            if self.train_cfg.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm(agent.spr.parameters(), self.train_cfg.clip_grad_norm)
+            spr_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.spr.parameters()]))
+            agent.spr_optimizer.step()
+
+            train_step_metrics['spr_grad_norm'] = spr_grad_norm.detach()
+            train_step_metrics['spr_loss'] = spr_loss.detach()
+
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
         train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
@@ -152,7 +164,8 @@ class TrainingAlgorithm(ABC):
                 train_step_metrics = merge_train_step_metrics(
                     train_step_metrics_1,
                     train_step_metrics_2,
-                    self.is_f1
+                    self.is_f1,
+                    self.use_spr_loss
                 )
 
                 for key, value in train_step_metrics.items():

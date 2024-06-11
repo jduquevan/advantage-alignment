@@ -125,6 +125,84 @@ class StableTransformer(nn.Module):
         src = self.embed_layer(src)
         return src
 
+class F1StableTransformer(nn.Module):
+    def __init__(
+        self,
+        in_size, 
+        d_model, 
+        device,
+        dim_feedforward=40,  
+        num_layers=1,
+        num_embed_layers=1,
+        nhead=4, 
+        max_seq_len=100, 
+        dropout=0.1
+        ):
+
+        super(F1StableTransformer, self).__init__()
+        self.layers = nn.ModuleList()
+        
+        self.in_size = in_size
+        self.d_model = d_model
+        self.device = device
+
+        self.num_layers = num_layers
+        self.n_heads = nhead
+        self.max_seq_len = max_seq_len
+
+        self.embed_state_layer = nn.Linear(in_size, d_model)
+        self.embed_action_layer = nn.Linear(4, d_model)
+
+        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
+
+        self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len)
+
+        for _ in range(self.num_layers):
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=dim_feedforward,
+                norm_first=True
+            )
+            # Move the layer to the specified device
+            encoder_layer = encoder_layer.to(device)
+            self.layers.append(encoder_layer)
+
+    def forward(self, states, actions, partial_forward=True):
+        B, T, _ = states.shape
+        H = self.d_model
+        embed_states = self.embed_state_layer(states)
+        embed_actions = self.embed_action_layer(actions)
+
+        for embed_layer in self.embed_layers:
+            embed_states = F.relu(embed_layer(embed_states))
+            embed_actions = F.relu(embed_layer(embed_actions))
+
+        # Interleave states and actions: s, a, s, a, ...
+        src = torch.stack((embed_states, embed_actions), dim=2).view(B, -1, H)
+
+        src = src * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
+        output = src
+        for layer in self.layers:
+            output = layer(output) + src
+        if partial_forward:
+            output = output[:, -2, :]
+        return output
+
+    def get_embeds(self, states, actions):
+        B, T, _ = states.shape
+        H = self.d_model
+        embed_states = self.embed_state_layer(states)
+        embed_actions = self.embed_action_layer(actions)
+
+        for embed_layer in self.embed_layers:
+            embed_states = F.relu(embed_layer(embed_states))
+            embed_actions = F.relu(embed_layer(embed_actions))
+
+        src = torch.stack((embed_states, embed_actions), dim=2).view(B, -1, H)
+
+        return src
 
 class MLPModel(nn.Module):
     def __init__(self, in_size, device, hidden_size=40, gru=None, transformer=None):
@@ -256,13 +334,13 @@ class F1MLPModel(nn.Module):
 
         self.to(device)
 
-    def forward(self, x, h_0=None, partial_forward=True):
+    def forward(self, x, a, h_0=None, partial_forward=True):
         in_x = x
         if self.use_gru:
-            h_0, x = self.encoder(x, h_0)
+            h_0, x = self.encoder(x, a, h_0)
             x = x.squeeze(0)
         else:
-            x = self.encoder(x, partial_forward)
+            x = self.encoder(x, a, partial_forward)
 
         x = x/torch.norm(x, p=2, dim=-1, keepdim=True)
         # x = torch.cat([x, in_x], dim=1)
@@ -333,15 +411,17 @@ class F1LinearModel(nn.Module):
         self.linear = nn.Linear(hidden_size, out_size)
         self.to(device)
 
-    def forward(self, x, h_0=None, partial_forward=True):
+    def forward(self, x, a=None, h_0=None, partial_forward=True, all_representations=False):
         in_x = x
         output = None
         if self.use_gru:
             output, x = self.encoder(x, h_0)
             x = x.squeeze(0)
         else:
-            x = self.encoder(x, partial_forward)
-
+            x = self.encoder(x, a, partial_forward)
+            if not all_representations:
+                x = x[:, 1::2, :]
+        
         x = x/torch.linalg.norm(x)
         # x = torch.cat([x, in_x], dim=1)
         for layer in self.hidden_layers:
