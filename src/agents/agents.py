@@ -110,24 +110,29 @@ class AdvantageAlignmentAgent(Agent):
     
     def sample_f1_action(
         self, 
-        observations, 
+        observations,
+        actions, 
         h_0=None, 
-        history=None, 
+        history=None,
+        history_actions=None,
         use_transformer=False, 
         extend_history=False,
         is_first=False,
     ):
         # TODO: Not tested
-        if use_transformer:
-            observations = observations.flatten().unsqueeze(0)
+        if use_transformer:    
+            observations = observations.unsqueeze(1)
+            actions = actions.unsqueeze(1)
             if extend_history:
                 history.append(observations)
-            props = torch.cat(list(history), dim=0)
+                history_actions.append(actions)
+            observations = torch.cat(list(history), dim=1)
+            actions = torch.cat(list(history_actions), dim=1)
 
         if h_0 is not None:
             h_0 = torch.permute(h_0, (1, 0, 2))
         
-        return self.actor.sample_action(observations, h_0, use_transformer)
+        return self.actor.sample_action(observations, actions, h_0, use_transformer)
 
 
 class OptimalCooperativeAgent(Agent):

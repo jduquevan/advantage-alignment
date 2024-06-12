@@ -72,6 +72,5 @@ def main(cfg: DictConfig) -> None:
     )
     algorithm.train_loop()
 
-
 if __name__ == "__main__":
     main()

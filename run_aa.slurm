@@ -14,10 +14,11 @@
 # Define, how many nodes you need. Here, we ask for 1 node.
 #SBATCH -N 1 #nodes
 #SBATCH -n 1 #tasks
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-00:39:00   
+#SBATCH --time=0-01:59:00   
 #SBATCH --gres=gpu:a100l:1
+#SBATCH --partition=main
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -31,11 +32,11 @@
 version=4
 export WANDB_ENTITY="jduque"
 
-module purge
+# module purge
 eval "$(conda shell.bash hook)"
 conda activate cogames
 module load python/3.9
 
 python train.py\
     seed=${1}\
-    --config-name='eg.yaml'
+    --config-name='f1.yaml'

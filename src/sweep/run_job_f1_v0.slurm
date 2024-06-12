@@ -33,4 +33,13 @@ python train.py \
     optimizer_critic.lr=${3} \
     training.entropy_beta=${4} \
     training.clip_range=${5} \
-    training.updates_per_batch=${6}
+    training.updates_per_batch=${6} \
+    gru_model.hidden_size=${7} \
+    mlp_model.in_size=${7} \
+    linear_model.in_size=${7} \
+    mlp_model.hidden_size=${8} \
+    linear_model.hidden_size=${9} \
+    gru_model.num_layers=${10} \
+    mlp_model.num_layers=${11} \
+    linear_model.num_hidden=${12} \
+

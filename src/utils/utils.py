@@ -214,7 +214,7 @@ def save_checkpoint(agent, epoch, checkpoint_dir):
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved at: {checkpoint_path}")
 
-def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1):
+def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1, use_spr=False):
     merged_metrics = {
         "Actor loss 1": train_step_metrics_1["actor_loss"],
         "Critic loss 1": train_step_metrics_1["critic_loss"],
@@ -239,6 +239,14 @@ def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2, is_f1):
             "Prop Entropy 1": train_step_metrics_1["prop_entropy"],
             "Term Entropy 2": train_step_metrics_2["term_entropy"],
             "Prop Entropy 2": train_step_metrics_2["prop_entropy"]
+        })
+
+    if use_spr:
+        merged_metrics.update({
+            "SPR loss 1": train_step_metrics_1["spr_loss"],
+            "SPR Grad Norm 1": train_step_metrics_1["spr_grad_norm"],
+            "SPR loss 2": train_step_metrics_2["spr_loss"],
+            "SPR Grad Norm 2": train_step_metrics_2["spr_grad_norm"]
         })
 
     return merged_metrics

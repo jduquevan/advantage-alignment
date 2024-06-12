@@ -54,7 +54,8 @@ class TrainingAlgorithm(ABC):
         self,
         trajectory,
         agent,
-        is_first=True
+        is_first=True,
+        optimize_critic=True
     ):
         agent.actor_optimizer.zero_grad()
         if self.is_f1:
@@ -68,14 +69,22 @@ class TrainingAlgorithm(ABC):
 
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
+        if self.train_cfg.clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm(agent.actor.parameters(), self.train_cfg.clip_grad_norm)
         actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.actor.parameters()]))
         agent.actor_optimizer.step()
-
-        agent.critic_optimizer.zero_grad()
-        critic_loss = self.critic_loss(trajectory, is_first)
-        critic_loss.backward()
-        critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.critic.parameters()]))
-        agent.critic_optimizer.step()
+        
+        if optimize_critic:
+            agent.critic_optimizer.zero_grad()
+            critic_loss = self.critic_loss(trajectory, is_first)
+            critic_loss.backward()
+            if self.train_cfg.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
+            critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.critic.parameters()]))
+            agent.critic_optimizer.step()
+        else:
+            critic_loss = torch.Tensor(0)
+            critic_grad_norm = torch.Tensor(0)
 
         if self.is_f1:
             train_step_metrics = {
@@ -91,6 +100,18 @@ class TrainingAlgorithm(ABC):
                 "term_entropy": actor_loss_dict['term_ent'].detach(),
                 "prop_entropy": actor_loss_dict['prop_ent'].detach()
             }
+
+        if self.use_spr_loss:
+            agent.spr_optimizer.zero_grad()
+            spr_loss = self.spr_loss(trajectory, is_first)
+            spr_loss.backward()
+            if self.train_cfg.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm(agent.spr.parameters(), self.train_cfg.clip_grad_norm)
+            spr_grad_norm = torch.sqrt(sum([torch.norm(p.grad)**2 for p in agent.spr.parameters()]))
+            agent.spr_optimizer.step()
+
+            train_step_metrics['spr_grad_norm'] = spr_grad_norm.detach()
+            train_step_metrics['spr_loss'] = spr_loss.detach()
 
         update_target_network(agent.target, agent.critic, self.train_cfg.tau)
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
@@ -124,23 +145,27 @@ class TrainingAlgorithm(ABC):
                 
             wandb_metrics = wandb_stats(trajectory, self.is_f1)
 
+            optimize_critic = True
             for i in range(self.train_cfg.updates_per_batch):
                 train_step_metrics_1 = self.train_step(
                     trajectory=trajectory,
                     agent=self.agent_1,
-                    is_first=True
+                    is_first=True,
+                    optimize_critic=optimize_critic
                 )
 
                 train_step_metrics_2 = self.train_step(
                     trajectory=trajectory,
                     agent=self.agent_2,
-                    is_first=False
+                    is_first=False,
+                    optimize_critic=optimize_critic
                 )
 
                 train_step_metrics = merge_train_step_metrics(
                     train_step_metrics_1,
                     train_step_metrics_2,
-                    self.is_f1
+                    self.is_f1,
+                    self.use_spr_loss
                 )
 
                 for key, value in train_step_metrics.items():
