@@ -16,7 +16,7 @@
 #SBATCH -n 1 #tasks
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --mem=40G
-#SBATCH --time=0-01:59:00
+#SBATCH --time=0-02:59:00
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
 
@@ -35,16 +35,19 @@ python train.py \
     hydra.run.dir='/home/jduque/scratch/hydra' \
     seed=${1} \
     optimizer_actor.lr=${2} \
-    optimizer_critic.lr=${8} \
-    training.entropy_beta=${3} \
-    training.clip_range=${4} \
-    training.updates_per_batch=${5} \
-    gru_model.hidden_size=${6} \
-    mlp_model.hidden_size=${6} \
-    linear_model.hidden_size=${6} \
-    gru_model.num_layers=${7} \
-    mlp_model.num_layers=${7} \
-    mlp_model.in_size=${6} \
-    linear_model.in_size=${6} \
-    training.clip_grad_norm=${9} \
-    linear_model.num_hidden=${10} \
+    optimizer_critic.lr=${3} \
+    training.entropy_beta=${4} \
+    training.clip_range=${5} \
+    training.updates_per_batch=${6} \
+    gru_model.hidden_size=${7} \
+    mlp_model.hidden_size=${8} \
+    linear_model.hidden_size=${9} \
+    gru_model.num_layers=${10} \
+    mlp_model.num_layers=${11} \
+    linear_model.num_hidden=${12} \
+    training.clip_grad_norm=${13} \
+    optimizer_actor.weight_decay=${14} \
+    training.aa_weight=${15} \
+    mlp_model.in_size=${16} \
+    linear_model.in_size=${17} \
+    
