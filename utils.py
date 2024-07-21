@@ -53,22 +53,14 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
     return advantages
 
 def instantiate_agent(cfg: DictConfig):
-
-    assert cfg.use_gru is True, "Only GRU is supported for now."
+    assert cfg.use_transformer is True, "Only Transformer is supported for now."
     use_gru = True
-    if cfg['env_conf']['obs_mode'] == 'raw':
-        encoder_in_size = 15
-    elif cfg['env_conf']['obs_mode'] == 'just_utility_diff':
-        encoder_in_size = 3
-    else:
-        raise f"Unknown obs_mode, don't know the size: {cfg['env_conf']['obs_mode']}"
-
+    encoder_in_size = 23232
+    
     encoder = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
-
     mlp_model = hydra.utils.instantiate(
         cfg.mlp_model,
         encoder=encoder,
-        use_gru=use_gru
     )
     actor = hydra.utils.instantiate(cfg.policy, model=mlp_model)
 
@@ -77,20 +69,17 @@ def instantiate_agent(cfg: DictConfig):
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
             encoder=encoder_c,
-            use_gru=use_gru
         )
     else:
         critic = hydra.utils.instantiate(
             cfg.linear_model,
             encoder=encoder,
-            use_gru=use_gru
         )
 
     encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
     target = hydra.utils.instantiate(
         cfg.linear_model, 
         encoder=encoder_t,
-        use_gru=use_gru
     )
 
     target.load_state_dict(critic.state_dict())

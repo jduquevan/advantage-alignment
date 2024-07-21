@@ -1,0 +1,124 @@
+seed: 42
+batch_size: 512
+wandb: 'disabled'
+wandb_tags: ['meltingpot', 'PPO']
+wandb_dir: /network/scratch/j/juan.duque/wandb/
+use_transformer: True
+sum_rewards: True
+simultaneous: True
+discrete: True
+self_play: True
+share_encoder: True
+use_reward_loss: False
+use_spr_loss: True
+device: cuda
+
+env:
+  type: 'meltingpot'
+  batch: 6
+  device: cuda
+  scenario: 'commons_harvest__open'
+  num_agents: 7
+
+hydra:
+  output_subdir: null
+  run:
+    dir: /network/scratch/j/juan.duque/hydra/
+
+# Architecture hyperparameters
+network:
+  _target_: train.GruIPD
+  device: cuda
+
+gru_model:
+  _target_: train.GruModel
+  in_size: 50
+  device: cuda
+  hidden_size: 512
+  num_layers: 5
+
+encoder:
+  _target_: train.MeltingpotTransformer
+  device: ${device}
+  d_model: 512
+  num_layers: 3
+
+transformer_model:
+  _target_: train.MeltingpotTransformer
+  in_size: 50
+  d_model: 512
+  device: cuda
+  dim_feedforward: 512
+  num_layers: 3
+  num_embed_layers: 2
+  nhead: 4
+  max_seq_len: 50
+  dropout: 0.1
+
+mlp_model:
+  _target_: train.LinearModel
+  in_size: 512
+  device: cuda
+  hidden_size: 512
+  num_layers: 3
+  out_size: 8
+
+policy:
+  _target_: train.CategoricalPolicy
+  device: cuda
+
+linear_model:
+  _target_: train.LinearModel
+  in_size: 512
+  hidden_size: 512
+  out_size: 1
+  device: cuda
+  num_layers: 2
+
+spr_model:
+  _target_: train.LinearModel
+  in_size: 512
+  hidden_size: 512
+  out_size: 512
+  device: cuda
+  num_hidden: 0
+
+optimizer_actor:
+  _target_: torch.optim.Adam
+  lr: 1e-05
+  weight_decay: 0.0001
+
+optimizer_critic:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+optimizer_reward:
+  _target_: torch.optim.Adam
+  lr: 1e-4
+
+optimizer_spr:
+  _target_: torch.optim.Adam
+  lr: 1e-05
+
+agent:
+  _target_: train.AdvantageAlignmentAgent
+  device: cuda
+
+training:
+  gamma: 0.96
+  tau: 0.005
+  max_traj_len: 50
+  batch_size: 512 # Training batch size
+  total_steps: 10000000 # Number of optimization steps to train for
+  eval_every: 100 # Number of optimization steps before evaluation
+  proximal: True
+  clip_range: 0.5
+  entropy_beta: 0.001
+  vanilla: True
+  updates_per_batch: 1
+  use_mlm: True
+  critic_loss_mode: 'MC'
+  save_every: 50
+  checkpoint_dir: './experiments'
+  aa_weight: 0
+  clip_grad_norm: 50

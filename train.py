@@ -11,7 +11,9 @@ from utils import (
     get_observation,
 )
 
+import copy
 import gym
+import math
 import wandb
 
 from omegaconf import DictConfig
@@ -32,64 +34,136 @@ import torch.nn.functional as F
 
 
 from abc import ABC, abstractmethod
+from collections import deque
 from torch.distributions.transforms import SigmoidTransform
+from torchrl.envs import ParallelEnv
+from torchrl.envs.libs.meltingpot import MeltingpotEnv
+from torch.func import functional_call, stack_module_state
 
 class LinearModel(nn.Module):
-    def __init__(self, in_size, out_size, device, num_hidden=1, encoder=None, use_gru=True, append_time: bool = False):
+    def __init__(self, in_size, hidden_size, out_size, device, num_layers=1, encoder=None, append_time: bool = False):
         super(LinearModel, self).__init__()
         self.encoder = encoder
+        self.hidden_size = hidden_size
 
-        self.use_gru = use_gru
         self.in_size = in_size + (1 if append_time else 0)
 
-        self.hidden_layers = nn.ModuleList([nn.Linear(self.in_size, self.in_size) for i in range(num_hidden)])
+        self.hidden_layers = nn.ModuleList([
+            nn.Linear(self.in_size, self.hidden_size) if i==0 
+            else nn.Linear(self.hidden_size, self.hidden_size) 
+            for i in range(num_layers)])
 
         self.linear = nn.Linear(self.in_size, out_size)
         self.append_time = append_time
         self.to(device)
 
-    def forward(self, x, h_0=None, partial_forward=True, t: int = None):
-        assert self.use_gru
-        output, x = self.encoder(x, h_0)
-        x = x.squeeze(0)
-        if self.append_time:
-            assert t is not None
-            batch_size = x.size(0)
-            x = torch.cat((x, torch.tensor(t, device=x.device).repeat(batch_size).unsqueeze(-1)), dim=-1)
+    def forward(self, obs, actions, t: int = None):
+        output = self.encoder(obs, actions)[:, -1, :]
 
         for layer in self.hidden_layers:
-            x = F.relu(layer(x))
+            output = F.relu(layer(output))
 
-        return output, self.linear(x)
+        return self.linear(output)
 
-class MLPModelCont(nn.Module):
-    def __init__(self, in_size, device, num_layers=1, hidden_size=40, encoder=None, use_gru=True):
-        super(MLPModelCont, self).__init__()
-        # self.transformer = transformer
+    
+# Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        """
+        Arguments:
+            x: Tensor, shape ``[seq_len, batch_size, embedding_dim]``
+        """
+        x = x + self.pe[:x.size(0)]
+        return self.dropout(x)
+    
+class MeltingpotTransformer(nn.Module):
+    def __init__(
+        self,
+        in_size, 
+        d_model, 
+        device,
+        dim_feedforward=40,  
+        num_layers=1,
+        num_embed_layers=1,
+        nhead=4, 
+        max_seq_len=100, 
+        dropout=0.1
+        ):
+
+        super(MeltingpotTransformer, self).__init__()
+        self.layers = nn.ModuleList()
+        
+        self.in_size = in_size
+        self.d_model = d_model
+        self.device = device
+
         self.num_layers = num_layers
-        self.encoder = encoder
-        self.use_gru = use_gru
+        self.n_heads = nhead
+        self.max_seq_len = max_seq_len
 
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
 
-        # Proposition heads
-        self.prop_mean_head = nn.Linear(hidden_size, 3)  # todo: milad, it assumes 3 props and therefore 3 items
-        self.prop_log_std = nn.Parameter(torch.zeros(1))
+        self.embed_obs_layer = nn.Linear(64*7*7, d_model)
+        self.embed_action = nn.Embedding(num_embeddings=4, embedding_dim=d_model)
 
-        self.to(device)
+        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
 
-    def forward(self, x, h_0=None):
-        assert self.use_gru
-        output, x = self.encoder(x, h_0)
-        x = x.squeeze(0)
+        self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len)
 
-        for layer in self.hidden_layers:
-            x = F.relu(layer(x))
+        for _ in range(self.num_layers):
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=dim_feedforward,
+                norm_first=True
+            )
+            # Move the layer to the specified device
+            encoder_layer = encoder_layer.to(device)
+            self.layers.append(encoder_layer)
+    
+    def forward(self, obs, actions):
+        src = self.get_embeds(obs, actions)
+        src = src * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
 
-        prop_means = self.prop_mean_head(x)
-        # prop_log_stds = self.prop_log_std_head(x)
+        output = src
+        for layer in self.layers:
+            output = layer(output) + src
+        return output
 
-        return output, (prop_means, torch.ones_like(prop_means) * self.prop_log_std)
+    def get_embeds(self, obs, actions):
+        T, _, _, _ = obs.shape
+        H = self.d_model
+
+        obs = F.relu(self.conv1(obs.permute(0, 3, 1, 2)))
+        obs = F.relu(self.conv2(obs))
+        obs = F.relu(self.conv3(obs))
+        embed_obs = F.relu(self.embed_obs_layer(obs.reshape(T, -1)))
+        
+        embed_actions = self.embed_action(actions)
+
+        for embed_layer in self.embed_layers:
+            embed_obs = F.relu(embed_layer(embed_obs))
+            embed_actions = F.relu(embed_layer(embed_actions))
+
+        # Interleave states and actions: a, s, a, ...
+        src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
+
+        return src
 
 class NormalSigmoidPolicy(nn.Module):
     def __init__(self, log_std_min, log_std_max, prop_max, device, model):
@@ -248,7 +322,7 @@ class GruModel(nn.Module):
         self.to(device)
 
     def forward(self, x, h_0=None):
-        self.gru.flatten_parameters()
+        # self.gru.flatten_parameters()
         for layer in self.hidden_layers:
             x = F.relu(layer(x))
         output, x = self.gru(x.unsqueeze(1), h_0)
@@ -312,19 +386,10 @@ class AdvantageAlignmentAgent(Agent, nn.Module):
         self.critic_optimizer = critic_optimizer
         self.actor_optimizer = actor_optimizer
 
-    def sample_action(
-        self,
-        observations,
-        h_0=None,
-        history=None,
-        extend_history=False,
-        is_first=False,
-        **kwargs
-    ):
-        if h_0 is not None:
-            h_0 = torch.permute(h_0, (1, 0, 2))
+    def sample_action(self):
+        # TODO: Remove, this interface is no longer necessary
+        pass
 
-        return self.actor.sample_action(observations, h_0)
 
 class TrajectoryBatch():
     def __init__(self, sample_observation_1, batch_size: int, max_traj_len: int, device: torch.device, data=None) -> None:
@@ -505,31 +570,20 @@ class AgentReplayBuffer:
         return min(self.num_added_agents, self.replay_buffer_size)
 
 
-
 class TrainingAlgorithm(ABC):
     def __init__(
         self,
         env: gym.Env,
-        agent_1: Agent,
-        agent_2: Agent,
+        agents: list[Agent],
         main_cfg: DictConfig,
         train_cfg: DictConfig,
         sum_rewards: bool,
         simultaneous: bool,
         discrete: bool,
-        use_replay_buffer: bool,
-        replay_buffer_size: int,
-        replay_buffer_update_size: int,
-        use_agent_replay_buffer: bool,
-        agent_replay_buffer_size: int,
-        agent_replay_buffer_update_every_step: int,
-        agent_replay_buffer_off_policy_ratio: float,
-        off_policy_ratio: float,
         clip_grad_norm: float = None,
     ) -> None:
         self.env = env
-        self.agent_1 = agent_1
-        self.agent_2 = agent_2
+        self.agents = agents
         self.main_cfg = main_cfg
         self.train_cfg = train_cfg
         self.trajectory_len = train_cfg.max_traj_len
@@ -538,24 +592,7 @@ class TrainingAlgorithm(ABC):
         self.discrete = discrete
         if self.simultaneous:
             self.batch_size = env.batch_size
-        self.use_replay_buffer = use_replay_buffer
-        self.replay_buffer_size = replay_buffer_size
-        self.replay_buffer_update_size = replay_buffer_update_size
-        self.off_policy_ratio = off_policy_ratio
         self.clip_grad_norm = clip_grad_norm
-        self.use_agent_replay_buffer = use_agent_replay_buffer
-        self.agent_replay_buffer_size = agent_replay_buffer_size
-        self.agent_replay_buffer_update_every_step = agent_replay_buffer_update_every_step
-        self.agent_replay_buffer_off_policy_ratio = agent_replay_buffer_off_policy_ratio
-
-        if self.use_replay_buffer:
-            assert self.use_agent_replay_buffer == False, "Cannot use both replay buffer and agent replay buffer at the same time."
-            self.replay_buffer = ReplayBuffer(self.env, self.replay_buffer_size, self.trajectory_len, self.env.device)
-
-        if self.use_agent_replay_buffer:
-            assert self.use_replay_buffer == False, "Cannot use both replay buffer and agent replay buffer at the same time."
-            self.agent_1_replay_buffer = AgentReplayBuffer(self.main_cfg, self.agent_replay_buffer_size, 1)
-            self.agent_2_replay_buffer = AgentReplayBuffer(self.main_cfg, self.agent_replay_buffer_size, 2)
 
 
     def train_step(
@@ -643,66 +680,31 @@ class TrainingAlgorithm(ABC):
         for step in pbar:
 
             if step % self.train_cfg.save_every == 0:
-                save_checkpoint(self.agent_1, step, self.train_cfg.checkpoint_dir)
+                save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
 
-            if self.use_agent_replay_buffer is False or len(self.agent_1_replay_buffer) == 0 or len(self.agent_2_replay_buffer) == 0:
-                trajectory = self.gen_sim()
-            else:
-                print("@@@Using agent replay buffer@@@----")
-                off_policy_agent_size = int(self.batch_size * self.agent_replay_buffer_off_policy_ratio)
-                trajectory = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2).subsample(self.batch_size - off_policy_agent_size)
-                agent_2_sampled = self.agent_2_replay_buffer.sample()
-                trajectory_1 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, agent_2_sampled).subsample(off_policy_agent_size)
-                agent_1_sampled = self.agent_1_replay_buffer.sample()
-                trajectory_2 = self._gen_sim(self.env, self.batch_size, self.trajectory_len, agent_1_sampled, self.agent_2).subsample(off_policy_agent_size)
-                trajectory_1 = trajectory_1.merge_two_trajectories(trajectory)
-                trajectory_2 = trajectory_2.merge_two_trajectories(trajectory)
-
+            trajectory = self.gen_sim()
+            
             wandb_metrics = wandb_stats(trajectory)
 
             for i in range(self.train_cfg.updates_per_batch):
-                if self.use_replay_buffer:
-                    off_policy_size = int(self.batch_size * self.off_policy_ratio)
-                    if len(self.replay_buffer) > off_policy_size:
-                        off_policy_trajectories = self.replay_buffer.sample(off_policy_size)
-                        augmented_trajectories = trajectory.subsample(self.batch_size - off_policy_size).merge_two_trajectories(off_policy_trajectories)
-                    else:
-                        augmented_trajectories = trajectory
-                else:
-                    augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
-                if self.use_agent_replay_buffer is False or len(self.agent_1_replay_buffer) == 0 or len(self.agent_2_replay_buffer) == 0:
-                    train_step_metrics_1 = self.train_step(
-                        trajectory=augmented_trajectories,
-                        agent=self.agent_1,
-                        is_first=True,
-                        compute_aux=(step % 20 == 0),
-                        optimize_critic= (i % 2 == 0),
-                    )
+                augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
-                    train_step_metrics_2 = self.train_step(
-                        trajectory=augmented_trajectories,
-                        agent=self.agent_2,
-                        is_first=False,
-                        compute_aux=(step % 20 == 0),
-                        optimize_critic= (i % 2 == 0),
-                    )
-                else:
-                    train_step_metrics_1 = self.train_step(
-                        trajectory=trajectory_1,
-                        agent=self.agent_1,
-                        is_first=True,
-                        compute_aux=(step % 20 == 0),
-                        optimize_critic= (i % 2 == 0),
-                    )
+                train_step_metrics_1 = self.train_step(
+                    trajectory=augmented_trajectories,
+                    agent=self.agent_1,
+                    is_first=True,
+                    compute_aux=(step % 20 == 0),
+                    optimize_critic= (i % 2 == 0),
+                )
 
-                    train_step_metrics_2 = self.train_step(
-                        trajectory=trajectory_2,
-                        agent=self.agent_2,
-                        is_first=False,
-                        compute_aux=(step % 20 == 0),
-                        optimize_critic= (i % 2 == 0),
-                    )
+                train_step_metrics_2 = self.train_step(
+                    trajectory=augmented_trajectories,
+                    agent=self.agent_2,
+                    is_first=False,
+                    compute_aux=(step % 20 == 0),
+                    optimize_critic= (i % 2 == 0),
+                )
 
                 train_step_metrics = merge_train_step_metrics(
                     train_step_metrics_1,
@@ -712,15 +714,6 @@ class TrainingAlgorithm(ABC):
                 for key, value in train_step_metrics.items():
                     print(key + ":", value)
                 print()
-
-            # update replay buffer
-            if self.use_replay_buffer:
-                self.replay_buffer.add_trajectory_batch(trajectory.subsample(self.replay_buffer_update_size))
-
-            if self.use_agent_replay_buffer:
-                if step % self.agent_replay_buffer_update_every_step == 0:
-                    self.agent_1_replay_buffer.add_agent(self.agent_1)
-                    self.agent_2_replay_buffer.add_agent(self.agent_2)
 
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
@@ -1018,21 +1011,49 @@ class AdvantageAlignment(TrainingAlgorithm):
         return critic_loss, {'target_values': values_t, 'critic_values': values_c, }
 
     def gen_sim(self):
-        return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agent_1, self.agent_2)
+        return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agents)
 
     @staticmethod
-    def _gen_sim(env, batch_size, trajectory_len, agent_1, agent_2):
-        observations, _ = env.reset()
-        observations_1, observations_2 = observations
+    def _gen_sim(env, batch_size, trajectory_len, agents):
+        B = int(batch_size[0])
+        N = len(agents) 
+        state = env.reset()
+        history = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
+        history_actions = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
+        history_full_maps = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
 
-        hidden_state_1, hidden_state_2 = None, None
-        history = None
-        trajectory = TrajectoryBatch(
-            sample_observation_1=observations_1,
-            batch_size=batch_size,
-            max_traj_len=trajectory_len,
-            device=agent_1.device
+        full_maps = state['RGB']
+        full_maps = full_maps.reshape(-1, 1, *full_maps.shape[2:])
+        actions = torch.zeros((B*N, 1)).to(agents[0].device)
+        observations = state['agents']['observation']['RGB']
+        observations = observations.reshape(-1, 1, *observations.shape[2:])
+
+        history.append(observations)
+        history_actions.append(actions)
+        history_full_maps.append(history_full_maps)
+
+        observations = torch.cat(list(history), dim=1)
+        actions = torch.cat(list(history_actions), dim=1)
+        full_maps = torch.cat(list(full_maps), dim=1)
+
+        # Self-play only TODO: Add replay buffer of agents
+        actors = [agents[0].actor.model for i in range(B*N)]
+        
+        action_logits = call_actors_forward(
+            actors, 
+            observations,
+            actions, 
+            agents[0].device
         )
+        import pdb;pdb.set_trace()
+
+        history = None
+        # trajectory = TrajectoryBatch(
+        #     sample_observation_1=observations_1,
+        #     batch_size=batch_size,
+        #     max_traj_len=trajectory_len,
+        #     device=agents[0].device
+        # )
 
         for t in range(trajectory_len):
             hidden_state_1, action_1, log_p_1 = agent_1.sample_action(observations=observations_1, h_0=hidden_state_1, history=history, extend_history=True, is_first=True,
@@ -1065,358 +1086,25 @@ class AdvantageAlignment(TrainingAlgorithm):
         return trajectory
 
     def eval(self, agent):
-        gen_episodes_between_agents = self._gen_sim
-        # todo: assert eg, check the code, etc
-        assert self.env.name == 'eg_obligated_ratio'
-        # evaluate against always cooperate and always defect
-        always_cooperate_agent = AlwaysCooperateAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
-        always_defect_agent = AlwaysDefectAgent(max_possible_prop=self.env.item_max_quantity, device=agent.device)
-
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
-                                                 agent_1=agent, agent_2=always_cooperate_agent)
-        agent_vs_ac_rewards_agent = trajectory.data['rewards_0'].mean().item()
-        agent_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
-
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
-                                                 agent_1=agent, agent_2=always_defect_agent)
-        agent_vs_ad_rewards_agent = trajectory.data['rewards_0'].mean().item()
-        agent_vs_ad_rewards_ad = trajectory.data['rewards_1'].mean().item()
-
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
-                                                 agent_1=always_defect_agent, agent_2=always_defect_agent)
-        ad_vs_ad_rewards_ad_0 = trajectory.data['rewards_0'].mean().item()
-        ad_vs_ad_rewards_ad_1 = trajectory.data['rewards_1'].mean().item()
-
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
-                                                 agent_1=always_cooperate_agent, agent_2=always_cooperate_agent)
-        ac_vs_ac_rewards_ac_0 = trajectory.data['rewards_0'].mean().item()
-        ac_vs_ac_rewards_ac_1 = trajectory.data['rewards_1'].mean().item()
-
-        trajectory = gen_episodes_between_agents(env=self.env, batch_size=self.batch_size, trajectory_len=self.trajectory_len,
-                                                 agent_1=always_defect_agent, agent_2=always_cooperate_agent)
-        ad_vs_ac_rewards_ad = trajectory.data['rewards_0'].mean().item()
-        ad_vs_ac_rewards_ac = trajectory.data['rewards_1'].mean().item()
-
-        metrics = {
-            'agent_vs_ac_rewards_agent': agent_vs_ac_rewards_agent,
-            'agent_vs_ac_rewards_ac': agent_vs_ac_rewards_ac,
-            'agent_vs_ad_rewards_agent': agent_vs_ad_rewards_agent,
-            'agent_vs_ad_rewards_ad': agent_vs_ad_rewards_ad,
-            'ad_vs_ad_rewards_ad_0': ad_vs_ad_rewards_ad_0,
-            'ad_vs_ad_rewards_ad_1': ad_vs_ad_rewards_ad_1,
-            'ac_vs_ac_rewards_ac_0': ac_vs_ac_rewards_ac_0,
-            'ac_vs_ac_rewards_ac_1': ac_vs_ac_rewards_ac_1,
-            'ad_vs_ac_rewards_ac': ad_vs_ac_rewards_ac,
-            'ad_vs_ac_rewards_ad': ad_vs_ac_rewards_ad
-        }
-        return metrics
-
-
-class ObligatedRatioDiscreteEG(gym.Env):
-    def __init__(
-        self,
-        item_max_quantity,
-        max_turns={
-            "lower": 3,
-            "mean": 3,
-            "upper": 3,
-        },
-        obs_mode="full",
-        nb_items=3,
-        utility_max=5,
-        device=None,
-        batch_size=128,
-        sampling_type="no_sampling",
-        prop_mode='divide_when_above',
-    ):
-        super().__init__()
-
-        self.name = 'eg_obligated_ratio'
-        self.obs_mode = obs_mode
-        self._max_turns = max_turns
-        self.nb_items = nb_items
-        self.item_max_quantity = item_max_quantity
-        self.utility_max = utility_max
-        self.device = device
-        self.batch_size = batch_size
-        self.sampling_type = sampling_type
-        self.prop_mode = prop_mode
-        self.info = {}
-
-    def _get_max_sum_rewards(self):
-        utility_comparer = (self.utilities_1 >= self.utilities_2)
-        agent_1_gets = torch.where(utility_comparer, self.item_pool, 0)
-        agent_2_gets = self.item_pool - agent_1_gets
-        max_sum_rewards = (agent_1_gets * self.utilities_1).sum(dim=-1) + (agent_2_gets * self.utilities_2).sum(dim=-1)
-        return max_sum_rewards
-
-    def _get_obs(self, item_pool, utilities_1, utilities_2, prop_1, prop_2):
-        if self.obs_mode == "raw":
-            item_context_1 = torch.cat([item_pool, utilities_1, prop_1, utilities_2, prop_2], dim=1).float() / 10.  # todo: milad, check if this is necessary
-            item_context_2 = torch.cat([item_pool, utilities_2, prop_2, utilities_1, prop_1], dim=1).float() / 10.  # todo: milad, check if this is necessary
-        elif self.obs_mode == "just_utility_diff":
-            item_context_1 = (utilities_1 - utilities_2).float()
-            item_context_2 = (utilities_2 - utilities_1).float()
-        else:
-            raise Exception(f"Unsupported observation mode: '{self.obs_mode}'.")
-        return item_context_1, item_context_2
-
-    def _sample_utilities(self):
-        if self.sampling_type == "uniform":
-            utilities_1 = torch.randint(
-                1,
-                self.utility_max + 1,
-                (self.batch_size, self.nb_items)
-            ).to(self.device)
-            utilities_2 = torch.randint(
-                1,
-                self.utility_max + 1,
-                (self.batch_size, self.nb_items)
-            ).to(self.device)
-            item_pool = torch.randint(
-                1,
-                self.item_max_quantity + 1,
-                (self.batch_size, self.nb_items)
-            ).to(self.device)
-        elif self.sampling_type == "no_sampling":
-            # For debugging purposes
-            utilities_1 = torch.tensor([10, 3, 2]).repeat(self.batch_size, 1).to(self.device)
-            utilities_2 = torch.tensor([3, 10, 2]).repeat(self.batch_size, 1).to(self.device)
-            item_pool = torch.tensor([4, 4, 4]).repeat(self.batch_size, 1).to(self.device)
-        elif self.sampling_type == "high_contrast":
-            utilities_1 = torch.randint(0, 2, (self.batch_size, self.nb_items)).to(self.device) * (self.utility_max - 1) + 1
-            utilities_2 = self.utility_max + 1 - utilities_1
-            item_pool = torch.tensor([[1, 1, 1]]).repeat(self.batch_size, 1).to(self.device)
-        elif self.sampling_type == "high_contrast_no_sampling":
-            utilities_1 = torch.tensor([[5, 5, 1]]).repeat(self.batch_size, 1).to(self.device)
-            utilities_2 = torch.tensor([[1, 1, 5]]).repeat(self.batch_size, 1).to(self.device)
-            item_pool = torch.tensor([[1, 1, 1]]).repeat(self.batch_size, 1).to(self.device)
-        else:
-            raise Exception(f"Unsupported sampling type: '{self.sampling_type}'.")
-
-        return utilities_1, utilities_2, item_pool
-
-    def reset(self):
-        self.a1_is_done = torch.torch.full(
-            (self.batch_size,),
-            False,
-            dtype=torch.bool
-        ).to(self.device)
-        self.a2_is_done = torch.torch.full(
-            (self.batch_size,),
-            False,
-            dtype=torch.bool
-        ).to(self.device)
-        self.env_is_done = torch.torch.full(
-            (self.batch_size,),
-            False,
-            dtype=torch.bool
-        ).to(self.device)
-
-        self.turn = torch.zeros((self.batch_size,)).to(self.device)
-
-        self.utilities_1, self.utilities_2, self.item_pool = self._sample_utilities()
-
-        max_turns = torch.poisson(
-            torch.ones(self.batch_size) * self._max_turns["mean"]
-        ).to(self.device)
-        self.max_turns = torch.clamp(
-            max_turns,
-            self._max_turns["lower"],
-            self._max_turns["upper"]
-        )
-
-        self.prop_dummy = torch.zeros((self.batch_size, self.nb_items)).to(self.device)
-        obs = self._get_obs(self.item_pool, self.utilities_1, self.utilities_2, self.prop_dummy, self.prop_dummy)
-
-        self.info["max_sum_rewards"] = self._get_max_sum_rewards()
-
-        return obs, self.info
-
-    def step(self, actions):
-
-        self.turn += 1
-        actions_1, actions_2 = actions
-        prop_1 = actions_1["prop"]
-        prop_2 = actions_2["prop"]
-
-        if self.prop_mode == 'proportion':
-            rewards_1 = ((prop_1 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_1).sum(dim=-1)
-            rewards_2 = ((prop_2 / (prop_1 + prop_2 + 1e-8)) * self.item_pool * self.utilities_2).sum(dim=-1)
-        elif self.prop_mode == 'divide_when_above':
-            rewards_1 = ((prop_1 / torch.max(prop_1 + prop_2, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_1).sum(dim=-1)
-            rewards_2 = ((prop_2 / torch.max(prop_2 + prop_1, torch.tensor(5., device=prop_1.device))) * self.item_pool * self.utilities_2).sum(dim=-1)
-        else:
-            raise Exception(f"Unsupported prop mode: '{self.prop_mode}'.")
-
-        def normalize_reward(reward):
-            MAX_REWARD = self.utility_max * self.nb_items
-            return (reward / MAX_REWARD)
-        # scale down the rewards
-        rewards_1 = normalize_reward(rewards_1)
-        rewards_2 = normalize_reward(rewards_2)
-
-        assert (self.utilities_1 >= 0).all() and (self.utilities_2 >= 0).all()
-        max_sum_rewards = normalize_reward(self._get_max_sum_rewards())
-
-        max_sum_reward_ratio = (rewards_1 + rewards_2) / max_sum_rewards
-
-        done = (self.turn >= self.max_turns)
-
-        new_utilities_1, new_utilities_2, new_item_pool = self._sample_utilities()
-
-        rewards_1 = torch.where(done, rewards_1, 0)
-        rewards_2 = torch.where(done, rewards_2, 0)
-
-        reset = done.unsqueeze(1).repeat(1, 3)
-        self.utilities_1 = torch.where(reset, new_utilities_1, self.utilities_1)
-        self.utilities_2 = torch.where(reset, new_utilities_2, self.utilities_2)
-        self.item_pool = torch.where(reset, new_item_pool, self.item_pool)
-        self.turn = torch.where(done, 0, self.turn)
-
-        max_sum_rewards = torch.where(done, max_sum_rewards, 0)
-        max_sum_reward_ratio = torch.where(done, max_sum_reward_ratio, 0)
-
-        self.info["max_sum_rewards"] = max_sum_rewards
-        self.info["max_sum_reward_ratio"] = max_sum_reward_ratio
-        self.info["cos_sims"] = get_cosine_similarity_torch(self.utilities_1, self.utilities_2)
-
-        obs = self._get_obs(self.item_pool, self.utilities_1, self.utilities_2, prop_1, prop_2)
-
-        return obs, (rewards_1, rewards_2), done, None, self.info
-
-
-def test_obligated_ratio_discrete_eg():
-    env = ObligatedRatioDiscreteEG(item_max_quantity=3)
-    env.reset()
-    prop_1 = torch.randint(0, 3, (128, 3))
-    prop_2 = torch.randint(0, 3, (128, 3))
-    actions_1 = {
-        "term": torch.zeros((128)).to(env.device),
-        "prop": prop_1
-    }
-    actions_2 = {
-        "term": torch.zeros((128)).to(env.device),
-        "prop": prop_2
-    }
-    env.step((actions_1, actions_2))
-
-
-class AlwaysCooperateAgent(Agent):
-    def __init__(self,
-                 max_possible_prop,
-                 device):
-        self.device = device
-        self.max_possible_prop = max_possible_prop
-
-    def sample_action(self,
-                      observations,
-                      is_first: bool,
-                      **kwargs):
-
-        if is_first:
-            my_utilities = kwargs.pop('utilities_1')
-            your_utilities = kwargs.pop('utilities_2')
-        else:
-            my_utilities = kwargs.pop('utilities_2')
-            your_utilities = kwargs.pop('utilities_1')
-
-        ans = torch.where(my_utilities > your_utilities, self.max_possible_prop, 0).to(self.device)
-
-        # breaking ties
-        equal_places = torch.where(my_utilities == your_utilities, self.max_possible_prop, ans)
-        coin_flip = torch.randint(0, 2, equal_places.shape).to(self.device)
-        ans = torch.where(coin_flip == 1, equal_places, ans)
-
-        log_p = torch.tensor(0.).to(self.device)  # probability of doing that is 1, not for the equal actions as they are log(0.5) but we ignore, we don't train this agent
-
-        return None, {'prop': ans}, log_p
-
-    def to(self, device):
-        pass # just for compatibility with the league
-
-
-class AlwaysDefectAgent(Agent):
-    def __init__(self,
-                 max_possible_prop,
-                 device):
-        self.device = device
-        self.max_possible_prop = max_possible_prop
-
-    def sample_action(self,
-                      observations,
-                      is_first: bool,
-                      **kwargs):
-
-        if is_first:
-            my_utilities = kwargs.pop('utilities_1')
-            your_utilities = kwargs.pop('utilities_2')
-        else:
-            my_utilities = kwargs.pop('utilities_2')
-            your_utilities = kwargs.pop('utilities_1')
-
-        ans = torch.ones_like(my_utilities).to(self.device) * self.max_possible_prop
-
-        log_p = torch.tensor(0.).to(self.device)  # probability of doing that is 1
-
-        return None, {'prop': ans}, log_p
-
-    def to(self, device):
         pass
+    
+def call_actors_forward(actors, observations, actions, device):
+    # Stack all agent parameters
+    
+    observations = observations.to(device).float()
+    params, buffers = stack_module_state(actors)
+
+    base_model = copy.deepcopy(actors[0])
+    base_model = base_model.to('meta')
+
+    def fmodel(params, buffers, x, actions):
+        return functional_call(base_model, (params, buffers), (x, actions))
+
+    logits_vmap_fmodel = torch.vmap(fmodel, randomness='different')(params, buffers, observations, actions.long())
+    return logits_vmap_fmodel
 
 
-def test_fixed_agents():
-    gen_episodes_between_agents = AdvantageAlignment._gen_sim
-    batch_size = 1024
-    item_max_quantity = 5
-    trajectory_len = 50
-    env = ObligatedRatioDiscreteEG(item_max_quantity=item_max_quantity, batch_size=batch_size, device='cpu', sampling_type=
-    'high_contrast')
-    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
-    print(trajectory.data.keys())
-    # print rewards
-    print("Always Cooperate vs Always Cooperate")
-    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
-    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
-    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
-    # print actions
-    # print(trajectory.data['a_props_0'][-1])
-    # print(trajectory.data['a_props_1'][-1])
-
-    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
-    print(trajectory.data.keys())
-    # print rewards
-    print("Always Defect vs Always Defect")
-    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
-    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
-    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
-
-    agent_1 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    agent_2 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
-    print(trajectory.data.keys())
-    # print rewards
-    print("Always Cooperate vs Always Defect")
-    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
-    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
-    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
-
-    agent_1 = AlwaysDefectAgent(max_possible_prop=item_max_quantity, device='cpu')
-    agent_2 = AlwaysCooperateAgent(max_possible_prop=item_max_quantity, device='cpu')
-    trajectory = gen_episodes_between_agents(env, batch_size, trajectory_len, agent_1, agent_2)
-    print(trajectory.data.keys())
-    # print rewards
-    print("Always Defect vs Always Cooperate")
-    print(f"mean rewards 1: {trajectory.data['rewards_0'].mean()}")
-    print(f"mean rewards 2: {trajectory.data['rewards_1'].mean()}")
-    print(f"mean rewards 1 + 2: {(trajectory.data['rewards_0'] + trajectory.data['rewards_1']).mean()}q")
-
-
-@hydra.main(version_base="1.3", config_path="configs", config_name="eg.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
@@ -1433,60 +1121,30 @@ def main(cfg: DictConfig) -> None:
         mode=cfg["wandb"],
         tags=cfg.wandb_tags,
     )
-    if cfg['env_conf']['type'] == 'eg-obligated_ratio':
-        env = ObligatedRatioDiscreteEG(
-            obs_mode=cfg['env_conf']['obs_mode'],
-            max_turns={
-            'lower': cfg['env_conf']['max_turns_lower'],
-            'mean': cfg['env_conf']['max_turns_mean'],
-            'upper': cfg['env_conf']['max_turns_upper']
-        },
-            sampling_type=cfg['env_conf']['sampling_type'],
-            item_max_quantity=cfg['env_conf']['item_max_quantity'],
-            batch_size=cfg['batch_size'],
-            device=cfg['env_conf']['device'],
-            prop_mode=cfg['env_conf']['prop_mode'],
-        )
+    if cfg['env']['type'] == 'meltingpot':
+        scenario = cfg['env']['scenario']
+        env = ParallelEnv(cfg['env']['batch'], lambda: MeltingpotEnv(scenario))
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
     if cfg['self_play']:
-        agent_1 = agent_2 = instantiate_agent(cfg)
+        agents = []
+        agent = instantiate_agent(cfg)
+        for i in range(cfg['env']['num_agents']):
+            agents.append(agent)
     else:
-        agent_1 = instantiate_agent(cfg)
-        agent_2 = instantiate_agent(cfg)
-
-    if cfg['replay_buffer']['mode'] == 'enabled':
-        use_replay_buffer = True
-    elif cfg['replay_buffer']['mode'] == 'disabled':
-        use_replay_buffer = False
-    else:
-        raise ValueError(f"Replay buffer mode {cfg['replay_buffer']['mode']} not supported.")
-
-    if cfg['agent_replay_buffer']['mode'] == 'enabled':
-        use_agent_replay_buffer = True
-    elif cfg['agent_replay_buffer']['mode'] == 'disabled':
-        use_agent_replay_buffer = False
-    else:
-        raise ValueError(f"Agent replay buffer mode {cfg['agent_replay_buffer']['mode']} not supported.")
+        agents = []
+        for i in range(cfg['env']['num_agents']):
+            agents.append(instantiate_agent(cfg))
 
     algorithm = AdvantageAlignment(
         env=env,
-        agent_1=agent_1,
-        agent_2=agent_2,
+        agents=agents,
         main_cfg=cfg,
         train_cfg=cfg.training,
         sum_rewards=cfg['sum_rewards'],
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
-        use_replay_buffer=use_replay_buffer,
-        replay_buffer_size=cfg['replay_buffer']['size'],
-        replay_buffer_update_size=cfg['replay_buffer']['update_size'],
-        off_policy_ratio=cfg['replay_buffer']['off_policy_ratio'],
-        use_agent_replay_buffer=use_agent_replay_buffer,
-        agent_replay_buffer_size=cfg['agent_replay_buffer']['size'],
-        agent_replay_buffer_update_every_step=cfg['agent_replay_buffer']['update_every_step'],
-        agent_replay_buffer_off_policy_ratio=cfg['agent_replay_buffer']['off_policy_ratio'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
     )
     algorithm.train_loop()
