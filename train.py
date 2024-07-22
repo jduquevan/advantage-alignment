@@ -35,6 +35,7 @@ import torch.nn.functional as F
 
 from abc import ABC, abstractmethod
 from collections import deque
+from torch.distributions import Categorical
 from torch.distributions.transforms import SigmoidTransform
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
@@ -1022,75 +1023,52 @@ class AdvantageAlignment(TrainingAlgorithm):
         history_actions = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
         history_full_maps = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
 
-        full_maps = state['RGB']
-        full_maps = full_maps.reshape(-1, 1, *full_maps.shape[2:])
-        actions = torch.zeros((B*N, 1)).to(agents[0].device)
-        observations = state['agents']['observation']['RGB']
-        observations = observations.reshape(-1, 1, *observations.shape[2:])
-
-        history.append(observations)
-        history_actions.append(actions)
-        history_full_maps.append(history_full_maps)
-
-        observations = torch.cat(list(history), dim=1)
-        actions = torch.cat(list(history_actions), dim=1)
-        full_maps = torch.cat(list(full_maps), dim=1)
-
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[0].actor.model for i in range(B*N)]
-        
-        action_logits = call_actors_forward(
-            actors, 
-            observations,
-            actions, 
-            agents[0].device
-        )
-        import pdb;pdb.set_trace()
 
-        history = None
-        # trajectory = TrajectoryBatch(
-        #     sample_observation_1=observations_1,
-        #     batch_size=batch_size,
-        #     max_traj_len=trajectory_len,
-        #     device=agents[0].device
-        # )
+        for i in range(trajectory_len):
 
-        for t in range(trajectory_len):
-            hidden_state_1, action_1, log_p_1 = agent_1.sample_action(observations=observations_1, h_0=hidden_state_1, history=history, extend_history=True, is_first=True,
-                                                                      item_pool=env.item_pool, utilities_1=env.utilities_1, utilities_2=env.utilities_2)
-            hidden_state_2, action_2, log_p_2 = agent_2.sample_action(observations=observations_2, h_0=hidden_state_2, history=history, extend_history=False, is_first=False,
-                                                                      item_pool=env.item_pool, utilities_1=env.utilities_1, utilities_2=env.utilities_2)
-            utilities_1 = env.utilities_1
-            utilities_2 = env.utilities_2  # storing them for putting them in the trajectory later, step method modifies them
-            item_pool = env.item_pool
-            next_observations, rewards, done, _, info = env.step((action_1, action_2))
+            full_maps = state['RGB']
+            full_maps = full_maps.reshape(-1, 1, *full_maps.shape[2:])
+            actions = torch.zeros((B*N, 1)).to(agents[0].device)
+            observations = state['agents']['observation']['RGB']
+            observations = observations.reshape(-1, 1, *observations.shape[2:])
 
-            trajectory.add_step_sim(
-                action=(action_1, action_2),
-                observations=(
-                    observations_1,
-                    observations_2
-                ),
-                rewards=rewards,
-                log_ps=(log_p_1, log_p_2),
-                done=done,
-                info=info,
-                t=t,
-                item_pool=item_pool,
-                utilities_1=utilities_1,
-                utilities_2=utilities_2,
+            history.append(observations)
+            history_actions.append(actions)
+            history_full_maps.append(history_full_maps)
+
+            observations = torch.cat(list(history), dim=1)
+            actions = torch.cat(list(history_actions), dim=1)
+            full_maps = torch.cat(list(full_maps), dim=1)
+            
+            action_logits = call_actors_forward(
+                actors, 
+                observations,
+                actions, 
+                agents[0].device
             )
+            actions, log_probs = sample_actions_categorical(action_logits.reshape(B*N, -1))
+            actions = actions.reshape(B, N)
 
-            observations_1, observations_2 = next_observations
+            import pdb;pdb.set_trace()
 
+        
         return trajectory
 
     def eval(self, agent):
         pass
-    
+
+
+def sample_actions_categorical(action_logits):
+    distribution = Categorical(logits=action_logits)
+    actions = distribution.sample()
+    log_probs = distribution.log_prob(actions)
+    return actions, log_probs
+
+
 def call_actors_forward(actors, observations, actions, device):
     # Stack all agent parameters
-    
     observations = observations.to(device).float()
     params, buffers = stack_module_state(actors)
 
