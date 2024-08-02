@@ -23,6 +23,7 @@ from utils import (
     save_checkpoint,
     merge_train_step_metrics
 )
+from tensordict import TensorDict
 from tqdm import tqdm
 
 import torch.distributions as D
@@ -119,7 +120,7 @@ class MeltingpotTransformer(nn.Module):
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
 
         self.embed_obs_layer = nn.Linear(64*7*7, d_model)
-        self.embed_action = nn.Embedding(num_embeddings=4, embedding_dim=d_model)
+        self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
         self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
 
@@ -149,12 +150,11 @@ class MeltingpotTransformer(nn.Module):
     def get_embeds(self, obs, actions):
         T, _, _, _ = obs.shape
         H = self.d_model
-
+        
         obs = F.relu(self.conv1(obs.permute(0, 3, 1, 2)))
         obs = F.relu(self.conv2(obs))
         obs = F.relu(self.conv3(obs))
         embed_obs = F.relu(self.embed_obs_layer(obs.reshape(T, -1)))
-        
         embed_actions = self.embed_action(actions)
 
         for embed_layer in self.embed_layers:
@@ -393,116 +393,62 @@ class AdvantageAlignmentAgent(Agent, nn.Module):
 
 
 class TrajectoryBatch():
-    def __init__(self, sample_observation_1, batch_size: int, max_traj_len: int, device: torch.device, data=None) -> None:
+    def __init__(self, 
+                 sample_obs, 
+                 sample_full_map, 
+                 batch_size: int,
+                 n_agents: int, 
+                 max_traj_len: int, 
+                 device: torch.device, 
+                 data=None
+                 ) -> None:
+        
         self.batch_size = batch_size
-        self.max_traj_len = max_traj_len
         self.device = device
-        obs_size = sample_observation_1.size(-1)
+        
+        B, N, H, W, C = sample_obs.shape
+        _, G, L, _ = sample_full_map.shape
+        T = max_traj_len
+
         if data is None:
             self.data = {
-                "obs_0": torch.ones(
-                    (batch_size, max_traj_len, obs_size),
+                "obs": torch.ones(
+                    (B*N, T, H, W, C),
                     dtype=torch.float32,
                     device=device,
                 ),
-                "obs_1": torch.ones(
-                    (batch_size, max_traj_len, obs_size),
+                "full_maps": torch.ones(
+                    (B, T, G, L, C),
                     dtype=torch.float32,
                     device=device,
                 ),
-                "props_0": 1e7 * torch.ones(
-                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-                ),
-                "props_1": 1e7 * torch.ones(
-                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-                ),
-                "item_pool": 1e7 * torch.ones(
-                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-                ),
-                "utility_1": 1e7 * torch.ones(
-                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-                ),
-                "utility_2": 1e7 * torch.ones(
-                    (batch_size, max_traj_len, 3), device=device, dtype=torch.float32
-                ),
-                "rewards_0": torch.ones(
-                    (batch_size, max_traj_len),
+                "rewards": torch.ones(
+                    (B*N, T),
                     device=device,
                     dtype=torch.float32,
                 ),
-                "rewards_1": torch.ones(
-                    (batch_size, max_traj_len),
+                "log_ps": torch.ones(
+                    (B*N, T),
                     device=device,
                     dtype=torch.float32,
                 ),
-                "log_ps_0": torch.ones(
-                    (batch_size, max_traj_len),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "log_ps_1": torch.ones(
-                    (batch_size, max_traj_len),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "dones": torch.empty(
-                    (batch_size, max_traj_len),
-                    device=device,
-                    dtype=torch.bool,
-                ),
-                "cos_sims": torch.ones(
-                    (batch_size, max_traj_len),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "max_sum_rewards": torch.ones(
-                    (batch_size, max_traj_len),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "max_sum_reward_ratio": torch.ones(
-                    (batch_size, max_traj_len),
+                "actions": torch.ones(
+                    (B*N, T),
                     device=device,
                     dtype=torch.float32,
                 ),
             }
-        else:
-            self.data = data
-            for key in self.data.keys():
-                assert self.data[key].size(0) == batch_size
-                assert self.data[key].size(1) == max_traj_len
 
     def subsample(self, batch_size: int):
         idxs = torch.randint(0, self.batch_size, (batch_size,))
         return TrajectoryBatch.create_from_data({k: v[idxs] for k, v in self.data.items()})
 
-    @staticmethod
-    def create_from_data(data):
-        batch_size = data['obs_0'].size(0)
-        max_traj_len = data['obs_0'].size(1)
-        sample_obs = data['obs_0']
-        device = data['obs_0'].device
-        for key in data.keys():
-            assert data[key].size(0) == batch_size
-            assert data[key].size(1) == max_traj_len
-        return TrajectoryBatch(sample_obs, batch_size, max_traj_len, device, data)
-
-    def add_step_sim(self, action, observations, rewards, log_ps, done, info, t, item_pool, utilities_1, utilities_2):
-        self.data['props_0'][:, t, :] = action[0]['prop']
-        self.data['props_1'][:, t, :] = action[1]['prop']
-        self.data['item_pool'][:, t, :] = item_pool
-        self.data['utility_1'][:, t, :] = utilities_1
-        self.data['utility_2'][:, t, :] = utilities_2
-        self.data['obs_0'][:, t, :] = observations[0]
-        self.data['obs_1'][:, t, :] = observations[1]
-        self.data['rewards_0'][:, t] = rewards[0]
-        self.data['rewards_1'][:, t] = rewards[1]
-        self.data['log_ps_0'][:, t] = log_ps[0].detach()
-        self.data['log_ps_1'][:, t] = log_ps[1].detach()
-        self.data['max_sum_rewards'][:, t] = info['max_sum_rewards']
-        self.data['max_sum_reward_ratio'][:, t] = info['max_sum_reward_ratio']
-        self.data['cos_sims'][:, t] = info['cos_sims']
-        self.data['dones'][:, t] = done
+    def add_step(self, obs, full_maps, rewards, log_ps, actions, t):
+        self.data['obs'][:, t, :, :, :] = obs[:, 0, :, :, :]
+        self.data['full_maps'][:, t, :, :, :] = full_maps[:, 0, :, :, :]
+        self.data['rewards'][:, t] = rewards
+        self.data['log_ps'][:, t] = log_ps
+        self.data['actions'][:, t] = actions[:, 0]
 
     def merge_two_trajectories(self, other):
         for key in self.data.keys():
@@ -1017,7 +963,8 @@ class AdvantageAlignment(TrainingAlgorithm):
     @staticmethod
     def _gen_sim(env, batch_size, trajectory_len, agents):
         B = int(batch_size[0])
-        N = len(agents) 
+        N = len(agents)
+        device = agents[0].device 
         state = env.reset()
         history = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
         history_actions = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
@@ -1026,13 +973,27 @@ class AdvantageAlignment(TrainingAlgorithm):
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[0].actor.model for i in range(B*N)]
 
-        for i in range(trajectory_len):
+        trajectory = TrajectoryBatch(
+            sample_obs=state['agents']['observation']['RGB'],
+            sample_full_map=state['RGB'],
+            batch_size=B,
+            n_agents=N,
+            max_traj_len=trajectory_len,
+            device=device
+        )
 
+        rewards = torch.zeros((B*N)).to(device)
+        log_probs = torch.zeros((B*N)).to(device)
+        actions = torch.zeros((B*N, 1)).to(device)
+
+        for i in range(trajectory_len):
             full_maps = state['RGB']
-            full_maps = full_maps.reshape(-1, 1, *full_maps.shape[2:])
-            actions = torch.zeros((B*N, 1)).to(agents[0].device)
+            full_maps = full_maps.unsqueeze(1)
+            
             observations = state['agents']['observation']['RGB']
             observations = observations.reshape(-1, 1, *observations.shape[2:])
+
+            trajectory.add_step(observations, full_maps, rewards, log_probs, actions, i)
 
             history.append(observations)
             history_actions.append(actions)
@@ -1049,10 +1010,15 @@ class AdvantageAlignment(TrainingAlgorithm):
                 agents[0].device
             )
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B*N, -1))
-            actions = actions.reshape(B, N)
+            actions = actions.reshape(B*N, 1)
+            actions_dict = TensorDict(
+                source={'agents': TensorDict(source={'action': actions.reshape(B, N)})}, 
+                batch_size=[B]
+            )
+            # TODO: Check why the action logits heavily favor action 0 at initialization
 
-            import pdb;pdb.set_trace()
-
+            state = env.step(actions_dict)['next']
+            rewards = state['agents']['reward'].reshape(B*N)
         
         return trajectory
 
