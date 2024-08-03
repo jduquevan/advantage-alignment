@@ -59,8 +59,15 @@ class LinearModel(nn.Module):
         self.append_time = append_time
         self.to(device)
 
-    def forward(self, obs, actions, t: int = None):
-        output = self.encoder(obs, actions)[:, -1, :]
+    def forward(self, obs, actions, full_seq: bool=False):
+        if full_seq==0:
+            output = self.encoder(obs, actions)[:, -1, :]
+        elif full_seq==1:
+            output = self.encoder(obs, actions)[:,::2, :]
+        elif full_seq==2:
+            output = self.encoder(obs, actions)[:,1::2, :]
+        else:
+           raise NotImplementedError("The full_seq value is invalid")
 
         for layer in self.hidden_layers:
             output = F.relu(layer(output))
@@ -166,144 +173,6 @@ class MeltingpotTransformer(nn.Module):
 
         return src
 
-class NormalSigmoidPolicy(nn.Module):
-    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
-        super(NormalSigmoidPolicy, self).__init__()
-        self.model = model
-        self.log_std_min = torch.tensor(log_std_min).to(device)
-        self.log_std_max = torch.tensor(log_std_max).to(device)
-        self.prop_max = prop_max
-        self.device = device
-        self.to(device)
-
-    def forward(self, x, h_0=None):
-        output, prop = self.model(x, h_0)
-        prop_mean, prop_log_std = prop
-        print(f"####prop_mean_mean: {prop_mean.mean()}")
-
-        prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
-
-        self.prop_log_std = prop_log_std
-
-        base_prop_dist = D.normal.Normal(
-            loc=prop_mean.squeeze(0),
-            scale=torch.exp(prop_log_std.squeeze(0))
-        )
-
-        prop_normal_sigmoid = D.TransformedDistribution(base_prop_dist, [SigmoidTransform()])
-
-        return output, prop_normal_sigmoid
-
-    def sample_action(self, x, h_0=None):
-        action = {}
-
-        output, prop_normal_sigmoid = self.forward(x, h_0)
-        prop = prop_normal_sigmoid.sample()
-
-        log_p_prop = prop_normal_sigmoid.log_prob(prop).sum(dim=-1)  # Sum log probabilities over dimensions
-        log_p = log_p_prop
-
-        action['prop'] = (prop * self.prop_max)
-
-        return output, action, log_p
-
-class NormalTanhDistribution():
-    def __init__(self, scale, bias, base_dist):
-        self.scale = scale
-        self.bias = bias
-        self.base_dist = base_dist
-
-    def sample(self):
-        x_t = self.base_dist.sample()
-        y_t = torch.tanh(x_t)
-        action = y_t * self.scale + self.bias
-        return action
-
-    def log_prob(self, action):
-        y_t = (action - self.bias) / self.scale
-        y_t = torch.clamp(input=y_t, min=-0.99, max=0.99)
-        x_t = torch.atanh(y_t)
-        log_prob = self.base_dist.log_prob(x_t)
-        # Enforcing Action Bound
-        log_prob -= torch.log(self.scale * (1 - y_t.pow(2)) + 1e-6)
-        log_prob = log_prob.sum(dim=-1)
-        return log_prob
-
-class NormalTanhPolicy(nn.Module):
-    def __init__(self, log_std_min, log_std_max, prop_max, device, model):
-        super(NormalTanhPolicy, self).__init__()
-        self.model = model
-        self.log_std_min = torch.tensor(log_std_min).to(device)
-        self.log_std_max = torch.tensor(log_std_max).to(device)
-        self.prop_max = prop_max
-        self.device = device
-        self.action_scale = prop_max / 2.
-        self.action_bias = 2.5
-        self.to(device)
-
-    def forward(self, x, h_0=None):
-        output, prop = self.model(x, h_0)
-        prop_mean, prop_log_std = prop
-        prop_mean = torch.tanh(prop_mean) * 2. # todo: milad
-        prop_log_std = torch.clamp(input=prop_log_std, min=self.log_std_min, max=self.log_std_max)
-
-        prop_normal = D.normal.Normal(loc=prop_mean.squeeze(0), scale=torch.exp(prop_log_std.squeeze(0)))
-        action_dist = NormalTanhDistribution(self.action_scale, self.action_bias, prop_normal)
-        return output, action_dist
-
-    def sample_action(self, x, h_0=None):
-        output, action_dist = self.forward(x, h_0=h_0)
-        action = {'prop': action_dist.sample()}
-        log_prob = action_dist.log_prob(action['prop'])
-        return output, action, log_prob
-
-class CategoricalPolicy(nn.Module):
-    def __init__(self, device, model):
-        super(CategoricalPolicy, self).__init__()
-        self.model = model
-        self.to(device)
-
-    def forward(self, x, h_0=None, partial_forward=False):
-        output, prop = self.model(x, h_0)
-
-        prop_1, prop_2, prop_3 = prop
-
-        prop_1 = prop_1.squeeze(0)
-        prop_2 = prop_2.squeeze(0)
-        prop_3 = prop_3.squeeze(0)
-
-        prop_dist_1 = D.Categorical(prop_1)
-        prop_dist_2 = D.Categorical(prop_2)
-        prop_dist_3 = D.Categorical(prop_3)
-
-        return output, (prop_dist_1, prop_dist_2, prop_dist_3)
-
-    def sample_action(self, x, h_0=None):
-        action = {}
-
-        output, prop_cat = self.forward(x, h_0, partial_forward=True)
-        prop_cat_1, prop_cat_2, prop_cat_3 = prop_cat
-
-        prop_1 = prop_cat_1.sample()
-        prop_2 = prop_cat_2.sample()
-        prop_3 = prop_cat_3.sample()
-
-        prop = torch.cat([
-            prop_1.unsqueeze(1),
-            prop_2.unsqueeze(1),
-            prop_3.unsqueeze(1)
-        ], dim=1)
-
-        log_p_prop = (
-            prop_cat_1.log_prob(prop_1) +
-            prop_cat_2.log_prob(prop_2) +
-            prop_cat_3.log_prob(prop_3)
-        )
-        log_p = log_p_prop
-
-        action['prop'] = prop
-
-        return output, action, log_p
 
 class Agent(ABC):
     @abstractmethod
@@ -552,8 +421,8 @@ class TrainingAlgorithm(ABC):
     ):
         train_step_metrics = {}
         # --- optimize actor ---
-        agent.actor_optimizer.zero_grad()
-        actor_loss_dict = self.actor_loss(trajectory, is_first)
+        # agent.actor_optimizer.zero_grad()
+        actor_loss_dict = self.actor_losses(trajectory)
         actor_loss = actor_loss_dict['loss']
 
         ent = actor_loss_dict['prop_ent']
@@ -631,15 +500,15 @@ class TrainingAlgorithm(ABC):
 
             trajectory = self.gen_sim()
             
-            wandb_metrics = wandb_stats(trajectory)
+            # wandb_metrics = wandb_stats(trajectory)
 
             for i in range(self.train_cfg.updates_per_batch):
 
-                augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
+                # augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
                 train_step_metrics_1 = self.train_step(
-                    trajectory=augmented_trajectories,
-                    agent=self.agent_1,
+                    trajectory=trajectory,
+                    agent=self.agents,
                     is_first=True,
                     compute_aux=(step % 20 == 0),
                     optimize_critic= (i % 2 == 0),
@@ -718,7 +587,7 @@ class TrainingAlgorithm(ABC):
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""
 
     @abstractmethod
-    def actor_loss(batch: dict) -> float:
+    def actor_losses(batch: dict) -> float:
         pass
 
     @abstractmethod
@@ -728,105 +597,79 @@ class TrainingAlgorithm(ABC):
 
 class AdvantageAlignment(TrainingAlgorithm):
 
-    def get_entropy_discrete(self, prop_dist):
-        prop_dist_1, prop_dist_2, prop_dist_3 = prop_dist
-        prop_ent = (
-            prop_dist_1.entropy() +
-            prop_dist_2.entropy() +
-            prop_dist_3.entropy()
-        ).mean()
+    def get_trajectory_log_ps(self, agents, observations, actions):  # todo: make sure logps are the same as when sampling
+        B = int(self.batch_size[0])
+        N = len(agents)
+        T = self.trajectory_len
+        device = agents[0].device 
+        actors = [agents[i%N].actor for i in range(B*N)]
 
-        return prop_ent
+        action_logits = call_models_forward(
+            actors, 
+            observations,
+            actions, 
+            device,
+            full_seq=2
+        ).reshape((B*N*T, -1))
 
-    def get_trajectory_log_ps(self, agent, trajectory, is_first):  # todo: make sure logps are the same as when sampling
-        log_p_list = []
-        if self.discrete:
-            prop_max = 1
-        else:
-            prop_max = self.agent_1.actor.prop_max
+        _, log_ps = sample_actions_categorical(action_logits, actions.reshape(B*N*T))
+        entropy = get_categorical_entropy(action_logits)
 
-        if is_first:
-            props = trajectory.data['props_0']
-            observation = trajectory.data['obs_0']
-        else:
-            observation = trajectory.data['obs_1']
-            props = trajectory.data['props_1']
+        return log_ps.reshape((B*N, T)), entropy.reshape((B*N, T))
 
-        prop_ent = torch.zeros(self.trajectory_len, device=self.agent_1.device, dtype=torch.float32)
+    def get_trajectory_values(self, agents, observations, actions):
+        B = int(self.batch_size[0])
+        N = len(agents)
+        device = agents[0].device 
+        critics = [agents[i%N].critic for i in range(B*N)]
+        targets = [agents[i%N].target for i in range(B*N)]
 
-        hidden = None
-        for t in range(self.trajectory_len):
-            hidden, prop_dist = agent.actor(x=get_observation(observation, t), h_0=hidden)
-            hidden = hidden.permute((1, 0, 2))
+        values_c = call_models_forward(
+            critics,
+            observations,
+            actions,
+            device,
+            full_seq=1
+        ).reshape((B*N, -1))
+        values_t = call_models_forward(
+            targets,
+            observations,
+            actions,
+            device,
+            full_seq=1
+        ).reshape((B*N, -1))
 
-            if self.discrete:
-                prop_en = self.get_entropy_discrete(prop_dist)
-                prop_cat_1, prop_cat_2, prop_cat_3 = prop_dist
-                log_p_prop = (
-                    prop_cat_1.log_prob(props[:, t, 0]) +
-                    prop_cat_2.log_prob(props[:, t, 1]) +
-                    prop_cat_3.log_prob(props[:, t, 2])
-                ).squeeze(0)
-            else:
-                log_probs = prop_dist.log_prob(props[:, t]) # todo: milad, add back /prop_max if normal sigmoid policy
-                # count the number of log_probs lower than -10
-                log_probs_lower_than_n10 = torch.where(log_probs < -10, torch.tensor(1.), torch.tensor(0.)).sum()
-                log_probs = torch.clamp_min(log_probs, -10)  # todo: milad, check if this is necessary
-
-                # estimate entropy via KL w.r.t uniform distribution - which is just expected value of -log(p)
-                prop_en = -1 * torch.clamp_min(log_probs, -10).mean()
-
-            prop_ent[t] = prop_en
-
-            log_p = log_probs # todo: milad, add back a summataion over the last dimension for normal sigmoid policy
-            log_p_list.append(log_p)
-            log_ps = torch.stack(log_p_list).permute((1, 0))
-        prop_ent = prop_ent.mean()
-
-        return log_ps, prop_ent, {'log_probs_lower_than_n10': log_probs_lower_than_n10}
-
-    def get_trajectory_values(self, agent, observation):
-        values_c = torch.zeros(
-            (self.batch_size, self.trajectory_len),
-            device=self.agent_1.device,
-            dtype=torch.float32
-        )
-        values_t = torch.zeros(
-            (self.batch_size, self.trajectory_len),
-            device=self.agent_1.device,
-            dtype=torch.float32
-        )
-        hidden_c, hidden_t = None, None
-        for t in range(self.trajectory_len):
-            obs = get_observation(observation, t)
-            hidden_c, value_c = agent.critic(obs, h_0=hidden_c, t=t)
-            hidden_t, value_t = agent.target(obs, h_0=hidden_t, t=t)
-            values_c[:, t] = value_c.reshape(self.batch_size)
-            values_t[:, t] = value_t.reshape(self.batch_size)
-            hidden_c = hidden_c.permute((1, 0, 2))
-            hidden_t = hidden_t.permute((1, 0, 2))
         return values_c, values_t
 
-    def linear_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
+    def aa_loss(self, A_s, log_ps, old_log_ps):
+        B = int(self.batch_size[0])
+        N = len(self.agents)
+        device = A_s.device
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
 
-        A_2s = A_2s[:, 1:]
-        A_1s = torch.cumsum(A_1s[:, :-1], dim=1)
+        A_1s = torch.cumsum(A_s[:, :-1], dim=1)
+        A_s = A_s[:, 1:]
         log_ps = log_ps[:, 1:]
         old_log_ps = old_log_ps[:, 1:]
 
-        batch, time = A_1s.shape
-        A_1s = A_1s / (torch.arange(1, A_1s.shape[1] + 1).repeat(batch, 1).to(A_1s.device)+1e-6)  # todo: milad, is this 1e-6 necessary?
+        def other_A_s(A_s, N):
+            mask = torch.ones((N, N), device=device) - torch.eye(N, device=device)
+            return mask@A_s
+
+        A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B*N, -1))
+        
+        _, T = A_1s.shape
+        gammas = torch.pow(gamma, torch.arange(T)).repeat(B*N, 1).to(device)
 
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            surrogates = torch.min(A_1s * A_2s * clipped_log_ps, A_1s * A_2s * log_ps)
-            aa_loss = surrogates.mean()
+            surrogates = torch.min(A_1s * A_2s * clipped_log_ps * gammas, A_1s * A_2s * log_ps * gammas)
+            aa_loss = surrogates.view((B, N, -1)).mean(dim=(0, 2))
         else:
-            aa_loss = (A_1s * A_2s * log_ps).mean()
+            aa_loss = (A_1s * A_2s * log_ps * gammas).view((B, N, -1)).mean(dim=(0, 2))
 
         return aa_loss
 
@@ -856,66 +699,49 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return acc_surrogates.mean()
 
-    def actor_loss(self, trajectory: TrajectoryBatch, is_first: bool) -> float:
+    def actor_losses(self, trajectory: TrajectoryBatch) -> float:
+        B = int(self.batch_size[0])
+        N = len(self.agents)
+
         actor_loss_dict = {}
         gamma = self.train_cfg.gamma
         vanilla = self.train_cfg.vanilla
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
 
-        if is_first:
-            agent = self.agent_1
-            other_agent = self.agent_2
-            observation_1 = trajectory.data['obs_0']  # todo: milad, fix this 1 vs 0 switching to 1 vs 2 mix
-            rewards_1 = trajectory.data['rewards_0']
-            observation_2 = trajectory.data['obs_1']
-            rewards_2 = trajectory.data['rewards_1']
-            old_log_ps = trajectory.data['log_ps_0']
-        else:
-            agent = self.agent_2
-            other_agent = self.agent_1
-            observation_1 = trajectory.data['obs_1']
-            rewards_1 = trajectory.data['rewards_1']
-            observation_2 = trajectory.data['obs_0']
-            rewards_2 = trajectory.data['rewards_0']
-            old_log_ps = trajectory.data['log_ps_1']
-
+        obs = trajectory.data['obs']
+        full_maps = trajectory.data['full_maps']
+        rewards = trajectory.data['rewards']
+        old_log_ps = trajectory.data['log_ps']
+        actions = trajectory.data['actions']
+        
         if self.sum_rewards:
-            print("Summing rewards, yes...")
-            rewards_1 = rewards_2 = rewards_1 + rewards_2
+            print("Summing rewards...")
+            torch.sum(rewards, dim=0).repeat((B*N, 1))
 
-        _, V_1s = self.get_trajectory_values(agent, observation_1)
-        _, V_2s = self.get_trajectory_values(other_agent, observation_2)
+        _, V_s = self.get_trajectory_values(self.agents, obs, actions)
 
-        log_ps, prop_ent, log_ps_info = self.get_trajectory_log_ps(agent, trajectory, is_first)
-        actor_loss_dict['prop_ent'] = prop_ent
+        log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions)
+        actor_loss_dict['entropy'] = entropy.view((B, N, -1)).mean(dim=(0, 2))
 
-        A_1s = compute_gae_advantages(rewards_1, V_1s.detach(), gamma)
-        A_2s = compute_gae_advantages(rewards_2, V_2s.detach(), gamma)
-
-        gammas = torch.pow(
-            gamma,
-            torch.arange(self.trajectory_len)
-        ).repeat(self.batch_size, 1).to(A_1s.device)
+        A_s = compute_gae_advantages(rewards, V_s.detach(), gamma)
 
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            surrogates = torch.min(A_1s * clipped_log_ps[:, :-1], A_1s * log_ps[:, :-1])
-            loss_1 = -surrogates.mean()
+            surrogates = torch.min(A_s * clipped_log_ps[:, :-1], A_s * log_ps[:, :-1])
+            losses_1 = -surrogates.view((B, N, -1)).mean(dim=(0, 2))
         else:
-            # loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
-            loss_1 = -(A_1s * log_ps[:, :-1]).mean()
+            losses_1 = -(A_s * log_ps[:, :-1]).view((B, N, -1)).mean(dim=(0, 2))
 
         if not vanilla:
-            loss_2 = -self.linear_aa_loss(A_1s, A_2s, log_ps[:, :-1], old_log_ps[:, :-1])
+            losses_2 = -self.aa_loss(A_s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
-            loss_2 = torch.zeros(1, device=loss_1.device)
+            losses_2 = torch.zeros(N, device=loss_1.device)
 
-        actor_loss_dict['loss'] = loss_1 + self.train_cfg.aa_weight * loss_2
-        actor_loss_dict['loss_1'] = loss_1
-        actor_loss_dict['loss_2'] = loss_2
-        actor_loss_dict['log_ps_info'] = log_ps_info
+        actor_loss_dict['losses'] = losses_1 + self.train_cfg.aa_weight * losses_2
+        actor_loss_dict['losses_1'] = losses_1
+        actor_loss_dict['losses_2'] = losses_2
         return actor_loss_dict
 
     def critic_loss(self,
@@ -966,12 +792,12 @@ class AdvantageAlignment(TrainingAlgorithm):
         N = len(agents)
         device = agents[0].device 
         state = env.reset()
-        history = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
-        history_actions = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
-        history_full_maps = deque(maxlen=agents[0].actor.model.encoder.max_seq_len)
+        history = deque(maxlen=trajectory_len)
+        history_actions = deque(maxlen=trajectory_len)
+        history_full_maps = deque(maxlen=trajectory_len)
 
         # Self-play only TODO: Add replay buffer of agents
-        actors = [agents[0].actor.model for i in range(B*N)]
+        actors = [agents[i%N].actor for i in range(B*N)]
 
         trajectory = TrajectoryBatch(
             sample_obs=state['agents']['observation']['RGB'],
@@ -1003,7 +829,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             actions = torch.cat(list(history_actions), dim=1)
             full_maps = torch.cat(list(full_maps), dim=1)
             
-            action_logits = call_actors_forward(
+            action_logits = call_models_forward(
                 actors, 
                 observations,
                 actions, 
@@ -1015,7 +841,6 @@ class AdvantageAlignment(TrainingAlgorithm):
                 source={'agents': TensorDict(source={'action': actions.reshape(B, N)})}, 
                 batch_size=[B]
             )
-            # TODO: Check why the action logits heavily favor action 0 at initialization
 
             state = env.step(actions_dict)['next']
             rewards = state['agents']['reward'].reshape(B*N)
@@ -1026,26 +851,33 @@ class AdvantageAlignment(TrainingAlgorithm):
         pass
 
 
-def sample_actions_categorical(action_logits):
+def sample_actions_categorical(action_logits, actions=None):
     distribution = Categorical(logits=action_logits)
-    actions = distribution.sample()
+    if actions is None:
+        actions = distribution.sample()
     log_probs = distribution.log_prob(actions)
     return actions, log_probs
 
 
-def call_actors_forward(actors, observations, actions, device):
+def get_categorical_entropy(action_logits):
+    distribution = Categorical(logits=action_logits)
+    return distribution.entropy()
+
+
+def call_models_forward(models, observations, actions, device, full_seq=0):
     # Stack all agent parameters
     observations = observations.to(device).float()
-    params, buffers = stack_module_state(actors)
+    params, buffers = stack_module_state(models)
 
-    base_model = copy.deepcopy(actors[0])
+    base_model = copy.deepcopy(models[0])
     base_model = base_model.to('meta')
 
-    def fmodel(params, buffers, x, actions):
-        return functional_call(base_model, (params, buffers), (x, actions))
+    def fmodel(params, buffers, x, actions, full_seq):
+        return functional_call(base_model, (params, buffers), (x, actions, full_seq))
 
-    logits_vmap_fmodel = torch.vmap(fmodel, randomness='different')(params, buffers, observations, actions.long())
-    return logits_vmap_fmodel
+    vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, None), randomness='different')(
+        params, buffers, observations, actions.long(), full_seq)
+    return vmap_fmodel
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
