@@ -121,69 +121,10 @@ def save_checkpoint(agent, epoch, checkpoint_dir):
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved at: {checkpoint_path}")
 
-def merge_train_step_metrics(train_step_metrics_1, train_step_metrics_2):
-    merged_metrics = {
-        "Actor loss 1": train_step_metrics_1["actor_loss"],
-        "Critic loss 1": train_step_metrics_1["critic_loss"],
-        "Critic Grad Norm 1": train_step_metrics_1["critic_grad_norm"],
-        "Actor Grad Norm 1": train_step_metrics_1["actor_grad_norm"],
-        "Actor loss 2": train_step_metrics_2["actor_loss"],
-        "Critic loss 2": train_step_metrics_2["critic_loss"],
-        "Critic Grad Norm 2": train_step_metrics_2["critic_grad_norm"],
-        "Actor Grad Norm 2": train_step_metrics_2["actor_grad_norm"],
-        "Critic Values 1": train_step_metrics_1["critic_values"],
-        "Critic Values 2": train_step_metrics_2["critic_values"],
-        "Target Values 1": train_step_metrics_1["target_values"],
-        "Target Values 2": train_step_metrics_2["target_values"],
-    }
-
-    if 'loss_1_grad_norm' in train_step_metrics_1:
-        merged_metrics.update({
-            "Agent 1 Loss 1 Grad Norm": train_step_metrics_1["loss_1_grad_norm"],
-            "Agent 1 Loss 2 Grad Norm": train_step_metrics_1["loss_2_grad_norm"],
-            "Agent 2 Loss 1 Grad Norm": train_step_metrics_2["loss_1_grad_norm"],
-            "Agent 2 Loss 2 Grad Norm": train_step_metrics_2["loss_2_grad_norm"],
-        })
-
-    merged_metrics.update({
-        "Prop Entropy 1": train_step_metrics_1["prop_entropy"],
-        "Prop Entropy 2": train_step_metrics_2["prop_entropy"]
-    })
-
-    for key in train_step_metrics_1:
-        if key.startswith("auto_merge"):
-            clean_key = key.replace("auto_merge_", "")
-            merged_metrics[clean_key + '_agent1'] = train_step_metrics_1[key]
-            merged_metrics[clean_key + '_agent2'] = train_step_metrics_2[key]
-
-    return merged_metrics
-
-def wandb_stats(trajectory):
+def wandb_stats(trajectory, B, N):
     stats = {}
-    dones = trajectory.data['dones']
-    stats['Average reward 1'] = trajectory.data['rewards_0'].mean().detach()
-    stats['Average reward 2'] = trajectory.data['rewards_1'].mean().detach()
-    stats['Average sum rewards'] = (
-        trajectory.data['rewards_0'] +
-        trajectory.data['rewards_1']
-    ).mean().detach()
-    stats['Average traj len'] = ((dones.size(0) * dones.size(1))/torch.sum(dones)).detach()
-    stats['Average cos sim'] = trajectory.data['cos_sims'].mean().detach()
-    stats['Average A1 prop1'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A1 prop2'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A1 prop3'] = trajectory.data['props_0'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['Average A2 prop1'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[0]
-    stats['Average A2 prop2'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[1]
-    stats['Average A2 prop3'] = trajectory.data['props_1'].reshape((-1, 3)).mean(dim=0)[2]
-    stats['A1 prop1 std'] = trajectory.data['props_0'].reshape((-1, 3)).std(dim=0)[0]
-    stats['A1 prop2 std'] = trajectory.data['props_0'].reshape((-1, 3)).std(dim=0)[1]
-    stats['A1 prop3 std'] = trajectory.data['props_0'].reshape((-1, 3)).std(dim=0)[2]
-    stats['A2 prop1 std'] = trajectory.data['props_1'].reshape((-1, 3)).std(dim=0)[0]
-    stats['A2 prop2 std'] = trajectory.data['props_1'].reshape((-1, 3)).std(dim=0)[1]
-    stats['A2 prop3 std'] = trajectory.data['props_1'].reshape((-1, 3)).std(dim=0)[2]
-    stats['Avg max sum rewards'] = trajectory.data['max_sum_rewards'].mean()
-    stats['Avg max sum rew ratio'] = trajectory.data['max_sum_reward_ratio'][
-        trajectory.data['dones']
-    ].mean()
-       
+    stats['Average reward'] = trajectory.data['rewards'].mean().detach()
+    stats['Average sum rewards'] = torch.sum(
+        trajectory.data['rewards'].reshape(B, N, -1), dim=1
+    ).unsqueeze(1).repeat(1, N, 1).mean().detach()
     return stats

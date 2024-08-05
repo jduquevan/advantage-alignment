@@ -20,8 +20,7 @@ from omegaconf import DictConfig
 from utils import (
     update_target_network,
     wandb_stats,
-    save_checkpoint,
-    merge_train_step_metrics
+    save_checkpoint
 )
 from tensordict import TensorDict
 from tqdm import tqdm
@@ -460,7 +459,7 @@ class TrainingAlgorithm(ABC):
 
             trajectory = self.gen_sim()
             
-            # wandb_metrics = wandb_stats(trajectory)
+            wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
             for i in range(self.train_cfg.updates_per_batch):
 
@@ -479,34 +478,19 @@ class TrainingAlgorithm(ABC):
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
 
-            eval_metrics = self.eval(self.agent_1)
-            print("Evaluation metrics:", eval_metrics)
-            wandb_metrics.update(eval_metrics)
+            # eval_metrics = self.eval(self.agents[0])
+            # print("Evaluation metrics:", eval_metrics)
+            # wandb_metrics.update(eval_metrics)
 
-            # log temperature of actor's softmax
-            if self.discrete:
-                wandb_metrics["actor_temp"] = self.agent_1.actor.model.temp.item()
-            else:
-                wandb_metrics['actor_log_std'] = self.agent_1.actor.model.prop_log_std.item()
-
-            agent1_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_1.actor.parameters()]))
-            agent1_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_1.critic.parameters()]))
-            agent2_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_2.actor.parameters()]))
-            agent2_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agent_2.critic.parameters()]))
+            agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
+            agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
             wandb_metrics.update({
-                "agent1_actor_weight_norms": agent1_actor_weight_norms.detach(),
-                "agent1_critic_weight_norms": agent1_critic_weight_norms.detach(),
-                "agent2_actor_weight_norms": agent2_actor_weight_norms.detach(),
-                "agent2_critic_weight_norms": agent2_critic_weight_norms.detach(),
+                "agent_actor_weight_norms": agent_actor_weight_norms.detach(),
+                "agent_critic_weight_norms": agent_critic_weight_norms.detach()
             })
             wandb.log(step=step, data=wandb_metrics)
 
-            # early stop if already cooperative
-            if wandb_metrics['Average reward 1'] > 0.4:
-                #save the model
-                save_checkpoint(self.agent_1, 'last', self.train_cfg.checkpoint_dir)
-                break
         return
 
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""
@@ -656,7 +640,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if not vanilla:
             losses_2 = -self.aa_loss(A_s, log_ps[:, :-1], old_log_ps[:, :-1])
         else:
-            losses_2 = torch.zeros(N, device=loss_1.device)
+            losses_2 = torch.zeros(N, device=losses_1.device)
 
         actor_loss_dict['losses'] = losses_1 + self.train_cfg.aa_weight * losses_2
         actor_loss_dict['losses_1'] = losses_1
