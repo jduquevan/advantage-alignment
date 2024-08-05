@@ -33,15 +33,15 @@ network:
 encoder:
   _target_: train.MeltingpotTransformer
   device: ${device}
-  d_model: 256 
+  d_model: 512 
   num_layers: 3
 
 transformer_model:
   _target_: train.MeltingpotTransformer
   in_size: 50
-  d_model: 256
+  d_model: 512
   device: cuda
-  dim_feedforward: 256
+  dim_feedforward: 512
   num_layers: 3
   num_embed_layers: 2
   nhead: 4
@@ -50,9 +50,9 @@ transformer_model:
 
 mlp_model:
   _target_: train.LinearModel
-  in_size: 256
+  in_size: 512
   device: cuda
-  hidden_size: 256
+  hidden_size: 512
   num_layers: 3
   out_size: 8
 
@@ -62,8 +62,8 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 256
-  hidden_size: 256
+  in_size: 512
+  hidden_size: 512
   out_size: 1
   device: cuda
   num_layers: 2
@@ -83,7 +83,7 @@ optimizer_actor:
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 0.0001
 
 optimizer_reward:
   _target_: torch.optim.Adam
@@ -106,12 +106,12 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.5
-  entropy_beta: 0.001
+  entropy_beta: 0.07
   vanilla: True
   updates_per_batch: 1
   use_mlm: True
   critic_loss_mode: 'MC'
-  save_every: 50
+  save_every: 1000
   checkpoint_dir: './experiments'
   aa_weight: 0
-  clip_grad_norm: 50
+  clip_grad_norm: 500

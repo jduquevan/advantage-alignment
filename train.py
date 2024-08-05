@@ -576,32 +576,6 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return aa_loss
 
-    def dot_product_aa_loss(self, A_1s, A_2s, log_ps, old_log_ps):
-        gamma = self.train_cfg.gamma
-        proximal = self.train_cfg.proximal
-        clip_range = self.train_cfg.clip_range
-        device = log_ps.device
-
-        A_1s = A_1s[:, :-1]
-        A_2s = A_2s[:, 1:]
-
-        if proximal:
-            # gamma = 1
-            ratios = torch.exp(log_ps - old_log_ps.detach())
-            action_term = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-        else:
-            action_term = torch.exp(log_ps - old_log_ps.detach())
-
-        acc_surrogates = torch.zeros_like(action_term)
-
-        for t in range(0, action_term.size(1) - 1):
-            A_1_t = A_1s[:, :t + 1]
-            A_2_t = A_2s[:, t].unsqueeze(1) * torch.ones(action_term.size(0), t + 1).to(device)
-            adv_alignment = get_cosine_similarity_torch(A_1_t, A_2_t)
-            acc_surrogates[:, t] = torch.min(adv_alignment * action_term[:, t], adv_alignment * log_ps[:, t])
-
-        return acc_surrogates.mean()
-
     def actor_losses(self, trajectory: TrajectoryBatch) -> float:
         B = self.batch_size
         N = self.num_agents
@@ -796,7 +770,7 @@ def main(cfg: DictConfig) -> None:
     seed_all(cfg['seed'])
     wandb.init(
         config=dict(cfg),
-        project="Advantage Alignment",
+        project="Meltingpot",
         dir=cfg["wandb_dir"],
         reinit=True,
         anonymous="allow",
