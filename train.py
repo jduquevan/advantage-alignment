@@ -59,13 +59,13 @@ class LinearModel(nn.Module):
         self.append_time = append_time
         self.to(device)
 
-    def forward(self, obs, actions, full_seq: bool=False):
+    def forward(self, obs, actions, full_seq: int=1, batched: bool=False):
         if full_seq==0:
-            output = self.encoder(obs, actions)[:, -1, :]
+            output = self.encoder(obs, actions, batched)[:, -1, :]
         elif full_seq==1:
-            output = self.encoder(obs, actions)[:,::2, :]
+            output = self.encoder(obs, actions, batched)[:,::2, :]
         elif full_seq==2:
-            output = self.encoder(obs, actions)[:,1::2, :]
+            output = self.encoder(obs, actions, batched)[:,1::2, :]
         else:
            raise NotImplementedError("The full_seq value is invalid")
 
@@ -144,8 +144,8 @@ class MeltingpotTransformer(nn.Module):
             encoder_layer = encoder_layer.to(device)
             self.layers.append(encoder_layer)
     
-    def forward(self, obs, actions):
-        src = self.get_embeds(obs, actions)
+    def forward(self, obs, actions, batched=False):
+        src = self.get_embeds(obs, actions, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
 
@@ -154,14 +154,24 @@ class MeltingpotTransformer(nn.Module):
             output = layer(output) + src
         return output
 
-    def get_embeds(self, obs, actions):
-        T, _, _, _ = obs.shape
+    def get_embeds(self, obs, actions, batched=False):
+        if batched:
+            B, T, H, W, C = obs.shape
+            obs = obs.permute(0, 1, 4, 2, 3).reshape(B*T, C, H, W)
+        else:
+            T, _, _, _ = obs.shape
+            obs = obs.permute(0, 3, 1, 2)
         H = self.d_model
         
-        obs = F.relu(self.conv1(obs.permute(0, 3, 1, 2)))
+        obs = F.relu(self.conv1(obs))
         obs = F.relu(self.conv2(obs))
         obs = F.relu(self.conv3(obs))
-        embed_obs = F.relu(self.embed_obs_layer(obs.reshape(T, -1)))
+        if batched:
+            obs = obs.reshape(B*T, -1)
+            actions = actions.reshape(B*T)
+        else:
+            obs = obs.reshape(T, -1)
+        embed_obs = F.relu(self.embed_obs_layer(obs))
         embed_actions = self.embed_action(actions)
 
         for embed_layer in self.embed_layers:
@@ -169,7 +179,12 @@ class MeltingpotTransformer(nn.Module):
             embed_actions = F.relu(embed_layer(embed_actions))
 
         # Interleave states and actions: a, s, a, ...
-        src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
+        if batched:
+            obs = obs.reshape((B, T, -1))
+            actions = actions.reshape((B, T))
+            src = torch.stack((embed_actions, embed_obs), dim=2).view(B, -1, H)
+        else:
+            src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
 
         return src
 
@@ -178,64 +193,6 @@ class Agent(ABC):
     @abstractmethod
     def sample_action(self):
         pass
-
-class GruModel(nn.Module):
-    def __init__(self, in_size, device, hidden_size=40, num_layers=1):
-        super(GruModel, self).__init__()
-
-        self.in_size = in_size
-        self.device = device
-        self.hidden_size = hidden_size
-
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
-        self.gru = nn.GRU(hidden_size, hidden_size, 1, batch_first=True)
-        self.to(device)
-
-    def forward(self, x, h_0=None):
-        # self.gru.flatten_parameters()
-        for layer in self.hidden_layers:
-            x = F.relu(layer(x))
-        output, x = self.gru(x.unsqueeze(1), h_0)
-        return output, x
-
-    def get_embeds(self, x):
-        for layer in self.hidden_layers:
-            x = F.relu(layer(x))
-        return x
-
-
-class MLPModelDiscrete(nn.Module):
-    def __init__(self, in_size, device, output_size, num_layers=1, hidden_size=40, encoder=None, use_gru=True, soften_more=False):
-        super(MLPModelDiscrete, self).__init__()
-        # self.transformer = transformer
-        self.num_layers = num_layers
-        self.encoder = encoder
-        self.use_gru = use_gru
-        self.soften_more = soften_more
-
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, hidden_size) if i == 0 else nn.Linear(hidden_size, hidden_size) for i in range(num_layers)])
-
-        # Proposition heads
-        assert output_size == 6, f"when designing the game we fixated on 5 being max items, if that changed, remove this: output_size now is: {output_size}"
-        self.prop_heads = nn.ModuleList([nn.Linear(hidden_size, output_size) for _ in range(3)])
-        self.temp = nn.Parameter(torch.ones(1))
-
-        self.to(device)
-
-    def forward(self, x, h_0=None):
-        assert self.use_gru
-        output, x = self.encoder(x, h_0)
-        x = x.squeeze(0)
-
-        for layer in self.hidden_layers:
-            x = F.relu(layer(x))
-
-        if self.soften_more:
-            prop_probs = [F.softmax(torch.sigmoid(prop_head(x)) * 5. / self.temp, dim=-1) for prop_head in self.prop_heads]
-        else:
-            prop_probs = [F.softmax(prop_head(x) / self.temp, dim=-1) for prop_head in self.prop_heads]
-
-        return output, prop_probs
 
 
 class AdvantageAlignmentAgent(Agent, nn.Module):
@@ -304,7 +261,7 @@ class TrajectoryBatch():
                 "actions": torch.ones(
                     (B*N, T),
                     device=device,
-                    dtype=torch.float32,
+                    dtype=torch.long,
                 ),
             }
 
@@ -406,31 +363,35 @@ class TrainingAlgorithm(ABC):
         self.sum_rewards = sum_rewards
         self.simultaneous = simultaneous
         self.discrete = discrete
-        if self.simultaneous:
-            self.batch_size = env.batch_size
         self.clip_grad_norm = clip_grad_norm
-
+        self.num_agents = len(agents)
+        self.batch_size = int(env.batch_size[0])
 
     def train_step(
         self,
         trajectory,
-        agent,
-        is_first=True,
-        compute_aux=True,
+        agents,
         optimize_critic=True,
     ):
         train_step_metrics = {}
+        self_play = self.main_cfg['self_play']
+
+        if self_play:
+            agent = agents[0]
+            agent.actor_optimizer.zero_grad()
+        else:
+            # TODO: Implement no self-play
+            raise NotImplementedError('Only self-play supported')
+
         # --- optimize actor ---
-        # agent.actor_optimizer.zero_grad()
         actor_loss_dict = self.actor_losses(trajectory)
-        actor_loss = actor_loss_dict['loss']
 
-        ent = actor_loss_dict['prop_ent']
-
-        if compute_aux:
-            actor_loss_1 = actor_loss_dict['loss_1']
-            actor_loss_2 = actor_loss_dict['loss_2']
-            loss_1_grads = torch.autograd.grad(actor_loss_1, agent.actor.parameters(), create_graph=False, retain_graph=True)
+        if self_play:
+            actor_loss = actor_loss_dict['losses'].mean()
+            ent = actor_loss_dict['entropy'].mean()
+            actor_loss_1 = actor_loss_dict['losses_1'].mean()
+            actor_loss_2 = actor_loss_dict['losses_2'].mean()
+            loss_1_grads = torch.autograd.grad(actor_loss_1, agents[0].actor.parameters(), create_graph=False, retain_graph=True)
             loss_1_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_1_grads]))
 
             train_step_metrics["loss_1_grad_norm"] = loss_1_norm.detach()
@@ -440,7 +401,7 @@ class TrainingAlgorithm(ABC):
                 train_step_metrics["loss_2_grad_norm"] = loss_2_norm.detach()
             else:
                 train_step_metrics["loss_2_grad_norm"] = torch.tensor(0.0)
-
+        
         total_loss = actor_loss - self.train_cfg.entropy_beta * ent
         total_loss.backward()
         if self.clip_grad_norm is not None:
@@ -449,36 +410,35 @@ class TrainingAlgorithm(ABC):
         agent.actor_optimizer.step()
 
         # --- optimize critic ---
-        agent.critic_optimizer.zero_grad()
-        critic_loss, aux = self.critic_loss(trajectory, is_first)
-        critic_values = aux['critic_values']
-        target_values = aux['target_values']
-        critic_loss.backward()
-        if self.clip_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
-        critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.critic.parameters()]))
-
-        if optimize_critic:
-            agent.critic_optimizer.step()
-        else:
+        if self_play:
             agent.critic_optimizer.zero_grad()
+            critic_losses, aux = self.critic_losses(trajectory)
+            critic_loss = critic_losses.mean()
+            critic_values = aux['critic_values']
+            target_values = aux['target_values']
+            critic_loss.backward()
+            if self.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm(agent.critic.parameters(), self.train_cfg.clip_grad_norm)
+            critic_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.critic.parameters()]))
 
-        # --- update target network ---
+            if optimize_critic:
+                agent.critic_optimizer.step()
+            else:
+                agent.critic_optimizer.zero_grad()
 
-        update_target_network(agent.target, agent.critic, self.train_cfg.tau)
-
-        # --- log metrics ---
-        train_step_metrics.update({
-            "critic_loss": critic_loss.detach(),
-            "actor_loss": actor_loss.detach(),
-            "prop_entropy": actor_loss_dict['prop_ent'].detach(),
-            "critic_values": critic_values.mean().detach(),
-            "target_values": target_values.mean().detach(),
-        })
-        train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
-        train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
-        for key in actor_loss_dict['log_ps_info'].keys():
-            train_step_metrics['auto_merge_' + key] = actor_loss_dict['log_ps_info'][key].detach()
+            # --- update target network ---
+            update_target_network(agent.target, agent.critic, self.train_cfg.tau)
+        
+            # --- log metrics ---
+            train_step_metrics.update({
+                "critic_loss": critic_loss.detach(),
+                "actor_loss": actor_loss.detach(),
+                "entropy": ent.detach(),
+                "critic_values": critic_values.mean().detach(),
+                "target_values": target_values.mean().detach(),
+            })
+            train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
+            train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
 
         return train_step_metrics
 
@@ -506,25 +466,10 @@ class TrainingAlgorithm(ABC):
 
                 # augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
-                train_step_metrics_1 = self.train_step(
+                train_step_metrics= self.train_step(
                     trajectory=trajectory,
-                    agent=self.agents,
-                    is_first=True,
-                    compute_aux=(step % 20 == 0),
-                    optimize_critic= (i % 2 == 0),
-                )
-
-                train_step_metrics_2 = self.train_step(
-                    trajectory=augmented_trajectories,
-                    agent=self.agent_2,
-                    is_first=False,
-                    compute_aux=(step % 20 == 0),
-                    optimize_critic= (i % 2 == 0),
-                )
-
-                train_step_metrics = merge_train_step_metrics(
-                    train_step_metrics_1,
-                    train_step_metrics_2,
+                    agents=self.agents,
+                    optimize_critic=True
                 )
 
                 for key, value in train_step_metrics.items():
@@ -537,26 +482,6 @@ class TrainingAlgorithm(ABC):
             eval_metrics = self.eval(self.agent_1)
             print("Evaluation metrics:", eval_metrics)
             wandb_metrics.update(eval_metrics)
-
-            for i in range(10):
-                mini_traj_table = wandb.Table(columns=["idx", "step", "item_pool", "utilities_1", "utilities_2", "props_1", "props_2", "rewards_1", "rewards_2"])
-                mini_trajectory = {
-                    "item_pool": trajectory.data['item_pool'][i, 0:10, :],
-                    "utilities_1": trajectory.data['utility_1'][i, 0:10, :],
-                    "utilities_2": trajectory.data['utility_2'][i, 0:10, :],
-                    "props_1": trajectory.data['props_0'][i, 0:10, :],
-                    "props_2": trajectory.data['props_1'][i, 0:10, :],
-                    "rewards_1": trajectory.data['rewards_0'][i, 0:10],
-                    "rewards_2": trajectory.data['rewards_1'][i, 0:10],
-                }
-                def torch_to_str(x):
-                    return str(x.cpu().numpy().tolist())
-                mini_trajectory = {k: torch_to_str(v) for k, v in mini_trajectory.items()}
-                mini_traj_table.add_data(i,step, mini_trajectory["item_pool"], mini_trajectory["utilities_1"], mini_trajectory["utilities_2"], mini_trajectory["props_1"], mini_trajectory["props_2"], mini_trajectory["rewards_1"], mini_trajectory["rewards_2"])
-
-            if step % 50 == 0:
-                print("Mini trajectory:", mini_trajectory)
-                wandb_metrics.update({"mini_trajectory_table": mini_traj_table})
 
             # log temperature of actor's softmax
             if self.discrete:
@@ -591,25 +516,23 @@ class TrainingAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def critic_loss(batch: dict) -> float:
+    def critic_losses(batch: dict) -> float:
         pass
 
 
 class AdvantageAlignment(TrainingAlgorithm):
 
     def get_trajectory_log_ps(self, agents, observations, actions):  # todo: make sure logps are the same as when sampling
-        B = int(self.batch_size[0])
-        N = len(agents)
+        B = self.batch_size
+        N = self.num_agents
         T = self.trajectory_len
         device = agents[0].device 
-        actors = [agents[i%N].actor for i in range(B*N)]
-
-        action_logits = call_models_forward(
-            actors, 
+        
+        action_logits = agents[0].actor(
             observations,
-            actions, 
-            device,
-            full_seq=2
+            actions,
+            full_seq=2,
+            batched=True
         ).reshape((B*N*T, -1))
 
         _, log_ps = sample_actions_categorical(action_logits, actions.reshape(B*N*T))
@@ -618,32 +541,28 @@ class AdvantageAlignment(TrainingAlgorithm):
         return log_ps.reshape((B*N, T)), entropy.reshape((B*N, T))
 
     def get_trajectory_values(self, agents, observations, actions):
-        B = int(self.batch_size[0])
-        N = len(agents)
+        B = self.batch_size
+        N = self.num_agents
         device = agents[0].device 
-        critics = [agents[i%N].critic for i in range(B*N)]
-        targets = [agents[i%N].target for i in range(B*N)]
-
-        values_c = call_models_forward(
-            critics,
+        
+        values_c = agents[0].critic(
             observations,
             actions,
-            device,
-            full_seq=1
-        ).reshape((B*N, -1))
-        values_t = call_models_forward(
-            targets,
+            full_seq=1,
+            batched=True
+        ).squeeze(2)
+        values_t = agents[0].target(
             observations,
             actions,
-            device,
-            full_seq=1
-        ).reshape((B*N, -1))
+            full_seq=1,
+            batched=True
+        ).squeeze(2)
 
         return values_c, values_t
 
     def aa_loss(self, A_s, log_ps, old_log_ps):
-        B = int(self.batch_size[0])
-        N = len(self.agents)
+        B = self.batch_size
+        N = self.num_agents
         device = A_s.device
         gamma = self.train_cfg.gamma
         proximal = self.train_cfg.proximal
@@ -700,8 +619,8 @@ class AdvantageAlignment(TrainingAlgorithm):
         return acc_surrogates.mean()
 
     def actor_losses(self, trajectory: TrajectoryBatch) -> float:
-        B = int(self.batch_size[0])
-        N = len(self.agents)
+        B = self.batch_size
+        N = self.num_agents
 
         actor_loss_dict = {}
         gamma = self.train_cfg.gamma
@@ -717,7 +636,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         
         if self.sum_rewards:
             print("Summing rewards...")
-            torch.sum(rewards, dim=0).repeat((B*N, 1))
+            rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B*N, -1))
 
         _, V_s = self.get_trajectory_values(self.agents, obs, actions)
 
@@ -742,53 +661,56 @@ class AdvantageAlignment(TrainingAlgorithm):
         actor_loss_dict['losses'] = losses_1 + self.train_cfg.aa_weight * losses_2
         actor_loss_dict['losses_1'] = losses_1
         actor_loss_dict['losses_2'] = losses_2
+
         return actor_loss_dict
 
-    def critic_loss(self,
-                    trajectory: TrajectoryBatch,
-                    is_first: bool,
-                    ) -> float:
+    def critic_losses(self, trajectory: TrajectoryBatch) -> float:
+        B = self.batch_size
+        N = self.num_agents
+
         gamma = self.train_cfg.gamma
 
-        if is_first:
-            agent = self.agent_1
-            observation = trajectory.data['obs_0']
-            rewards_1 = trajectory.data['rewards_0']
-            rewards_2 = trajectory.data['rewards_1']
-        else:
-            agent = self.agent_2
-            observation = trajectory.data['obs_1']
-            rewards_1 = trajectory.data['rewards_1']
-            rewards_2 = trajectory.data['rewards_0']
+        obs = trajectory.data['obs']
+        full_maps = trajectory.data['full_maps']
+        rewards = trajectory.data['rewards']
+        actions = trajectory.data['actions']
 
         if self.sum_rewards:
-            rewards_1 = rewards_2 = rewards_1 + rewards_2
+            print("Summing rewards...")
+            rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B*N, -1))
 
-        values_c, values_t = self.get_trajectory_values(agent, observation)
+        values_c, values_t = self.get_trajectory_values(self.agents, obs, actions)
         if self.train_cfg.critic_loss_mode == 'td-1':
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
-            rewards_shifted = rewards_1[:, :-1]
-            critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted)
+            rewards_shifted = rewards[:, :-1]
+            critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted, reduction='none')
         elif self.train_cfg.critic_loss_mode == 'MC':
-            discounted_returns = compute_discounted_returns(gamma, rewards_1)
-            critic_loss = F.huber_loss(values_c, discounted_returns)
+            discounted_returns = compute_discounted_returns(gamma, rewards)
+            critic_loss = F.huber_loss(values_c, discounted_returns, reduction='none')
         elif self.train_cfg.critic_loss_mode == 'interpolate':
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
             rewards_shifted = rewards_1[:, :-1]
             td_0_error = rewards_shifted + gamma * values_t_shifted
-            discounted_returns = compute_discounted_returns(gamma, rewards_1)[:, :-1]
-            critic_loss = F.huber_loss(values_c_shifted, (discounted_returns+td_0_error)/2)
+            discounted_returns = compute_discounted_returns(gamma, rewards)[:, :-1]
+            critic_loss = F.huber_loss(values_c_shifted, (discounted_returns+td_0_error)/2, reduction='none')
 
-        return critic_loss, {'target_values': values_t, 'critic_values': values_c, }
+        critic_losses = critic_loss.view((B, N, -1)).mean(dim=(0, 2))
+
+        return critic_losses, {'target_values': values_t, 'critic_values': values_c, }
 
     def gen_sim(self):
-        return self._gen_sim(self.env, self.batch_size, self.trajectory_len, self.agents)
+        return self._gen_sim(
+            self.env, 
+            self.batch_size, 
+            self.trajectory_len, 
+            self.agents
+        )
 
     @staticmethod
     def _gen_sim(env, batch_size, trajectory_len, agents):
-        B = int(batch_size[0])
+        B = batch_size
         N = len(agents)
         device = agents[0].device 
         state = env.reset()
@@ -819,7 +741,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             observations = state['agents']['observation']['RGB']
             observations = observations.reshape(-1, 1, *observations.shape[2:])
 
-            trajectory.add_step(observations, full_maps, rewards, log_probs, actions, i)
+            trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
             history.append(observations)
             history_actions.append(actions)
@@ -830,7 +752,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             full_maps = torch.cat(list(full_maps), dim=1)
             
             action_logits = call_models_forward(
-                actors, 
+                actors,
                 observations,
                 actions, 
                 agents[0].device
@@ -927,7 +849,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    # test_fixed_agents()
-    # test_eg_obligated_ratio()
     OmegaConf.register_new_resolver("eval", eval)
     main()

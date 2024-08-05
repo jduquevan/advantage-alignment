@@ -30,25 +30,18 @@ network:
   _target_: train.GruIPD
   device: cuda
 
-gru_model:
-  _target_: train.GruModel
-  in_size: 50
-  device: cuda
-  hidden_size: 512
-  num_layers: 5
-
 encoder:
   _target_: train.MeltingpotTransformer
   device: ${device}
-  d_model: 512
+  d_model: 256 
   num_layers: 3
 
 transformer_model:
   _target_: train.MeltingpotTransformer
   in_size: 50
-  d_model: 512
+  d_model: 256
   device: cuda
-  dim_feedforward: 512
+  dim_feedforward: 256
   num_layers: 3
   num_embed_layers: 2
   nhead: 4
@@ -57,9 +50,9 @@ transformer_model:
 
 mlp_model:
   _target_: train.LinearModel
-  in_size: 512
+  in_size: 256
   device: cuda
-  hidden_size: 512
+  hidden_size: 256
   num_layers: 3
   out_size: 8
 
@@ -69,8 +62,8 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 512
-  hidden_size: 512
+  in_size: 256
+  hidden_size: 256
   out_size: 1
   device: cuda
   num_layers: 2
