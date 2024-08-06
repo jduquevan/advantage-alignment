@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'disabled'
+wandb: 'online'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -78,16 +78,12 @@ spr_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 1e-06
   weight_decay: 0.0001
 
 optimizer_critic:
   _target_: torch.optim.Adam
   lr: 0.0001
-
-optimizer_reward:
-  _target_: torch.optim.Adam
-  lr: 1e-4
 
 optimizer_spr:
   _target_: torch.optim.Adam
@@ -106,12 +102,13 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.5
-  entropy_beta: 0.07
+  entropy_beta: 0.2
   vanilla: True
-  updates_per_batch: 1
+  updates_per_batch: 4
+  kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 1000
   checkpoint_dir: './experiments'
   aa_weight: 0
-  clip_grad_norm: 500
+  clip_grad_norm: 50

@@ -220,15 +220,16 @@ class AdvantageAlignmentAgent(Agent, nn.Module):
 
 
 class TrajectoryBatch():
-    def __init__(self, 
-                 sample_obs, 
-                 sample_full_map, 
-                 batch_size: int,
-                 n_agents: int, 
-                 max_traj_len: int, 
-                 device: torch.device, 
-                 data=None
-                 ) -> None:
+    def __init__(
+        self, 
+        sample_obs, 
+        sample_full_map, 
+        batch_size: int,
+        n_agents: int, 
+        max_traj_len: int, 
+        device: torch.device, 
+        data=None
+    ) -> None:
         
         self.batch_size = batch_size
         self.device = device
@@ -376,39 +377,48 @@ class TrainingAlgorithm(ABC):
     ):
         train_step_metrics = {}
         self_play = self.main_cfg['self_play']
+        kl_threshold = self.train_cfg['kl_threshold']
+        updates_per_batch = self.train_cfg['updates_per_batch']
+        old_log_ps = trajectory.data['log_ps']
 
-        if self_play:
-            agent = agents[0]
-            agent.actor_optimizer.zero_grad()
-        else:
-            # TODO: Implement no self-play
-            raise NotImplementedError('Only self-play supported')
-
-        # --- optimize actor ---
-        actor_loss_dict = self.actor_losses(trajectory)
-
-        if self_play:
-            actor_loss = actor_loss_dict['losses'].mean()
-            ent = actor_loss_dict['entropy'].mean()
-            actor_loss_1 = actor_loss_dict['losses_1'].mean()
-            actor_loss_2 = actor_loss_dict['losses_2'].mean()
-            loss_1_grads = torch.autograd.grad(actor_loss_1, agents[0].actor.parameters(), create_graph=False, retain_graph=True)
-            loss_1_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_1_grads]))
-
-            train_step_metrics["loss_1_grad_norm"] = loss_1_norm.detach()
-            if actor_loss_2.requires_grad:
-                loss_2_grads = torch.autograd.grad(actor_loss_2, agent.actor.parameters(), create_graph=False, retain_graph=True)
-                loss_2_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_2_grads]))
-                train_step_metrics["loss_2_grad_norm"] = loss_2_norm.detach()
+        for update in range(updates_per_batch):
+            if self_play:
+                agent = agents[0]
+                agent.actor_optimizer.zero_grad()
             else:
-                train_step_metrics["loss_2_grad_norm"] = torch.tensor(0.0)
-        
-        total_loss = actor_loss - self.train_cfg.entropy_beta * ent
-        total_loss.backward()
-        if self.clip_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm(agent.actor.parameters(), self.train_cfg.clip_grad_norm)
-        actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.actor.parameters()]))
-        agent.actor_optimizer.step()
+                # TODO: Implement no self-play
+                raise NotImplementedError('Only self-play supported')
+
+            # --- optimize actor ---
+            actor_loss_dict = self.actor_losses(trajectory)
+            new_log_ps = actor_loss_dict['log_ps']
+            kl_divergence = (old_log_ps - new_log_ps).mean()
+            
+            if update >= 1 and kl_divergence > kl_threshold:
+                break
+
+            if self_play:
+                actor_loss = actor_loss_dict['losses'].mean()
+                ent = actor_loss_dict['entropy'].mean()
+                actor_loss_1 = actor_loss_dict['losses_1'].mean()
+                actor_loss_2 = actor_loss_dict['losses_2'].mean()
+                loss_1_grads = torch.autograd.grad(actor_loss_1, agents[0].actor.parameters(), create_graph=False, retain_graph=True)
+                loss_1_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_1_grads]))
+
+                train_step_metrics["loss_1_grad_norm"] = loss_1_norm.detach()
+                if actor_loss_2.requires_grad:
+                    loss_2_grads = torch.autograd.grad(actor_loss_2, agent.actor.parameters(), create_graph=False, retain_graph=True)
+                    loss_2_norm = torch.sqrt(sum([torch.norm(p) ** 2 for p in loss_2_grads]))
+                    train_step_metrics["loss_2_grad_norm"] = loss_2_norm.detach()
+                else:
+                    train_step_metrics["loss_2_grad_norm"] = torch.tensor(0.0)
+            
+            total_loss = actor_loss - self.train_cfg.entropy_beta * ent
+            total_loss.backward()
+            if self.clip_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm(agent.actor.parameters(), self.train_cfg.clip_grad_norm)
+            actor_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.actor.parameters()]))
+            agent.actor_optimizer.step()
 
         # --- optimize critic ---
         if self_play:
@@ -605,7 +615,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             print("Summing rewards...")
             rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B*N, -1))
 
-        _, V_s = self.get_trajectory_values(self.agents, obs, actions, full_maps)
+        V_s, _ = self.get_trajectory_values(self.agents, obs, actions, full_maps)
 
         log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions, full_maps)
         actor_loss_dict['entropy'] = entropy.view((B, N, -1)).mean(dim=(0, 2))
@@ -628,6 +638,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         actor_loss_dict['losses'] = losses_1 + self.train_cfg.aa_weight * losses_2
         actor_loss_dict['losses_1'] = losses_1
         actor_loss_dict['losses_2'] = losses_2
+        actor_loss_dict['log_ps'] = log_ps
 
         return actor_loss_dict
 
@@ -669,7 +680,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         critic_losses = critic_loss.view((B, N, -1)).mean(dim=(0, 2))
 
-        return critic_losses, {'target_values': values_t, 'critic_values': values_c, }
+        return critic_losses, {'target_values': values_t, 'critic_values': values_c,}
 
     def gen_sim(self):
         return self._gen_sim(

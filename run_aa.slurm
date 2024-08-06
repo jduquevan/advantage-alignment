@@ -5,7 +5,7 @@
 ##############################
 
 # Give your job a name, so you can recognize it in the queue overview
-#SBATCH --job-name=adv_algmt
+#SBATCH --job-name=meltingpot
 
 # Remove one # to uncommment
 #SBATCH --output=/home/mila/j/juan.duque/scratch/slurm_output/slurm-%j.out
@@ -16,9 +16,9 @@
 #SBATCH -n 1 #tasks
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=40G
-#SBATCH --time=0-01:59:00   
+#SBATCH --time=0-04:59:00   
 #SBATCH --gres=gpu:a100l:1
-#SBATCH --partition=main
+#SBATCH --partition=long
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -34,10 +34,9 @@ export WANDB_ENTITY="jduque"
 
 module purge
 eval "$(conda shell.bash hook)"
-conda activate cogames
+conda activate meltingpot
 module load python/3.9
 
 python train.py\
     seed=${1}\
-    training.aa_weight=${2}\
-    --config-name='eg.yaml'
+    --config-name='meltingpot.yaml'
