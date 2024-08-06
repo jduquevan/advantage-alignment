@@ -79,11 +79,10 @@ spr_model:
 optimizer_actor:
   _target_: torch.optim.Adam
   lr: 1e-06
-  weight_decay: 0.0001
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 1e-05
 
 optimizer_spr:
   _target_: torch.optim.Adam
@@ -104,11 +103,11 @@ training:
   clip_range: 0.5
   entropy_beta: 0.2
   vanilla: True
-  updates_per_batch: 4
+  updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 1000
   checkpoint_dir: './experiments'
   aa_weight: 0
-  clip_grad_norm: 50
+  clip_grad_norm: 500

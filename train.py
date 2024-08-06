@@ -286,11 +286,13 @@ class TrajectoryBatch():
 
 
 class ReplayBuffer():
-    def __init__(self,
-                 env,
-                 replay_buffer_size: int,
-                 trajectory_len: int,
-                 device: torch.device,):
+    def __init__(
+        self,
+        env,
+        replay_buffer_size: int,
+        trajectory_len: int,
+        device: torch.device,
+    ):
         (obs_1, _), _ = env.reset()
         self.replay_buffer_size = replay_buffer_size
         self.marker = 0
