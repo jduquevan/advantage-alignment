@@ -1,45 +1,34 @@
-import gymnasium as gym
+import copy
 import hydra
-from omegaconf import OmegaConf
+import math
+import torch
+import torch.nn as nn
+import torch.distributions as D
+import torch.nn.functional as F
+import wandb
 
-from utils import seed_all, instantiate_agent
-
+from abc import ABC, abstractmethod
+from collections import deque
+from omegaconf import DictConfig, OmegaConf
+from tensordict import TensorDict
+from tqdm import tqdm
+from torch.distributions import Categorical
+from torch.distributions.transforms import SigmoidTransform
+from torch.func import functional_call, stack_module_state
+from torchrl.envs import ParallelEnv
+from torchrl.envs.libs.meltingpot import MeltingpotEnv
+from typing import Any, List
 from utils import (
+    seed_all,
+    instantiate_agent,
     compute_discounted_returns,
     compute_gae_advantages,
     get_cosine_similarity_torch,
     get_observation,
-)
-
-import copy
-import gym
-import math
-import wandb
-
-from omegaconf import DictConfig
-from utils import (
     update_target_network,
     wandb_stats,
     save_checkpoint
 )
-from tensordict import TensorDict
-from tqdm import tqdm
-
-import torch.distributions as D
-
-import torch
-
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-from abc import ABC, abstractmethod
-from collections import deque
-from torch.distributions import Categorical
-from torch.distributions.transforms import SigmoidTransform
-from torchrl.envs import ParallelEnv
-from torchrl.envs.libs.meltingpot import MeltingpotEnv
-from torch.func import functional_call, stack_module_state
 
 class LinearModel(nn.Module):
     def __init__(self, in_size, hidden_size, out_size, device, num_layers=1, encoder=None, append_time: bool = False):
@@ -58,13 +47,13 @@ class LinearModel(nn.Module):
         self.append_time = append_time
         self.to(device)
 
-    def forward(self, obs, actions, full_seq: int=1, batched: bool=False):
+    def forward(self, obs, actions, full_maps, full_seq: int=1, batched: bool=False):
         if full_seq==0:
-            output = self.encoder(obs, actions, batched)[:, -1, :]
+            output = self.encoder(obs, actions, full_maps, batched)[:, -1, :]
         elif full_seq==1:
-            output = self.encoder(obs, actions, batched)[:,::2, :]
+            output = self.encoder(obs, actions, full_maps, batched)[:,::2, :]
         elif full_seq==2:
-            output = self.encoder(obs, actions, batched)[:,1::2, :]
+            output = self.encoder(obs, actions, full_maps, batched)[:,1::2, :]
         else:
            raise NotImplementedError("The full_seq value is invalid")
 
@@ -125,7 +114,8 @@ class MeltingpotTransformer(nn.Module):
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
 
-        self.embed_obs_layer = nn.Linear(64*7*7, d_model)
+        self.embed_obs_layer = nn.Linear(64*7*7, d_model//2)
+        self.embed_fmp_layer = nn.Linear(64*14*20, d_model - (d_model//2))
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
         self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
@@ -143,8 +133,8 @@ class MeltingpotTransformer(nn.Module):
             encoder_layer = encoder_layer.to(device)
             self.layers.append(encoder_layer)
     
-    def forward(self, obs, actions, batched=False):
-        src = self.get_embeds(obs, actions, batched)
+    def forward(self, obs, actions, full_maps, batched=False):
+        src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
 
@@ -153,25 +143,37 @@ class MeltingpotTransformer(nn.Module):
             output = layer(output) + src
         return output
 
-    def get_embeds(self, obs, actions, batched=False):
+    def get_embeds(self, obs, actions, full_maps, batched=False):
         if batched:
             B, T, H, W, C = obs.shape
+            _, _, L, M, _ = full_maps.shape
             obs = obs.permute(0, 1, 4, 2, 3).reshape(B*T, C, H, W)
+            full_maps = full_maps.permute(0, 1, 4, 2, 3).reshape(B*T, C, L, M)
         else:
             T, _, _, _ = obs.shape
             obs = obs.permute(0, 3, 1, 2)
+            full_maps = full_maps.permute(0, 3, 1, 2)
         H = self.d_model
         
         obs = F.relu(self.conv1(obs))
         obs = F.relu(self.conv2(obs))
         obs = F.relu(self.conv3(obs))
+
+        full_maps = F.relu(self.conv1(full_maps))
+        full_maps = F.relu(self.conv2(full_maps))
+        full_maps = F.relu(self.conv3(full_maps))
+
         if batched:
             obs = obs.reshape(B*T, -1)
+            full_maps = full_maps.reshape(B*T, -1)
             actions = actions.reshape(B*T)
         else:
             obs = obs.reshape(T, -1)
+            full_maps = full_maps.reshape(T, -1)
         embed_obs = F.relu(self.embed_obs_layer(obs))
+        embed_full_maps = F.relu(self.embed_fmp_layer(full_maps))
         embed_actions = self.embed_action(actions)
+        embed_obs = torch.cat([embed_obs, embed_full_maps], dim=-1)
 
         for embed_layer in self.embed_layers:
             embed_obs = F.relu(embed_layer(embed_obs))
@@ -345,7 +347,7 @@ class AgentReplayBuffer:
 class TrainingAlgorithm(ABC):
     def __init__(
         self,
-        env: gym.Env,
+        env: Any,
         agents: list[Agent],
         main_cfg: DictConfig,
         train_cfg: DictConfig,
@@ -506,7 +508,7 @@ class TrainingAlgorithm(ABC):
 
 class AdvantageAlignment(TrainingAlgorithm):
 
-    def get_trajectory_log_ps(self, agents, observations, actions):  # todo: make sure logps are the same as when sampling
+    def get_trajectory_log_ps(self, agents, observations, actions, full_maps):  # todo: make sure logps are the same as when sampling
         B = self.batch_size
         N = self.num_agents
         T = self.trajectory_len
@@ -515,6 +517,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         action_logits = agents[0].actor(
             observations,
             actions,
+            full_maps,
             full_seq=2,
             batched=True
         ).reshape((B*N*T, -1))
@@ -524,7 +527,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return log_ps.reshape((B*N, T)), entropy.reshape((B*N, T))
 
-    def get_trajectory_values(self, agents, observations, actions):
+    def get_trajectory_values(self, agents, observations, actions, full_maps):
         B = self.batch_size
         N = self.num_agents
         device = agents[0].device 
@@ -532,12 +535,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         values_c = agents[0].critic(
             observations,
             actions,
+            full_maps,
             full_seq=1,
             batched=True
         ).squeeze(2)
         values_t = agents[0].target(
             observations,
             actions,
+            full_maps,
             full_seq=1,
             batched=True
         ).squeeze(2)
@@ -587,18 +592,22 @@ class AdvantageAlignment(TrainingAlgorithm):
         clip_range = self.train_cfg.clip_range
 
         obs = trajectory.data['obs']
-        full_maps = trajectory.data['full_maps']
         rewards = trajectory.data['rewards']
         old_log_ps = trajectory.data['log_ps']
         actions = trajectory.data['actions']
+        full_maps = trajectory.data['full_maps']
+
+        full_maps = full_maps.unsqueeze(1)
+        full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
+        full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
         
         if self.sum_rewards:
             print("Summing rewards...")
             rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B*N, -1))
 
-        _, V_s = self.get_trajectory_values(self.agents, obs, actions)
+        _, V_s = self.get_trajectory_values(self.agents, obs, actions, full_maps)
 
-        log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions)
+        log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions, full_maps)
         actor_loss_dict['entropy'] = entropy.view((B, N, -1)).mean(dim=(0, 2))
 
         A_s = compute_gae_advantages(rewards, V_s.detach(), gamma)
@@ -629,15 +638,19 @@ class AdvantageAlignment(TrainingAlgorithm):
         gamma = self.train_cfg.gamma
 
         obs = trajectory.data['obs']
-        full_maps = trajectory.data['full_maps']
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
+        full_maps = trajectory.data['full_maps']
+
+        full_maps = full_maps.unsqueeze(1)
+        full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
+        full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
 
         if self.sum_rewards:
             print("Summing rewards...")
             rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B*N, -1))
 
-        values_c, values_t = self.get_trajectory_values(self.agents, obs, actions)
+        values_c, values_t = self.get_trajectory_values(self.agents, obs, actions, full_maps)
         if self.train_cfg.critic_loss_mode == 'td-1':
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
@@ -703,16 +716,18 @@ class AdvantageAlignment(TrainingAlgorithm):
 
             history.append(observations)
             history_actions.append(actions)
-            history_full_maps.append(history_full_maps)
+            history_full_maps.append(full_maps)
 
             observations = torch.cat(list(history), dim=1)
             actions = torch.cat(list(history_actions), dim=1)
-            full_maps = torch.cat(list(full_maps), dim=1)
+            full_maps = torch.cat(list(history_full_maps), dim=1)
+            full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B*N,) + full_maps.shape[1:])
             
             action_logits = call_models_forward(
                 actors,
                 observations,
-                actions, 
+                actions,
+                full_maps_repeated,
                 agents[0].device
             )
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B*N, -1))
@@ -744,19 +759,21 @@ def get_categorical_entropy(action_logits):
     return distribution.entropy()
 
 
-def call_models_forward(models, observations, actions, device, full_seq=0):
-    # Stack all agent parameters
+def call_models_forward(models, observations, actions, full_maps, device, full_seq=0):
     observations = observations.to(device).float()
+    full_maps = full_maps.to(device).float()
+    
+    # Stack all agent parameters
     params, buffers = stack_module_state(models)
 
     base_model = copy.deepcopy(models[0])
     base_model = base_model.to('meta')
 
-    def fmodel(params, buffers, x, actions, full_seq):
-        return functional_call(base_model, (params, buffers), (x, actions, full_seq))
+    def fmodel(params, buffers, x, actions, full_maps, full_seq):
+        return functional_call(base_model, (params, buffers), (x, actions, full_maps, full_seq))
 
-    vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, None), randomness='different')(
-        params, buffers, observations, actions.long(), full_seq)
+    vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, 0, None), randomness='different')(
+        params, buffers, observations, actions.long(), full_maps, full_seq)
     return vmap_fmodel
 
 
