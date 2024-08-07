@@ -1,5 +1,7 @@
 # Advantage Alignment 
 
+Code for the fastest know algorithms for scalable opponent shaping: https://arxiv.org/abs/2406.14662
+
 ## Update log: 04/20/2024 by Tianyu
 
 1. include `tournament.yaml` and `tournament.py`. Usage: `python tournament.py`.
