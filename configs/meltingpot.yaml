@@ -23,7 +23,7 @@ env:
 hydra:
   output_subdir: null
   run:
-    dir: /network/scratch/j/juan.duque/hydra/
+    dir: /home/razvan/projects/advantage-alignment/runs/
 
 # Architecture hyperparameters
 network:
