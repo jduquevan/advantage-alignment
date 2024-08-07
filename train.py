@@ -49,11 +49,11 @@ class LinearModel(nn.Module):
 
     def forward(self, obs, actions, full_maps, full_seq: int=1, batched: bool=False):
         if full_seq==0:
-            output = self.encoder(obs, actions, full_maps, batched)[:, -1, :]
+            output = self.encoder(obs, actions, full_maps, batched=batched)[:, -1, :]
         elif full_seq==1:
-            output = self.encoder(obs, actions, full_maps, batched)[:,::2, :]
+            output = self.encoder(obs, actions, full_maps, batched=batched)[:,::2, :]
         elif full_seq==2:
-            output = self.encoder(obs, actions, full_maps, batched)[:,1::2, :]
+            output = self.encoder(obs, actions, full_maps, batched=batched)[:,1::2, :]
         else:
            raise NotImplementedError("The full_seq value is invalid")
 
@@ -122,6 +122,8 @@ class MeltingpotTransformer(nn.Module):
 
         self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len)
 
+        self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
+
         for _ in range(self.num_layers):
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=d_model,
@@ -133,14 +135,24 @@ class MeltingpotTransformer(nn.Module):
             encoder_layer = encoder_layer.to(device)
             self.layers.append(encoder_layer)
     
-    def forward(self, obs, actions, full_maps, batched=False):
+    def forward(self, obs, actions, full_maps, batched=False, gated=True):
+        if batched:
+            B, T, _, _, _ = obs.shape
+        else:
+            T, _, _, _ = obs.shape
+            B = 1
         src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
 
         output = src
         for layer in self.layers:
-            output = layer(output) + src
+            if gated:
+                x = layer(output)
+                output = self.gate(output.view(B*T*2, -1), x.view(B*T*2, -1))
+            else:
+                output = layer(output) + src
+        output = output.reshape((B, T*2, -1))
         return output
 
     def get_embeds(self, obs, actions, full_maps, batched=False):
