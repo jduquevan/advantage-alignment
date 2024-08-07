@@ -1,0 +1,13 @@
+
+- wrap meltingpot evaluation envs into torchrl envs
+- write evaluation scripts for a given env (evaluate on all scenarios in a given env)
+- write LSTM model (probably faster training than transformer)
+- embed the global map as input
+- allow for only one agent to train among random ones
+- refactor each training step to use mini-batches with early stopping on kl div between policy iterations
+- add last step to the trajectory
+- terminal logging the average trajectory reward
+- GAE targets for the critic
+- change to fp16 and flash-attention for better memory usage
+- add video logging for trajectories (we just use the one from Raz's code)
+
