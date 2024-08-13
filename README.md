@@ -1,6 +1,6 @@
 # Advantage Alignment 
 
-Code for the fastest known algorithm for scalable opponent shaping: https://arxiv.org/abs/2406.14662
+Code for the fastest existing algorithm for scalable opponent shaping: https://arxiv.org/abs/2406.14662
 
 ## Update log: 04/20/2024 by Tianyu
 
