@@ -564,8 +564,6 @@ class TrainingAlgorithm(ABC):
 
             for i in range(self.train_cfg.updates_per_batch):
 
-                # augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
-
                 train_step_metrics= self.train_step(
                     trajectory=trajectory,
                     agents=self.agents,
