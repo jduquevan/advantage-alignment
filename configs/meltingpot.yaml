@@ -13,6 +13,7 @@ use_reward_loss: False
 use_spr_loss: True
 device: cuda
 rb_size: 840
+max_seq_len: 50
 
 env:
   type: 'meltingpot'
@@ -37,6 +38,7 @@ encoder:
   d_model: 512
   dim_feedforward: 512 
   num_layers: 3
+  max_seq_len: ${max_seq_len}
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -105,7 +107,7 @@ agent:
 training:
   gamma: 0.96
   tau: 0.005
-  max_traj_len: 50
+  max_traj_len: ${max_seq_len}
   batch_size: 128 # Training batch size
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
