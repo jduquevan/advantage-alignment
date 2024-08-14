@@ -81,18 +81,26 @@ def instantiate_agent(cfg: DictConfig):
         encoder=encoder_t,
     )
 
+    ss_module = hydra.utils.instantiate(
+        cfg.ss_module,
+        encoder=encoder,
+    )
+
     target.load_state_dict(critic.state_dict())
 
     optimizer_actor = hydra.utils.instantiate(cfg.optimizer_actor, params=actor.parameters())
     optimizer_critic = hydra.utils.instantiate(cfg.optimizer_critic, params=critic.parameters())
+    optimizer_ss = hydra.utils.instantiate(cfg.optimizer_ss, params=ss_module.parameters())
 
     agent = hydra.utils.instantiate(
         cfg.agent,
         actor=actor,
         critic=critic,
         target=target,
+        ss_module=ss_module,
         critic_optimizer=optimizer_critic,
         actor_optimizer=optimizer_actor,
+        ss_optimizer=optimizer_ss,
     )
     return agent
 

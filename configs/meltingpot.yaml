@@ -4,7 +4,7 @@ wandb: 'online'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
-sum_rewards: True
+sum_rewards: False
 simultaneous: True
 discrete: True
 self_play: True
@@ -12,6 +12,7 @@ share_encoder: True
 use_reward_loss: False
 use_spr_loss: True
 device: cuda
+rb_size: 840
 
 env:
   type: 'meltingpot'
@@ -24,7 +25,7 @@ hydra:
   output_subdir: null
   run:
     dir: /network/scratch/j/juan.duque/hydra/
-    
+
 # Architecture hyperparameters
 network:
   _target_: train.GruIPD
@@ -33,8 +34,16 @@ network:
 encoder:
   _target_: train.MeltingpotTransformer
   device: ${device}
-  d_model: 512 
+  d_model: 512
+  dim_feedforward: 512 
   num_layers: 3
+
+ss_module:
+  _target_: train.SelfSupervisedModule
+  n_actions: 8
+  hidden_size: 512
+  device: ${device}
+  num_layers: 2
 
 transformer_model:
   _target_: train.MeltingpotTransformer
@@ -79,14 +88,15 @@ spr_model:
 optimizer_actor:
   _target_: torch.optim.Adam
   lr: 1e-06
+  weight_decay: 1e-8
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 0.0001
 
-optimizer_spr:
+optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 0.0001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -96,18 +106,19 @@ training:
   gamma: 0.96
   tau: 0.005
   max_traj_len: 50
-  batch_size: 512 # Training batch size
+  batch_size: 128 # Training batch size
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.5
-  entropy_beta: 0.2
+  clip_range: 0.2
+  entropy_beta: 0.15
   vanilla: True
-  updates_per_batch: 2
-  kl_threshold: 0.05
+  updates_per_batch: 3
+  kl_threshold: 0.01
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 1000
   checkpoint_dir: './experiments'
   aa_weight: 0
   clip_grad_norm: 500
+  ss_epochs: 1

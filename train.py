@@ -70,6 +70,32 @@ class LinearModel(nn.Module):
         return self.linear(output), this_kv
 
 
+class SelfSupervisedModule(nn.Module):
+    def __init__(self, n_actions, hidden_size, device, num_layers=1, encoder=None):
+        super(SelfSupervisedModule, self).__init__()
+        self.encoder = encoder
+        self.n_actions = n_actions
+        self.hidden_size = hidden_size
+
+        self.action_hidden_layers = nn.ModuleList([
+            nn.Linear(self.hidden_size, self.hidden_size) 
+            for i in range(num_layers)
+        ])
+        self.action_layer = nn.Linear(self.hidden_size, self.n_actions)
+
+        self.to(device)
+
+    def forward(self, obs, actions, full_maps, batched: bool=False):
+        action_reps = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)[:,1::2, :]
+    
+        for layer in self.action_hidden_layers:
+            action_reps = F.relu(layer(action_reps))
+
+        action_logits = F.relu(self.action_layer(action_reps))
+
+        return action_logits
+        
+
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
 
@@ -227,16 +253,20 @@ class AdvantageAlignmentAgent(Agent, nn.Module):
         actor: nn.Module,
         critic: LinearModel,
         target: nn.Module,
+        ss_module: nn.Module,
         critic_optimizer: torch.optim.Optimizer,
         actor_optimizer: torch.optim.Optimizer,
+        ss_optimizer: torch.optim.Optimizer,
     ) -> None:
         super().__init__()
         self.device = device
         self.actor = actor
         self.critic = critic
         self.target = target
+        self.ss_module = ss_module
         self.critic_optimizer = critic_optimizer
         self.actor_optimizer = actor_optimizer
+        self.ss_optimizer = ss_optimizer
 
     def sample_action(self):
         # TODO: Remove, this interface is no longer necessary
@@ -249,10 +279,11 @@ class TrajectoryBatch():
         sample_obs,
         sample_full_map,
         batch_size: int,
-        n_agents: int,
-        max_traj_len: int,
-        device: torch.device,
-        data=None
+        n_agents: int, 
+        max_traj_len: int, 
+        device: torch.device, 
+        data=None,
+        is_replay_buffer=False
     ) -> None:
         
         self.batch_size = batch_size
@@ -261,6 +292,9 @@ class TrajectoryBatch():
         B, N, H, W, C = sample_obs.shape
         _, G, L, _ = sample_full_map.shape
         T = max_traj_len
+
+        if is_replay_buffer:
+            B = self.batch_size//N
 
         if data is None:
             self.data = {
@@ -314,28 +348,51 @@ class ReplayBuffer():
         self,
         env,
         replay_buffer_size: int,
+        n_agents: int,
         trajectory_len: int,
         device: torch.device,
     ):
-        (obs_1, _), _ = env.reset()
+        state = env.reset()
         self.replay_buffer_size = replay_buffer_size
+        self.n_agents = n_agents
         self.marker = 0
+        self.fm_marker = 0
         self.number_of_added_trajectories = 0
         self.trajectory_len = trajectory_len
         self.device = device
-        self.trajectory_batch = TrajectoryBatch(obs_1, self.replay_buffer_size, self.trajectory_len, self.device)
+        self.trajectory_batch = TrajectoryBatch(
+            sample_obs=state['agents']['observation']['RGB'],
+            sample_full_map=state['RGB'],
+            batch_size=replay_buffer_size,
+            n_agents=n_agents,
+            max_traj_len=trajectory_len,
+            device=device,
+            is_replay_buffer=True
+        )
 
     def add_trajectory_batch(self, new_batch: TrajectoryBatch):
-        B = new_batch.data['obs_0'].size(0)
+        B = new_batch.data['obs'].size(0)
+        F = new_batch.data['full_maps'].size(0)
         assert (self.marker + B) <= self.replay_buffer_size # WARNING: we are assuming new data always comes in the same size, and the replay buffer is a multiple of that size
         for key in self.trajectory_batch.data.keys():
-            self.trajectory_batch.data[key][self.marker:self.marker+B] = new_batch.data[key]
+            if key == 'full_maps':
+                self.trajectory_batch.data[key][self.fm_marker:self.fm_marker+F] = new_batch.data[key]
+            else:
+                self.trajectory_batch.data[key][self.marker:self.marker+B] = new_batch.data[key]
+        self.fm_marker = (self.fm_marker + F) % (self.replay_buffer_size//self.n_agents)
         self.marker = (self.marker + B) % self.replay_buffer_size
+
         self.number_of_added_trajectories += B
 
     def sample(self, batch_size: int):
         idxs = torch.randint(0, self.__len__(), (batch_size,))
-        return TrajectoryBatch.create_from_data({k: v[idxs] for k, v in self.trajectory_batch.data.items()})
+        sample = {}
+        for k, v in self.trajectory_batch.data.items():
+            if k == 'full_maps':
+                sample[k] = v[idxs//self.n_agents]
+            else:
+                sample[k] = v[idxs]
+        return sample
 
     def __len__(self):
         return min(self.number_of_added_trajectories, self.replay_buffer_size)
@@ -382,6 +439,7 @@ class TrainingAlgorithm(ABC):
         simultaneous: bool,
         discrete: bool,
         clip_grad_norm: float = None,
+        replay_buffer: ReplayBuffer = None,
     ) -> None:
         self.env = env
         self.agents = agents
@@ -392,6 +450,7 @@ class TrainingAlgorithm(ABC):
         self.simultaneous = simultaneous
         self.discrete = discrete
         self.clip_grad_norm = clip_grad_norm
+        self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
         self.batch_size = int(env.batch_size[0])
 
@@ -405,6 +464,7 @@ class TrainingAlgorithm(ABC):
         self_play = self.main_cfg['self_play']
         kl_threshold = self.train_cfg['kl_threshold']
         updates_per_batch = self.train_cfg['updates_per_batch']
+        ss_epochs = self.train_cfg['ss_epochs']
         old_log_ps = trajectory.data['log_ps']
 
         for update in range(updates_per_batch):
@@ -466,16 +526,31 @@ class TrainingAlgorithm(ABC):
             # --- update target network ---
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
 
-            # --- log metrics ---
-            train_step_metrics.update({
-                "critic_loss": critic_loss.detach(),
-                "actor_loss": actor_loss.detach(),
-                "entropy": ent.detach(),
-                "critic_values": critic_values.mean().detach(),
-                "target_values": target_values.mean().detach(),
-            })
-            train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
-            train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
+        # --- optimize self-supervised objectives ---
+        for update in range(ss_epochs):
+            if self_play:
+                agent.ss_optimizer.zero_grad()
+                ss_loss_dict = self.self_supervised_losses(trajectory)
+                id_loss = ss_loss_dict['id_losses'].mean()
+                id_loss.backward()
+                if self.clip_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm(agent.ss_module.parameters(), self.train_cfg.clip_grad_norm)
+                ss_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.ss_module.parameters()]))
+                agent.ss_optimizer.step()
+
+                # --- log metrics ---
+                train_step_metrics.update({
+                    "critic_loss": critic_loss.detach(),
+                    "actor_loss": actor_loss.detach(),
+                    "self-sup_loss": id_loss.detach(),
+                    "entropy": ent.detach(),
+                    "critic_values": critic_values.mean().detach(),
+                    "target_values": target_values.mean().detach(),
+                })
+
+        train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
+        train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
+        train_step_metrics["ss_grad_norm"] = ss_grad_norm.detach()
 
         return train_step_metrics
 
@@ -500,8 +575,6 @@ class TrainingAlgorithm(ABC):
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
             for i in range(self.train_cfg.updates_per_batch):
-
-                # augmented_trajectories = trajectory # do not augment with off-policy data, as we don't have a replay buffer
 
                 train_step_metrics= self.train_step(
                     trajectory=trajectory,
@@ -539,6 +612,10 @@ class TrainingAlgorithm(ABC):
 
     @abstractmethod
     def critic_losses(batch: dict) -> float:
+        pass
+
+    @abstractmethod
+    def self_supervised_losses(batch: dict) -> float:
         pass
 
 
@@ -714,16 +791,38 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return critic_losses, {'target_values': values_t, 'critic_values': values_c,}
 
+    def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
+        B = self.train_cfg['batch_size']
+        N = self.num_agents
+        T = self.trajectory_len
+        trajectory_sample = self.replay_buffer.sample(B)
+
+        obs = trajectory_sample['obs']
+        rewards = trajectory_sample['rewards']
+        actions = trajectory_sample['actions']
+        full_maps = trajectory_sample['full_maps']
+
+        action_logits = self.agents[0].ss_module(obs, actions, full_maps, batched=True)
+        criterion = nn.CrossEntropyLoss(reduction='none')
+
+        inverse_dynamics_losses = criterion(
+            action_logits.view(B*T, -1), 
+            actions.view(B*T,),
+        ).mean()
+
+        return {'id_losses': inverse_dynamics_losses}
+
     def gen_sim(self):
         return self._gen_sim(
-            self.env,
-            self.batch_size,
-            self.trajectory_len,
-            self.agents
+            self.env, 
+            self.batch_size, 
+            self.trajectory_len, 
+            self.agents,
+            self.replay_buffer
         )
 
     @staticmethod
-    def _gen_sim(env, batch_size, trajectory_len, agents):
+    def _gen_sim(env, batch_size, trajectory_len, agents, replay_buffer):
         B = batch_size
         N = len(agents)
         device = agents[0].device
@@ -802,6 +901,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             state = env.step(actions_dict)['next']
             rewards = state['agents']['reward'].reshape(B*N)
 
+        replay_buffer.add_trajectory_batch(trajectory)
         return trajectory
 
     def eval(self, agent):
@@ -879,6 +979,14 @@ def main(cfg: DictConfig) -> None:
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
 
+    replay_buffer = ReplayBuffer(
+        env=env,
+        replay_buffer_size=cfg['rb_size'],
+        n_agents=len(agents),
+        trajectory_len=cfg['training']['max_traj_len'],
+        device='cuda'
+    )
+
     algorithm = AdvantageAlignment(
         env=env,
         agents=agents,
@@ -888,6 +996,7 @@ def main(cfg: DictConfig) -> None:
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
+        replay_buffer=replay_buffer
     )
     algorithm.train_loop()
 
