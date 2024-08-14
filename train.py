@@ -165,7 +165,6 @@ class MeltingpotTransformer(nn.Module):
         else:
             output, this_kv = self.transformer_encoder(output, past_ks_vs, batched=batched)
             output = output.reshape((B, T * 2, -1))
-        print(f'output shape: {output.shape}')
         return output, this_kv
 
     def get_embeds(self, obs, actions, full_maps, batched=False):

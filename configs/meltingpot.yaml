@@ -23,8 +23,8 @@ env:
 hydra:
   output_subdir: null
   run:
-    dir: /home/razvan/projects/advantage-alignment/runs/
-
+    dir: /network/scratch/j/juan.duque/hydra/
+    
 # Architecture hyperparameters
 network:
   _target_: train.GruIPD
