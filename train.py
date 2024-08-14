@@ -848,14 +848,15 @@ class AdvantageAlignment(TrainingAlgorithm):
             actions = torch.cat(list(history_actions), dim=1)
             full_maps = torch.cat(list(history_full_maps), dim=1)
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B*N,) + full_maps.shape[1:])
-            
-            action_logits = call_models_forward(
-                actors,
-                observations,
-                actions,
-                full_maps_repeated,
-                agents[0].device
-            )
+
+            with torch.no_grad():
+                action_logits = call_models_forward(
+                    actors,
+                    observations,
+                    actions,
+                    full_maps_repeated,
+                    agents[0].device
+                )
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B*N, -1))
             actions = actions.reshape(B*N, 1)
             actions_dict = TensorDict(
