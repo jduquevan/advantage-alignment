@@ -768,16 +768,16 @@ class AdvantageAlignment(TrainingAlgorithm):
             full_maps = torch.cat(list(history_full_maps), dim=1)
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B*N,) + full_maps.shape[1:])
 
-            action_logits, this_kvs = call_models_forward(
-                actors,
-                observations,
-                actions,
-                full_maps_repeated,
-                agents[0].device,
-                full_seq=0,  # todo(milad)
-                past_ks_vs=(past_ks, past_vs)
-            )
-
+            with torch.no_grad():
+                action_logits, this_kvs = call_models_forward(
+                    actors,
+                    observations,
+                    actions,
+                    full_maps_repeated,
+                    agents[0].device,
+                    full_seq=0,
+                    past_ks_vs=(past_ks, past_vs)
+                )
 
             for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
                 this_layer_k = this_kvs['k'][:, j, ...]
@@ -785,7 +785,6 @@ class AdvantageAlignment(TrainingAlgorithm):
                 layer_cache.update(this_layer_k, this_layer_v)
 
             # update the kv_caches
-            # TODO(milad)
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B*N, -1))
             actions = actions.reshape(B*N, 1)
             actions_dict = TensorDict(
