@@ -152,8 +152,7 @@ class MeltingpotTransformer(nn.Module):
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
         self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
-
-        self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len)
+        self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len*2)
 
         # self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
 
