@@ -29,7 +29,7 @@ hydra:
 # Architecture hyperparameters
 network:
   _target_: train.GruIPD
-  device: cuda
+  device: ${device}
 
 encoder:
   _target_: train.MeltingpotTransformer
@@ -49,7 +49,7 @@ transformer_model:
   _target_: train.MeltingpotTransformer
   in_size: 50
   d_model: 512
-  device: cuda
+  device: ${device}
   dim_feedforward: 512
   num_layers: 3
   num_embed_layers: 2
@@ -60,21 +60,21 @@ transformer_model:
 mlp_model:
   _target_: train.LinearModel
   in_size: 512
-  device: cuda
+  device: ${device}
   hidden_size: 512
   num_layers: 3
   out_size: 8
 
 policy:
   _target_: train.CategoricalPolicy
-  device: cuda
+  device: ${device}
 
 linear_model:
   _target_: train.LinearModel
   in_size: 512
   hidden_size: 512
   out_size: 1
-  device: cuda
+  device: ${device}
   num_layers: 2
 
 spr_model:
@@ -82,7 +82,7 @@ spr_model:
   in_size: 512
   hidden_size: 512
   out_size: 512
-  device: cuda
+  device: ${device}
   num_hidden: 0
 
 optimizer_actor:
@@ -100,7 +100,7 @@ optimizer_ss:
 
 agent:
   _target_: train.AdvantageAlignmentAgent
-  device: cuda
+  device: ${device}
 
 training:
   gamma: 0.96
