@@ -154,7 +154,7 @@ class MeltingpotTransformer(nn.Module):
             B = 1
         src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
+        src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
 
         output = src
         if past_ks_vs is not None:
