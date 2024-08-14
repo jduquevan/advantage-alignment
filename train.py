@@ -86,12 +86,13 @@ class SelfSupervisedModule(nn.Module):
         self.to(device)
 
     def forward(self, obs, actions, full_maps, batched: bool=False):
-        action_reps = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)[:,1::2, :]
+        reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
+        state_reps = reps[:,1::2, :] # a, s, a, s
     
         for layer in self.action_hidden_layers:
-            action_reps = F.relu(layer(action_reps))
+            state_reps = F.relu(layer(state_reps))
 
-        action_logits = F.relu(self.action_layer(action_reps))
+        action_logits = F.relu(self.action_layer(state_reps))
 
         return action_logits
         
