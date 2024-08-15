@@ -15,15 +15,17 @@ def run_random_job(fake_submit: bool = True):
         'training.entropy_beta': [0.0001, 0.001, 0.01, 0.1],
         'training.clip_range': [0.3],
         'training.updates_per_batch': [1],
-        'gru_model.hidden_size': [512, 768],
+        'transformer_model.d_model': [512, 768],
         'mlp_model.hidden_size': [512],
         'linear_model.hidden_size': [512],
-        'gru_model.num_layers': [5, 6],
+        'transformer_model.num_layers': [2, 3, 4],
         'mlp_model.num_layers': [3, 4],
         'linear_model.num_hidden': [3, 4],
         'training.clip_grad_norm': [100],
         'optimizer_actor.weight_decay': [0, 0.00005, 0.0001, 0.0005],
-        'training.aa_weight': [0.5, 1, 3, 5],
+        'training.aa_weight': [0],
+        'optimizer_spr.lr': [0.00005, 0.0001, 0.0003, 0.001],
+        'transformer_model.num_embed_layers': [2, 3, 4],
     }
 
     # sample a random config
@@ -31,8 +33,8 @@ def run_random_job(fake_submit: bool = True):
     for key, values in hparams.items():
         config[key] = random.choice(values)
 
-    config['mlp_model.in_size'] = config['gru_model.hidden_size']
-    config['linear_model.in_size'] = config['gru_model.hidden_size']
+    config['mlp_model.in_size'] = config['transformer_model.d_model']
+    config['linear_model.in_size'] = config['transformer_model.d_model']
 
     # submit this job using slurm
     command = gen_command(config)

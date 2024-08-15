@@ -9,14 +9,14 @@
 
 # Remove one # to uncommment
 #SBATCH --output=/scratch/jduque/slurm_output/slurm-%j.out
-#SBATCH --error=slurm_output/job-%j.out
+#SBATCH --error=/scratch/jduque/slurm_output/job-%j.out
 
 # Define, how many nodes you need. Here, we ask for 1 node.
 #SBATCH -N 1 #nodes
 #SBATCH -n 1 #tasks
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --mem=40G
-#SBATCH --time=0-02:59:00
+#SBATCH --time=0-01:59:00
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
 
@@ -39,7 +39,7 @@ python train.py \
     training.entropy_beta=${4} \
     training.clip_range=${5} \
     training.updates_per_batch=${6} \
-    gru_model.hidden_size=${7} \
+    transformer_model.d_model=${7} \
     mlp_model.hidden_size=${8} \
     linear_model.hidden_size=${9} \
     gru_model.num_layers=${10} \
@@ -48,6 +48,9 @@ python train.py \
     training.clip_grad_norm=${13} \
     optimizer_actor.weight_decay=${14} \
     training.aa_weight=${15} \
-    mlp_model.in_size=${16} \
-    linear_model.in_size=${17} \
+    optimizer_spr.lr=${16} \
+    transformer_model.num_embed_layers=${17} \
+    mlp_model.in_size=${18} \
+    linear_model.in_size=${19} \
+    transformer_model.dim_feedforward=${7} \
     
