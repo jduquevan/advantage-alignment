@@ -19,6 +19,8 @@ from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
 from typing import Any, List
 
+import time
+
 from decoder import JuanTransformer, TransformerConfig
 from utils import (
     seed_all,
@@ -31,6 +33,8 @@ from utils import (
     wandb_stats,
     save_checkpoint
 )
+
+from collections import defaultdict
 
 import warnings
 
@@ -474,6 +478,7 @@ class TrainingAlgorithm(ABC):
         agents,
         optimize_critic=True,
     ):
+
         train_step_metrics = {}
         self_play = self.main_cfg['self_play']
         kl_threshold = self.train_cfg['kl_threshold']
@@ -584,15 +589,20 @@ class TrainingAlgorithm(ABC):
         # assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
         pbar = tqdm(range(self.train_cfg.total_steps))
 
+        time_metrics = {}
+
         for step in pbar:
 
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
 
+            start_time = time.time()
             trajectory = self.gen_sim()
+            time_metrics["time_metrics/train_step"] = time.time() - start_time
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
+            start_time = time.time()
             for i in range(self.train_cfg.updates_per_batch):
 
                 train_step_metrics= self.train_step(
@@ -604,6 +614,7 @@ class TrainingAlgorithm(ABC):
                 for key, value in train_step_metrics.items():
                     print(key + ":", value)
                 print()
+            time_metrics["time_metrics/train_step"] = time.time() - start_time
 
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
@@ -615,10 +626,12 @@ class TrainingAlgorithm(ABC):
             agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
             agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
+            print(f"(|||)Time metrics: {time_metrics}")
             wandb_metrics.update({
                 "agent_actor_weight_norms": agent_actor_weight_norms.detach(),
                 "agent_critic_weight_norms": agent_critic_weight_norms.detach()
             })
+            wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
 
         return
@@ -847,6 +860,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     @staticmethod
     def _gen_sim(env, batch_size, trajectory_len, agents, replay_buffer):
+        time_metrics = defaultdict(int)
         B = batch_size
         N = len(agents)
         device = agents[0].device
@@ -881,6 +895,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
 
         for i in range(trajectory_len):
+            start_time = time.time()
             full_maps = state['RGB']
             full_maps = full_maps.unsqueeze(1)
 
@@ -921,11 +936,16 @@ class AdvantageAlignment(TrainingAlgorithm):
                 source={'agents': TensorDict(source={'action': actions.reshape(B, N)})},
                 batch_size=[B]
             )
+            time_metrics["time_metrics/nn_forward"] += time.time() - start_time
 
+            start_time = time.time()
             state = env.step(actions_dict)['next']
+            time_metrics["time_metrics/env_step"] += time.time() - start_time
             rewards = state['agents']['reward'].reshape(B*N)
 
         replay_buffer.add_trajectory_batch(trajectory)
+
+        print(f"(|||)Time metrics: {time_metrics}")
         return trajectory
 
     def eval(self, agent):
