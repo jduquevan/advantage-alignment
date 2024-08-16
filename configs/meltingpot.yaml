@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'disabled'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -79,26 +79,17 @@ linear_model:
   device: ${device}
   num_layers: 2
 
-spr_model:
-  _target_: train.LinearModel
-  in_size: 512
-  hidden_size: 512
-  out_size: 512
-  device: ${device}
-  num_hidden: 0
-
 optimizer_actor:
   _target_: torch.optim.Adam
   lr: 1e-06
-  weight_decay: 1e-8
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 1e-06
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 1e-06
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -113,7 +104,7 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.2
-  entropy_beta: 0.15
+  entropy_beta: 0.01
   vanilla: True
   updates_per_batch: 3
   kl_threshold: 0.01
@@ -124,3 +115,4 @@ training:
   aa_weight: 0
   clip_grad_norm: 500
   ss_epochs: 1
+  ss_weight: 1

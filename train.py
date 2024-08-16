@@ -83,18 +83,32 @@ class SelfSupervisedModule(nn.Module):
         ])
         self.action_layer = nn.Linear(self.hidden_size, self.n_actions)
 
+        self.spr_hidden_layers = nn.ModuleList([
+            nn.Linear(self.hidden_size, self.hidden_size) 
+            for i in range(num_layers)
+        ])
+        self.spr_layer = nn.Linear(self.hidden_size, self.hidden_size)
+
         self.to(device)
 
     def forward(self, obs, actions, full_maps, batched: bool=False):
-        reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
-        state_reps = reps[:,1::2, :] # a, s, a, s
+        actions_reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
+        state_reps = actions_reps[:,1::2, :] # a, s, a, s
     
         for layer in self.action_hidden_layers:
             state_reps = F.relu(layer(state_reps))
 
         action_logits = F.relu(self.action_layer(state_reps))
 
-        return action_logits
+        reps, this_kv = self.encoder(obs, actions, full_maps, batched=batched)
+        next_state_reps = reps[:,0::2, :] # a, s, a, s
+    
+        for layer in self.spr_hidden_layers:
+            next_state_reps = F.relu(layer(next_state_reps))
+
+        spr_preds = F.relu(self.spr_layer(next_state_reps))
+
+        return action_logits, next_state_reps[:, :-1, :], spr_preds[:, 1:, :]
         
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
@@ -465,6 +479,7 @@ class TrainingAlgorithm(ABC):
         kl_threshold = self.train_cfg['kl_threshold']
         updates_per_batch = self.train_cfg['updates_per_batch']
         ss_epochs = self.train_cfg['ss_epochs']
+        ss_weight = self.train_cfg['ss_weight']
         old_log_ps = trajectory.data['log_ps']
 
         for update in range(updates_per_batch):
@@ -532,7 +547,9 @@ class TrainingAlgorithm(ABC):
                 agent.ss_optimizer.zero_grad()
                 ss_loss_dict = self.self_supervised_losses(trajectory)
                 id_loss = ss_loss_dict['id_losses'].mean()
-                id_loss.backward()
+                spr_loss = ss_loss_dict['spr_loss'].mean()
+                ss_loss = id_loss + spr_loss
+                ss_loss.backward()
                 if self.clip_grad_norm is not None:
                     torch.nn.utils.clip_grad_norm(agent.ss_module.parameters(), self.train_cfg.clip_grad_norm)
                 ss_grad_norm = torch.sqrt(sum([torch.norm(p.grad) ** 2 for p in agent.ss_module.parameters()]))
@@ -542,7 +559,9 @@ class TrainingAlgorithm(ABC):
                 train_step_metrics.update({
                     "critic_loss": critic_loss.detach(),
                     "actor_loss": actor_loss.detach(),
-                    "self-sup_loss": id_loss.detach(),
+                    "self_sup_loss": ss_loss.detach(),
+                    "inv_dyn_loss": id_loss.detach(),
+                    "spr_loss": spr_loss.detach(),
                     "entropy": ent.detach(),
                     "critic_values": critic_values.mean().detach(),
                     "target_values": target_values.mean().detach(),
@@ -802,7 +821,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         actions = trajectory_sample['actions']
         full_maps = trajectory_sample['full_maps']
 
-        action_logits = self.agents[0].ss_module(obs, actions, full_maps, batched=True)
+        action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True)
         criterion = nn.CrossEntropyLoss(reduction='none')
 
         inverse_dynamics_losses = criterion(
@@ -810,7 +829,12 @@ class AdvantageAlignment(TrainingAlgorithm):
             actions.view(B*T,),
         ).mean()
 
-        return {'id_losses': inverse_dynamics_losses}
+        f_x1 = F.normalize(spr_gts.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
+        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
+
+        spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
+
+        return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
     def gen_sim(self):
         return self._gen_sim(
