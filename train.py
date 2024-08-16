@@ -19,6 +19,8 @@ from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
 from typing import Any, List
 
+import time
+
 from decoder import JuanTransformer, TransformerConfig
 from utils import (
     seed_all,
@@ -605,7 +607,7 @@ class TrainingAlgorithm(ABC):
             agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
             agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
-            print(f"(\|/)Time metrics: {time_metrics}")
+            print(f"(|||)Time metrics: {time_metrics}")
             wandb_metrics.update({
                 "agent_actor_weight_norms": agent_actor_weight_norms.detach(),
                 "agent_critic_weight_norms": agent_critic_weight_norms.detach()
@@ -919,7 +921,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         replay_buffer.add_trajectory_batch(trajectory)
 
-        print(f"(\|/)Time metrics: {time_metrics}")
+        print(f"(|||)Time metrics: {time_metrics}")
         return trajectory
 
     def eval(self, agent):
