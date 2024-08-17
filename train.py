@@ -920,16 +920,17 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
             start_time = time.time()
 
-            with torch.no_grad():
-                action_logits, this_kvs = call_models_forward(
-                    actors,
-                    observations,
-                    actions,
-                    full_maps_repeated,
-                    agents[0].device,
-                    full_seq=0,
-                    past_ks_vs=(past_ks, past_vs)
-                )
+            with torch.autocast(device_type=device, dtype=torch.float16):
+                with torch.no_grad():
+                    action_logits, this_kvs = call_models_forward(
+                        actors,
+                        observations,
+                        actions,
+                        full_maps_repeated,
+                        agents[0].device,
+                        full_seq=0,
+                        past_ks_vs=(past_ks, past_vs)
+                    )
             time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
             start_time = time.time()
 
