@@ -484,6 +484,7 @@ class TrainingAlgorithm(ABC):
         ss_epochs = self.train_cfg['ss_epochs']
         ss_weight = self.train_cfg['ss_weight']
         old_log_ps = trajectory.data['log_ps']
+        run_single_agent = self.main_cfg['run_single_agent']
 
         for update in range(updates_per_batch):
             if self_play:
@@ -502,7 +503,10 @@ class TrainingAlgorithm(ABC):
                 break
 
             if self_play:
-                actor_loss = actor_loss_dict['losses'].mean()
+                if run_single_agent:
+                    actor_loss = actor_loss_dict['losses'][0]
+                else:
+                    actor_loss = actor_loss_dict['losses'].mean()
                 ent = actor_loss_dict['entropy'].mean()
                 actor_loss_1 = actor_loss_dict['losses_1'].mean()
                 actor_loss_2 = actor_loss_dict['losses_2'].mean()
@@ -528,7 +532,10 @@ class TrainingAlgorithm(ABC):
         if self_play:
             agent.critic_optimizer.zero_grad()
             critic_losses, aux = self.critic_losses(trajectory)
-            critic_loss = critic_losses.mean()
+            if run_single_agent:
+                critic_loss = critic_losses[0]
+            else:
+                critic_loss = critic_losses.mean()
             critic_values = aux['critic_values']
             target_values = aux['target_values']
             critic_loss.backward()
@@ -544,9 +551,17 @@ class TrainingAlgorithm(ABC):
             # --- update target network ---
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
 
+        train_step_metrics.update({
+            "critic_loss": critic_loss.detach(),
+            "actor_loss": actor_loss.detach(),
+            "entropy": ent.detach(),
+            "critic_values": critic_values.mean().detach(),
+            "target_values": target_values.mean().detach(),
+        })
+
         # --- optimize self-supervised objectives ---
         for update in range(ss_epochs):
-            if self_play:
+            if self_play and not run_single_agent:
                 agent.ss_optimizer.zero_grad()
                 ss_loss_dict = self.self_supervised_losses(trajectory)
                 id_loss = ss_loss_dict['id_losses'].mean()
@@ -560,19 +575,14 @@ class TrainingAlgorithm(ABC):
 
                 # --- log metrics ---
                 train_step_metrics.update({
-                    "critic_loss": critic_loss.detach(),
-                    "actor_loss": actor_loss.detach(),
                     "self_sup_loss": ss_loss.detach(),
                     "inv_dyn_loss": id_loss.detach(),
                     "spr_loss": spr_loss.detach(),
-                    "entropy": ent.detach(),
-                    "critic_values": critic_values.mean().detach(),
-                    "target_values": target_values.mean().detach(),
                 })
+                train_step_metrics["ss_grad_norm"] = ss_grad_norm.detach()
 
         train_step_metrics["critic_grad_norm"] = critic_grad_norm.detach()
         train_step_metrics["actor_grad_norm"] = actor_grad_norm.detach()
-        train_step_metrics["ss_grad_norm"] = ss_grad_norm.detach()
 
         return train_step_metrics
 
@@ -855,11 +865,12 @@ class AdvantageAlignment(TrainingAlgorithm):
             self.batch_size,
             self.trajectory_len,
             self.agents,
-            self.replay_buffer
+            self.replay_buffer,
+            self.main_cfg['run_single_agent']
         )
 
     @staticmethod
-    def _gen_sim(env, batch_size, trajectory_len, agents, replay_buffer):
+    def _gen_sim(env, batch_size, trajectory_len, agents, replay_buffer, run_single_agent=False):
         time_metrics = defaultdict(int)
         B = batch_size
         N = len(agents)
@@ -887,8 +898,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             max_traj_len=trajectory_len,
             device=device
         )
-
-
 
         rewards = torch.zeros((B * N)).to(device)
         log_probs = torch.zeros((B * N)).to(device)
@@ -941,8 +950,14 @@ class AdvantageAlignment(TrainingAlgorithm):
                 layer_cache.update(this_layer_k, this_layer_v)
             time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
             start_time = time.time()
-
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
+
+            if run_single_agent:
+                actions = actions.reshape((B, N))
+                mask = torch.zeros_like(actions).to(actions.device)
+                mask[:, 0] = 1
+                actions = actions*mask
+            
             actions = actions.reshape(B * N, 1)
             actions_dict = TensorDict(
                 source={'agents': TensorDict(source={'action': actions.reshape(B, N)})},
