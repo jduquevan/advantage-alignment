@@ -611,7 +611,6 @@ class TrainingAlgorithm(ABC):
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
-
             for i in range(self.train_cfg.updates_per_batch):
 
                 train_step_metrics = self.train_step(

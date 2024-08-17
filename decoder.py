@@ -5,13 +5,11 @@ Credits to https://github.com/karpathy/minGPT
 
 
 from dataclasses import dataclass
-import math
 from typing import Optional, Tuple
 
 from einops import rearrange
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 import numpy as np
 
 class Cache:
@@ -228,18 +226,8 @@ class SelfAttention(nn.Module):
             k = torch.cat((past_k, k), dim=2) # todo(milad): check if this is correct
             v = torch.cat((past_v, v), dim=2)
 
-
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
-
         y = rearrange(y, 'b h t e -> b t (h e)')
         y = self.resid_drop(self.proj(y))
 
         return y, {'k': this_k, 'v': this_v}
-
-
-from typing import Tuple
-
-import numpy as np
-import torch
-
-
