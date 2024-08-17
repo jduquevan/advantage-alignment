@@ -910,6 +910,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             full_maps = torch.cat(list(history_full_maps), dim=1)
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
+            start_time = time.time()
 
             with torch.no_grad():
                 action_logits, this_kvs = call_models_forward(
@@ -922,12 +923,14 @@ class AdvantageAlignment(TrainingAlgorithm):
                     past_ks_vs=(past_ks, past_vs)
                 )
             time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
+            start_time = time.time()
 
             for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
                 this_layer_k = this_kvs['k'][:, j, ...]
                 this_layer_v = this_kvs['v'][:, j, ...]
                 layer_cache.update(this_layer_k, this_layer_v)
             time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
+            start_time = time.time()
 
             # update the kv_caches
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
@@ -937,8 +940,8 @@ class AdvantageAlignment(TrainingAlgorithm):
                 batch_size=[B]
             )
             time_metrics["time_metrics/gen/sample_actions"] += time.time() - start_time
-
             start_time = time.time()
+
             state = env.step(actions_dict)['next']
             time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
             rewards = state['agents']['reward'].reshape(B * N)
