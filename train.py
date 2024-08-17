@@ -866,7 +866,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, _, H, W, C = state['agents']['observation']['RGB'].shape
         _, G, L, _ = state['RGB'].shape
         history = torch.zeros((B * N, trajectory_len, H, W, C), device=device)
-        history_actions = torch.zeros((B * N, trajectory_len, 1), device=device)
+        history_actions = torch.zeros((B * N, trajectory_len), device=device)
         history_full_maps = torch.zeros((B, trajectory_len, G, L, C), device=device)
 
         # Self-play only TODO: Add replay buffer of agents
@@ -907,11 +907,11 @@ class AdvantageAlignment(TrainingAlgorithm):
             trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
             history[:, i, ...] = observations.squeeze(1)
-            history_actions[:, i, ...] = actions
+            history_actions[:, i] = actions
             history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
             observations = history[:, :i + 1, ...]
-            actions = history_actions[:, :i + 1, ...]
+            actions = history_actions[:, :i + 1]
             full_maps = history_full_maps[:, :i + 1, ...]
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
