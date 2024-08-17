@@ -18,7 +18,7 @@ max_seq_len: 50
 env:
   type: 'meltingpot'
   batch: 6
-  device: cuda
+  device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
 

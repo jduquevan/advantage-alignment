@@ -228,14 +228,8 @@ class SelfAttention(nn.Module):
             k = torch.cat((past_k, k), dim=2) # todo(milad): check if this is correct
             v = torch.cat((past_v, v), dim=2)
 
-        if self.training:
-            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
-        else:
-            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.mask[L:L + T, :L + T] == 0, float('-inf'))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_drop(att)
-            y = att @ v
+
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
 
         y = rearrange(y, 'b h t e -> b t (h e)')
         y = self.resid_drop(self.proj(y))

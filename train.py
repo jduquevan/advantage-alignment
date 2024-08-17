@@ -596,11 +596,12 @@ class TrainingAlgorithm(ABC):
 
             start_time = time.time()
             trajectory = self.gen_sim()
-            time_metrics["time_metrics/train_step"] = time.time() - start_time
+            time_metrics["time_metrics/total_gen"] = time.time() - start_time
+            start_time = time.time()
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
-            start_time = time.time()
+
             for i in range(self.train_cfg.updates_per_batch):
 
                 train_step_metrics = self.train_step(
@@ -613,6 +614,7 @@ class TrainingAlgorithm(ABC):
                     print(key + ":", value)
                 print()
             time_metrics["time_metrics/train_step"] = time.time() - start_time
+            start_time = time.time()
 
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
@@ -624,6 +626,7 @@ class TrainingAlgorithm(ABC):
             agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
             agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
+            time_metrics["time_metrics/etc"] = time.time() - start_time
             print(f"(|||)Time metrics: {time_metrics}")
             wandb_metrics.update({
                 "agent_actor_weight_norms": agent_actor_weight_norms.detach(),
@@ -862,9 +865,12 @@ class AdvantageAlignment(TrainingAlgorithm):
         N = len(agents)
         device = agents[0].device
         state = env.reset()
-        history = deque(maxlen=trajectory_len)
-        history_actions = deque(maxlen=trajectory_len)
-        history_full_maps = deque(maxlen=trajectory_len)
+
+        _, _, H, W, C = state['agents']['observation']['RGB'].shape
+        _, G, L, _ = state['RGB'].shape
+        history = torch.zeros((B * N, trajectory_len, H, W, C), device=device)
+        history_actions = torch.zeros((B * N, trajectory_len), device=device)
+        history_full_maps = torch.zeros((B, trajectory_len, G, L, C), device=device)
 
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[i % N].actor for i in range(B * N)]
@@ -881,6 +887,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             max_traj_len=trajectory_len,
             device=device
         )
+
+
 
         rewards = torch.zeros((B * N)).to(device)
         log_probs = torch.zeros((B * N)).to(device)
@@ -901,30 +909,32 @@ class AdvantageAlignment(TrainingAlgorithm):
 
             trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
-            history.append(observations)
-            history_actions.append(actions)
-            history_full_maps.append(full_maps)
+            history[:, i, ...] = observations.squeeze(1)
+            history_actions[:, i] = actions.squeeze(1)
+            history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
-            observations = torch.cat(list(history), dim=1)
-            actions = torch.cat(list(history_actions), dim=1)
-            full_maps = torch.cat(list(history_full_maps), dim=1)
+            observations = history[:, :i + 1, ...]
+            actions = history_actions[:, :i + 1]
+            full_maps = history_full_maps[:, :i + 1, ...]
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
             start_time = time.time()
 
-            with torch.no_grad():
-                action_logits, this_kvs = call_models_forward(
-                    actors,
-                    observations,
-                    actions,
-                    full_maps_repeated,
-                    agents[0].device,
-                    full_seq=0,
-                    past_ks_vs=(past_ks, past_vs)
-                )
+            with torch.autocast(device_type=device, dtype=torch.float16):
+                with torch.no_grad():
+                    action_logits, this_kvs = call_models_forward(
+                        actors,
+                        observations,
+                        actions,
+                        full_maps_repeated,
+                        agents[0].device,
+                        full_seq=0,
+                        past_ks_vs=(past_ks, past_vs)
+                    )
             time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
             start_time = time.time()
 
+            # update the kv_caches
             for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
                 this_layer_k = this_kvs['k'][:, j, ...]
                 this_layer_v = this_kvs['v'][:, j, ...]
@@ -932,7 +942,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
             start_time = time.time()
 
-            # update the kv_caches
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
             actions = actions.reshape(B * N, 1)
             actions_dict = TensorDict(
@@ -946,7 +955,9 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
             rewards = state['agents']['reward'].reshape(B * N)
 
+        start_time = time.time()
         replay_buffer.add_trajectory_batch(trajectory)
+        time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
 
         print(f"(|||)Time metrics: {time_metrics}")
         return trajectory
@@ -1031,7 +1042,7 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['rb_size'],
         n_agents=len(agents),
         trajectory_len=cfg['training']['max_traj_len'],
-        device='cuda'
+        device=cfg['device']
     )
 
     algorithm = AdvantageAlignment(
