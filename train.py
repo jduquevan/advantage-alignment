@@ -596,11 +596,12 @@ class TrainingAlgorithm(ABC):
 
             start_time = time.time()
             trajectory = self.gen_sim()
-            time_metrics["time_metrics/train_step"] = time.time() - start_time
+            time_metrics["time_metrics/total_gen"] = time.time() - start_time
+            start_time = time.time()
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
-            start_time = time.time()
+
             for i in range(self.train_cfg.updates_per_batch):
 
                 train_step_metrics = self.train_step(
@@ -613,6 +614,7 @@ class TrainingAlgorithm(ABC):
                     print(key + ":", value)
                 print()
             time_metrics["time_metrics/train_step"] = time.time() - start_time
+            start_time = time.time()
 
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
@@ -624,6 +626,7 @@ class TrainingAlgorithm(ABC):
             agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
             agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
+            time_metrics["time_metrics/etc"] = time.time() - start_time
             print(f"(|||)Time metrics: {time_metrics}")
             wandb_metrics.update({
                 "agent_actor_weight_norms": agent_actor_weight_norms.detach(),
@@ -930,6 +933,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
             start_time = time.time()
 
+            # update the kv_caches
             for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
                 this_layer_k = this_kvs['k'][:, j, ...]
                 this_layer_v = this_kvs['v'][:, j, ...]
@@ -937,7 +941,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
             start_time = time.time()
 
-            # update the kv_caches
             actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
             actions = actions.reshape(B * N, 1)
             actions_dict = TensorDict(
@@ -951,7 +954,9 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
             rewards = state['agents']['reward'].reshape(B * N)
 
+        start_time = time.time()
         replay_buffer.add_trajectory_batch(trajectory)
+        time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
 
         print(f"(|||)Time metrics: {time_metrics}")
         return trajectory
