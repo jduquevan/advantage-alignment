@@ -907,7 +907,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
             history[:, i, ...] = observations.squeeze(1)
-            history_actions[:, i] = actions
+            history_actions[:, i] = actions.squeeze(1)
             history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
             observations = history[:, :i + 1, ...]
