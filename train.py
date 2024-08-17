@@ -862,9 +862,12 @@ class AdvantageAlignment(TrainingAlgorithm):
         N = len(agents)
         device = agents[0].device
         state = env.reset()
-        history = deque(maxlen=trajectory_len)
-        history_actions = deque(maxlen=trajectory_len)
-        history_full_maps = deque(maxlen=trajectory_len)
+
+        _, _, H, W, C = state['agents']['observation']['RGB'].shape
+        _, G, L, _ = state['RGB'].shape
+        history = torch.zeros((B * N, trajectory_len, H, W, C), device=device)
+        history_actions = torch.zeros((B * N, trajectory_len, 1), device=device)
+        history_full_maps = torch.zeros((B, trajectory_len, G, L, C), device=device)
 
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[i % N].actor for i in range(B * N)]
@@ -881,6 +884,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             max_traj_len=trajectory_len,
             device=device
         )
+
+
 
         rewards = torch.zeros((B * N)).to(device)
         log_probs = torch.zeros((B * N)).to(device)
@@ -901,9 +906,9 @@ class AdvantageAlignment(TrainingAlgorithm):
 
             trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
-            history.append(observations)
-            history_actions.append(actions)
-            history_full_maps.append(full_maps)
+            history[:, i, ...] = observations.squeeze(1)
+            history_actions[:, i, ...] = actions
+            history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
             observations = torch.cat(list(history), dim=1)
             actions = torch.cat(list(history_actions), dim=1)
@@ -1031,7 +1036,7 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['rb_size'],
         n_agents=len(agents),
         trajectory_len=cfg['training']['max_traj_len'],
-        device='cuda'
+        device=cfg['device']
     )
 
     algorithm = AdvantageAlignment(
