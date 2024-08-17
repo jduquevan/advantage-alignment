@@ -275,9 +275,9 @@ class AdvantageAlignmentAgent(Agent, nn.Module):
     ) -> None:
         super().__init__()
         self.device = device
-        self.actor = actor
-        self.critic = critic
-        self.target = target
+        self.actor = torch.compile(actor)
+        self.critic = torch.compile(critic)
+        self.target = torch.compile(target)
         self.ss_module = ss_module
         self.critic_optimizer = critic_optimizer
         self.actor_optimizer = actor_optimizer
