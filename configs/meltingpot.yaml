@@ -16,6 +16,7 @@ rb_size: 840
 max_seq_len: 50
 use_full_maps: False
 hidden_size: 512
+run_single_agent: True
 
 env:
   type: 'meltingpot'
