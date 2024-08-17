@@ -910,9 +910,9 @@ class AdvantageAlignment(TrainingAlgorithm):
             history_actions[:, i, ...] = actions
             history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
-            observations = torch.cat(list(history), dim=1)
-            actions = torch.cat(list(history_actions), dim=1)
-            full_maps = torch.cat(list(history_full_maps), dim=1)
+            observations = history[:, :i + 1, ...]
+            actions = history_actions[:, :i + 1, ...]
+            full_maps = history_full_maps[:, :i + 1, ...]
             full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
             start_time = time.time()
