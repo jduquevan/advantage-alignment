@@ -13,12 +13,13 @@ use_reward_loss: False
 use_spr_loss: True
 device: cuda
 rb_size: 840
-max_seq_len: 50
+max_seq_len: 1000
+max_cxt_len: 10
 run_single_agent: True
 
 env:
   type: 'meltingpot'
-  batch: 6
+  batch: 12
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
@@ -82,15 +83,15 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 1e-06
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 1e-06
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 1e-06
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -104,11 +105,11 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.2
-  entropy_beta: 0.01
+  clip_range: 0.5
+  entropy_beta: 0.005
   vanilla: True
-  updates_per_batch: 3
-  kl_threshold: 0.01
+  updates_per_batch: 2
+  kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 1000

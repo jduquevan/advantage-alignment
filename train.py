@@ -295,7 +295,7 @@ class TrajectoryBatch():
         sample_full_map,
         batch_size: int,
         n_agents: int,
-        max_traj_len: int,
+        cxt_len: int,
         device: torch.device,
         data=None,
         is_replay_buffer=False
@@ -306,7 +306,7 @@ class TrajectoryBatch():
 
         B, N, H, W, C = sample_obs.shape
         _, G, L, _ = sample_full_map.shape
-        T = max_traj_len
+        T = cxt_len
 
         if is_replay_buffer:
             B = self.batch_size // N
@@ -364,7 +364,7 @@ class ReplayBuffer():
         env,
         replay_buffer_size: int,
         n_agents: int,
-        trajectory_len: int,
+        cxt_len: int,
         device: torch.device,
     ):
         state = env.reset()
@@ -373,14 +373,14 @@ class ReplayBuffer():
         self.marker = 0
         self.fm_marker = 0
         self.number_of_added_trajectories = 0
-        self.trajectory_len = trajectory_len
+        self.cxt_len = cxt_len
         self.device = device
         self.trajectory_batch = TrajectoryBatch(
             sample_obs=state['agents']['observation']['RGB'],
             sample_full_map=state['RGB'],
             batch_size=replay_buffer_size,
             n_agents=n_agents,
-            max_traj_len=trajectory_len,
+            cxt_len=cxt_len,
             device=device,
             is_replay_buffer=True
         )
@@ -462,6 +462,7 @@ class TrainingAlgorithm(ABC):
         self.main_cfg = main_cfg
         self.train_cfg = train_cfg
         self.trajectory_len = train_cfg.max_traj_len
+        self.cxt_len = main_cfg.max_cxt_len
         self.sum_rewards = sum_rewards
         self.simultaneous = simultaneous
         self.discrete = discrete
@@ -600,12 +601,15 @@ class TrainingAlgorithm(ABC):
         time_metrics = {}
 
         for step in pbar:
+            if step % (self.trajectory_len // self.cxt_len) == 0:
+                print("Reseting environment")
+                state = self.env.reset()
 
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
 
             start_time = time.time()
-            trajectory = self.gen_sim()
+            trajectory, state = self.gen_sim(state)
             time_metrics["time_metrics/total_gen"] = time.time() - start_time
             start_time = time.time()
 
@@ -667,7 +671,7 @@ class AdvantageAlignment(TrainingAlgorithm):
     def get_trajectory_log_ps(self, agents, observations, actions, full_maps):  # todo: make sure logps are the same as when sampling
         B = self.batch_size
         N = self.num_agents
-        T = self.trajectory_len
+        T = self.cxt_len
         device = agents[0].device
 
         action_logits = agents[0].actor(
@@ -836,7 +840,7 @@ class AdvantageAlignment(TrainingAlgorithm):
     def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
         B = self.train_cfg['batch_size']
         N = self.num_agents
-        T = self.trajectory_len
+        T = self.cxt_len
         trajectory_sample = self.replay_buffer.sample(B)
 
         obs = trajectory_sample['obs']
@@ -859,29 +863,29 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
-    def gen_sim(self):
+    def gen_sim(self, state):
         return self._gen_sim(
+            state,
             self.env,
             self.batch_size,
-            self.trajectory_len,
+            self.cxt_len,
             self.agents,
             self.replay_buffer,
             self.main_cfg['run_single_agent']
         )
 
     @staticmethod
-    def _gen_sim(env, batch_size, trajectory_len, agents, replay_buffer, run_single_agent=False):
+    def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_agent=False):
         time_metrics = defaultdict(int)
         B = batch_size
         N = len(agents)
         device = agents[0].device
-        state = env.reset()
 
         _, _, H, W, C = state['agents']['observation']['RGB'].shape
         _, G, L, _ = state['RGB'].shape
-        history = torch.zeros((B * N, trajectory_len, H, W, C), device=device)
-        history_actions = torch.zeros((B * N, trajectory_len), device=device)
-        history_full_maps = torch.zeros((B, trajectory_len, G, L, C), device=device)
+        history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
+        history_actions = torch.zeros((B * N, cxt_len), device=device)
+        history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
 
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[i % N].actor for i in range(B * N)]
@@ -895,7 +899,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             sample_full_map=state['RGB'],
             batch_size=B,
             n_agents=N,
-            max_traj_len=trajectory_len,
+            cxt_len=cxt_len,
             device=device
         )
 
@@ -904,11 +908,11 @@ class AdvantageAlignment(TrainingAlgorithm):
         actions = torch.zeros((B * N, 1)).to(device)
 
         # create our single kv_cache
-        kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=trajectory_len * 2)
+        kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
         past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
         past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
 
-        for i in range(trajectory_len):
+        for i in range(cxt_len):
             start_time = time.time()
             full_maps = state['RGB']
             full_maps = full_maps.unsqueeze(1)
@@ -975,7 +979,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
 
         print(f"(|||)Time metrics: {time_metrics}")
-        return trajectory
+        return trajectory, state
 
     def eval(self, agent):
         pass
@@ -1056,7 +1060,7 @@ def main(cfg: DictConfig) -> None:
         env=env,
         replay_buffer_size=cfg['rb_size'],
         n_agents=len(agents),
-        trajectory_len=cfg['training']['max_traj_len'],
+        cxt_len=cfg['max_cxt_len'],
         device=cfg['device']
     )
 
