@@ -166,15 +166,14 @@ class MeltingpotTransformer(nn.Module):
         self.embed_fmp_layer = nn.Linear(64 * 14 * 20, d_model - (d_model // 2))
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
-        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
+        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_embed_layers)])
         self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len * 2)
 
         # self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
 
         encoder = JuanTransformer(
             TransformerConfig(
-                tokens_per_block=1,  # these two are just for compatibility with the IRIS code
-                max_blocks=max_seq_len,
+                max_seq_len=max_seq_len,
                 attention='causal',
                 num_layers=num_layers,
                 num_heads=nhead,
