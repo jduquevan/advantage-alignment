@@ -55,16 +55,15 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
 def instantiate_agent(cfg: DictConfig):
     assert cfg.use_transformer is True, "Only Transformer is supported for now."
     use_gru = True
-    encoder_in_size = 23232
     
-    encoder = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+    encoder = hydra.utils.instantiate(cfg.encoder)
     actor = hydra.utils.instantiate(
         cfg.mlp_model,
         encoder=encoder,
     )
     
     if not cfg.share_encoder:
-        encoder_c = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+        encoder_c = hydra.utils.instantiate(cfg.encoder)
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
             encoder=encoder_c,
@@ -75,7 +74,7 @@ def instantiate_agent(cfg: DictConfig):
             encoder=encoder,
         )
 
-    encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+    encoder_t = hydra.utils.instantiate(cfg.encoder)
     target = hydra.utils.instantiate(
         cfg.linear_model, 
         encoder=encoder_t,

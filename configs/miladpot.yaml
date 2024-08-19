@@ -1,0 +1,21 @@
+defaults:
+  - meltingpot.yaml
+
+hidden_size: 32
+
+hydra:
+  run:
+    dir: /network/scratch/a/aghajohm/hydra_dir
+
+wandb_dir:
+  /network/scratch/a/aghajohm/wandb_dir
+
+env:
+  batch: 6
+
+training:
+  max_traj_len: 50
+
+device: cuda
+
+use_full_maps: False
