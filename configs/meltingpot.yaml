@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'disabled'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -21,7 +21,7 @@ run_single_agent: True
 
 env:
   type: 'meltingpot'
-  batch: 12
+  batch: 6
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
