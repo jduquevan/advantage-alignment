@@ -13,13 +13,15 @@ use_reward_loss: False
 use_spr_loss: True
 device: cuda
 rb_size: 840
+use_full_maps: False
+hidden_size: 512
 max_seq_len: 1000
 max_cxt_len: 10
 run_single_agent: True
 
 env:
   type: 'meltingpot'
-  batch: 12
+  batch: 6
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
@@ -37,35 +39,23 @@ network:
 encoder:
   _target_: train.MeltingpotTransformer
   device: ${device}
-  d_model: 512
-  dim_feedforward: 512 
+  d_model: ${hidden_size}
+  dim_feedforward: ${hidden_size}
   num_layers: 1
   max_seq_len: ${max_seq_len}
 
 ss_module:
   _target_: train.SelfSupervisedModule
   n_actions: 8
-  hidden_size: 512
+  hidden_size: ${hidden_size}
   device: ${device}
   num_layers: 2
 
-transformer_model:
-  _target_: train.MeltingpotTransformer
-  in_size: 50
-  d_model: 512
-  device: ${device}
-  dim_feedforward: 512
-  num_layers: 3
-  num_embed_layers: 2
-  nhead: 4
-  max_seq_len: 50
-  dropout: 0.1
-
 mlp_model:
   _target_: train.LinearModel
-  in_size: 512
+  in_size: ${hidden_size}
   device: ${device}
-  hidden_size: 512
+  hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
 
@@ -75,8 +65,8 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 512
-  hidden_size: 512
+  in_size: ${hidden_size}
+  hidden_size: ${hidden_size}
   out_size: 1
   device: ${device}
   num_layers: 2

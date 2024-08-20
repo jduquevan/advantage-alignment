@@ -137,7 +137,6 @@ class PositionalEncoding(nn.Module):
 class MeltingpotTransformer(nn.Module):
     def __init__(
         self,
-        in_size,
         d_model,
         device,
         dim_feedforward=40,
@@ -145,12 +144,14 @@ class MeltingpotTransformer(nn.Module):
         num_embed_layers=1,
         nhead=4,
         max_seq_len=100,
-        dropout=0.1
+        dropout=0.1,
+        use_full_maps=False,
     ):
 
         super(MeltingpotTransformer, self).__init__()
 
-        self.in_size = in_size
+        print(f"##use_full_maps: {use_full_maps}##")
+
         self.d_model = d_model
         self.device = device
 
@@ -162,19 +163,24 @@ class MeltingpotTransformer(nn.Module):
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1)
 
-        self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model // 2)
-        self.embed_fmp_layer = nn.Linear(64 * 14 * 20, d_model - (d_model // 2))
+        self.use_full_maps = use_full_maps
+        if self.use_full_maps:
+            self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model // 2)
+            self.embed_fmp_layer = nn.Linear(64 * 14 * 20, d_model - (d_model // 2))
+        else:
+            self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model)
+        
+
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
-        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for i in range(num_embed_layers)])
+        self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_embed_layers)])
         self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len * 2)
 
         # self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
 
         encoder = JuanTransformer(
             TransformerConfig(
-                tokens_per_block=1,  # these two are just for compatibility with the IRIS code
-                max_blocks=max_seq_len,
+                max_seq_len=max_seq_len,
                 attention='causal',
                 num_layers=num_layers,
                 num_heads=nhead,
@@ -236,9 +242,13 @@ class MeltingpotTransformer(nn.Module):
             obs = obs.reshape(T, -1)
             full_maps = full_maps.reshape(T, -1)
         embed_obs = F.relu(self.embed_obs_layer(obs))
-        embed_full_maps = F.relu(self.embed_fmp_layer(full_maps))
+
+        if self.use_full_maps:
+            embed_full_maps = F.relu(self.embed_fmp_layer(full_maps))
+            embed_obs = torch.cat([embed_obs, embed_full_maps], dim=-1)
+
         embed_actions = self.embed_action(actions)
-        embed_obs = torch.cat([embed_obs, embed_full_maps], dim=-1)
+        
 
         for embed_layer in self.embed_layers:
             embed_obs = F.relu(embed_layer(embed_obs))
@@ -889,6 +899,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[i % N].actor for i in range(B * N)]
 
+
         # set to eval mode
         for actor in actors:
             actor.eval()
@@ -1054,6 +1065,10 @@ def main(cfg: DictConfig) -> None:
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
+
+    # print the number of parameters
+    actor = agents[0].actor
+    print(f"Number of parameters in actor: {sum(p.numel() for p in actor.parameters())}")
 
     replay_buffer = ReplayBuffer(
         env=env,
