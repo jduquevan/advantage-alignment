@@ -12,7 +12,6 @@ from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
 from tqdm import tqdm
 from torch.distributions import Categorical
-from torch.distributions.transforms import SigmoidTransform
 from torch.func import functional_call, stack_module_state
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
@@ -26,8 +25,6 @@ from utils import (
     instantiate_agent,
     compute_discounted_returns,
     compute_gae_advantages,
-    get_cosine_similarity_torch,
-    get_observation,
     update_target_network,
     wandb_stats,
     save_checkpoint
@@ -349,11 +346,14 @@ class TrajectoryBatch():
                     dtype=torch.float32,
                 ),
                 "actions": torch.ones(
-                    (B * N, T),
+                    (B * N, T + 1),
                     device=device,
                     dtype=torch.long,
                 ),
             }
+
+    def add_actions(self, actions, t):
+        self.data['actions'][:, t] = actions[:, 0]
 
     def subsample(self, batch_size: int):
         idxs = torch.randint(0, self.batch_size, (batch_size,))
@@ -687,39 +687,34 @@ class AdvantageAlignment(TrainingAlgorithm):
         B = self.batch_size
         N = self.num_agents
         T = self.cxt_len
-        device = agents[0].device
 
         action_logits = agents[0].actor(
             observations,
-            actions,
+            actions[:, :-1],
             full_maps,
             full_seq=2,
             batched=True
         )[0].reshape((B * N * T, -1))
 
-        _, log_ps = sample_actions_categorical(action_logits, actions.reshape(B * N * T))
+        _, log_ps = sample_actions_categorical(action_logits, actions[:, 1:].reshape(B * N * T))
         entropy = get_categorical_entropy(action_logits)
 
         return log_ps.reshape((B * N, T)), entropy.reshape((B * N, T))
 
     def get_trajectory_values(self, agents, observations, actions, full_maps):
-        B = self.batch_size
-        N = self.num_agents
-        device = agents[0].device
-
         values_c = agents[0].critic(
             observations,
-            actions,
+            actions[:, :-1],
             full_maps,
-            full_seq=1,
+            full_seq=2,
             batched=True
         )[0].squeeze(2)
 
         values_t = agents[0].target(
             observations,
-            actions,
+            actions[:, :-1],
             full_maps,
-            full_seq=1,
+            full_seq=2,
             batched=True
         )[0].squeeze(2)
 
@@ -863,12 +858,10 @@ class AdvantageAlignment(TrainingAlgorithm):
 
     def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
         B = self.train_cfg['batch_size']
-        N = self.num_agents
         T = self.cxt_len
         trajectory_sample = self.replay_buffer.sample(B)
 
         obs = trajectory_sample['obs']
-        rewards = trajectory_sample['rewards']
         actions = trajectory_sample['actions']
         full_maps = trajectory_sample['full_maps']
 
@@ -908,8 +901,9 @@ class AdvantageAlignment(TrainingAlgorithm):
         _, _, H, W, C = state['agents']['observation']['RGB'].shape
         _, G, L, _ = state['RGB'].shape
         history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
-        history_actions = torch.zeros((B * N, cxt_len), device=device)
+        history_actions = torch.zeros((B * N, cxt_len + 1), device=device)
         history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
+        history_action_logits = torch.zeros((B * N, cxt_len, 8), device=device)
 
         # Self-play only TODO: Add replay buffer of agents
         actors = [agents[i % N].actor for i in range(B * N)]
@@ -958,19 +952,20 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
             start_time = time.time()
 
-            with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                with torch.no_grad():
-                    action_logits, this_kvs = call_models_forward(
-                        actors,
-                        observations,
-                        actions,
-                        full_maps_repeated,
-                        agents[0].device,
-                        full_seq=0,
-                        past_ks_vs=(past_ks, past_vs)
-                    )
+            # with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            with torch.no_grad():
+                action_logits, this_kvs = call_models_forward(
+                    actors,
+                    observations,
+                    actions,
+                    full_maps_repeated,
+                    agents[0].device,
+                    full_seq=0,
+                    past_ks_vs=(past_ks, past_vs)
+                )
             time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
             start_time = time.time()
+            history_action_logits[:, i, :] = action_logits.reshape(B * N, -1)
 
             # update the kv_caches
             for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
@@ -1000,9 +995,9 @@ class AdvantageAlignment(TrainingAlgorithm):
             rewards = state['agents']['reward'].reshape(B * N)
 
         start_time = time.time()
+        trajectory.add_actions(actions, cxt_len)
         replay_buffer.add_trajectory_batch(trajectory)
         time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
-
         print(f"(|||)Time metrics: {time_metrics}")
         return trajectory, state
 

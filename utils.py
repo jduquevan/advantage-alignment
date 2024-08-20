@@ -1,5 +1,4 @@
 import hydra
-import math
 import numpy as np
 import os
 import random
@@ -14,16 +13,6 @@ def seed_all(seed):
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-def get_observation(observations, t):
-    return observations[:, t, :]
-
-def get_cosine_similarity_torch(x1, x2, eps=1e-8):
-    dot_product = torch.sum(x1 * x2, dim=-1)
-    norm1 = torch.norm(x1.float(), dim=-1)
-    norm2 = torch.norm(x2.float(), dim=-1)
-    cosine_sim = dot_product / (norm1 * norm2 + eps)
-    return cosine_sim
 
 def compute_discounted_returns(gamma, rewards):
         batch_size, trajectory_len = rewards.shape
