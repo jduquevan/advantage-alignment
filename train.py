@@ -94,6 +94,8 @@ class SelfSupervisedModule(nn.Module):
         self.to(device)
 
     def forward(self, obs, actions, full_maps, batched: bool = False):
+        obs = obs / 255.0 # normalize
+        full_maps = full_maps / 255.0
         actions_reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
         state_reps = actions_reps[:, 1::2, :]  # a, s, a, s
         for layer in self.action_hidden_layers:
@@ -199,6 +201,9 @@ class MeltingpotTransformer(nn.Module):
         else:
             T, _, _, _ = obs.shape
             B = 1
+
+        obs = obs / 255.0 # normalize
+        full_maps = full_maps / 255.0 # normalize
         src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
@@ -786,6 +791,10 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         A_s = compute_gae_advantages(rewards, V_s.detach(), gamma)
 
+        # normalize advantages
+        if self.train_cfg.normalize_advantages:
+            A_s = (A_s - A_s.mean()) / (A_s.std() + 1e-8)
+
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
@@ -943,7 +952,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
             start_time = time.time()
 
-            with torch.autocast(device_type=device, dtype=torch.float16):
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 with torch.no_grad():
                     action_logits, this_kvs = call_models_forward(
                         actors,

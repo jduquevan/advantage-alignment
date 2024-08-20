@@ -108,3 +108,4 @@ training:
   clip_grad_norm: 500
   ss_epochs: 1
   ss_weight: 1
+  normalize_advantages: True
