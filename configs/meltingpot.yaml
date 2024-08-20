@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'disabled'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -14,10 +14,11 @@ use_spr_loss: True
 device: cuda
 rb_size: 840
 use_full_maps: False
-hidden_size: 512
+hidden_size: 256
 max_seq_len: 1000
-max_cxt_len: 10
+max_cxt_len: 50
 run_single_agent: True
+debug_mode: True
 
 env:
   type: 'meltingpot'
@@ -41,7 +42,7 @@ encoder:
   device: ${device}
   d_model: ${hidden_size}
   dim_feedforward: ${hidden_size}
-  num_layers: 1
+  num_layers: 2
   max_seq_len: ${max_seq_len}
 
 ss_module:
@@ -49,7 +50,7 @@ ss_module:
   n_actions: 8
   hidden_size: ${hidden_size}
   device: ${device}
-  num_layers: 2
+  num_layers: 3
 
 mlp_model:
   _target_: train.LinearModel
@@ -73,15 +74,15 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-06
+  lr: 5e-06
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-06
+  lr: 5e-06
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-06
+  lr: 5e-06
 
 agent:
   _target_: train.AdvantageAlignmentAgent

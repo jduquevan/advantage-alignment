@@ -146,7 +146,7 @@ class MeltingpotTransformer(nn.Module):
         num_embed_layers=1,
         nhead=4,
         max_seq_len=100,
-        dropout=0.1,
+        dropout=0.0,
         use_full_maps=False,
     ):
 
@@ -499,8 +499,8 @@ class TrainingAlgorithm(ABC):
         updates_per_batch = self.train_cfg['updates_per_batch']
         ss_epochs = self.train_cfg['ss_epochs']
         ss_weight = self.train_cfg['ss_weight']
-        old_log_ps = trajectory.data['log_ps']
         run_single_agent = self.main_cfg['run_single_agent']
+        old_log_ps = None
 
         for update in range(updates_per_batch):
             if self_play:
@@ -511,8 +511,9 @@ class TrainingAlgorithm(ABC):
                 raise NotImplementedError('Only self-play supported')
 
             # --- optimize actor ---
-            actor_loss_dict = self.actor_losses(trajectory)
+            actor_loss_dict = self.actor_losses(trajectory, old_log_ps)
             new_log_ps = actor_loss_dict['log_ps']
+            old_log_ps = actor_loss_dict['old_log_ps']
             kl_divergence = (old_log_ps - new_log_ps).mean()
 
             if update >= 1 and kl_divergence > kl_threshold:
@@ -668,7 +669,7 @@ class TrainingAlgorithm(ABC):
     """ TO BE DEFINED BY INDIVIDUAL ALGORITHMS"""
 
     @abstractmethod
-    def actor_losses(self, batch):
+    def actor_losses(self, batch, old_log_ps):
         pass
 
     @abstractmethod
@@ -749,14 +750,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            surrogates = torch.min(A_1s * A_2s * clipped_log_ps * gammas, A_1s * A_2s * log_ps * gammas)
+            surrogates = torch.min(A_1s * A_2s * clipped_log_ps * gammas, A_1s * A_2s * ratios * gammas)
             aa_loss = surrogates.view((B, N, -1)).mean(dim=(0, 2))
         else:
             aa_loss = (A_1s * A_2s * log_ps * gammas).view((B, N, -1)).mean(dim=(0, 2))
 
         return aa_loss
 
-    def actor_losses(self, trajectory: TrajectoryBatch) -> Dict:
+    def actor_losses(self, trajectory: TrajectoryBatch, old_log_ps: torch.Tensor) -> Dict:
         B = self.batch_size
         N = self.num_agents
 
@@ -768,7 +769,6 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         obs = trajectory.data['obs']
         rewards = trajectory.data['rewards']
-        old_log_ps = trajectory.data['log_ps']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
 
@@ -789,16 +789,21 @@ class AdvantageAlignment(TrainingAlgorithm):
         log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions, full_maps)
         actor_loss_dict['entropy'] = entropy.view((B, N, -1)).mean(dim=(0, 2))
 
-        A_s = compute_gae_advantages(rewards, V_s.detach(), gamma)
+        if old_log_ps == None:
+            old_log_ps = log_ps.detach()
+
+        A_s =  compute_gae_advantages(rewards, V_s.detach(), gamma)
 
         # normalize advantages
-        if self.train_cfg.normalize_advantages:
+        if self.train_cfg.normalize_advantages and self.main_cfg['run_single_agent']:
+            A_s = (A_s - A_s[0, :].mean()) / (A_s[0, :].std() + 1e-8)
+        elif self.train_cfg.normalize_advantages:
             A_s = (A_s - A_s.mean()) / (A_s.std() + 1e-8)
 
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            surrogates = torch.min(A_s * clipped_log_ps[:, :-1], A_s * log_ps[:, :-1])
+            surrogates = torch.min(A_s * clipped_log_ps[:, :-1], A_s * ratios[:, :-1])
             losses_1 = -surrogates.view((B, N, -1)).mean(dim=(0, 2))
         else:
             losses_1 = -(A_s * log_ps[:, :-1]).view((B, N, -1)).mean(dim=(0, 2))
@@ -812,6 +817,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         actor_loss_dict['losses_1'] = losses_1
         actor_loss_dict['losses_2'] = losses_2
         actor_loss_dict['log_ps'] = log_ps
+        actor_loss_dict['old_log_ps'] = old_log_ps
 
         return actor_loss_dict
 
@@ -846,7 +852,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         elif self.train_cfg.critic_loss_mode == 'interpolate':
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
-            rewards_shifted = rewards_1[:, :-1]
+            rewards_shifted = rewards[:, :-1]
             td_0_error = rewards_shifted + gamma * values_t_shifted
             discounted_returns = compute_discounted_returns(gamma, rewards)[:, :-1]
             critic_loss = F.huber_loss(values_c_shifted, (discounted_returns + td_0_error) / 2, reduction='none')
@@ -924,7 +930,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         rewards = torch.zeros((B * N)).to(device)
         log_probs = torch.zeros((B * N)).to(device)
-        actions = torch.zeros((B * N, 1)).to(device)
+        actions = torch.zeros((B * N, 1)).to(device) # Initial token
 
         # create our single kv_cache
         kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
@@ -1049,6 +1055,13 @@ def main(cfg: DictConfig) -> None:
     :param cfg: DictConfig configuration composed by Hydra.
     :return: None
     """
+    if cfg['debug_mode']:
+        import debugpy
+        debugpy.listen(("localhost", 5678))
+        print("Waiting for debugger to attach")
+        debugpy.wait_for_client()
+        print("Debugger to attached")
+    
     seed_all(cfg['seed'])
     wandb.init(
         config=dict(cfg),
