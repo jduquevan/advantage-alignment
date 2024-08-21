@@ -1,5 +1,4 @@
 import hydra
-import math
 import numpy as np
 import os
 import random
@@ -14,16 +13,6 @@ def seed_all(seed):
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-def get_observation(observations, t):
-    return observations[:, t, :]
-
-def get_cosine_similarity_torch(x1, x2, eps=1e-8):
-    dot_product = torch.sum(x1 * x2, dim=-1)
-    norm1 = torch.norm(x1.float(), dim=-1)
-    norm2 = torch.norm(x2.float(), dim=-1)
-    cosine_sim = dot_product / (norm1 * norm2 + eps)
-    return cosine_sim
 
 def compute_discounted_returns(gamma, rewards):
         batch_size, trajectory_len = rewards.shape
@@ -55,16 +44,15 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
 def instantiate_agent(cfg: DictConfig):
     assert cfg.use_transformer is True, "Only Transformer is supported for now."
     use_gru = True
-    encoder_in_size = 23232
     
-    encoder = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+    encoder = hydra.utils.instantiate(cfg.encoder)
     actor = hydra.utils.instantiate(
         cfg.mlp_model,
         encoder=encoder,
     )
     
     if not cfg.share_encoder:
-        encoder_c = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+        encoder_c = hydra.utils.instantiate(cfg.encoder)
         critic = hydra.utils.instantiate(
             cfg.linear_model, 
             encoder=encoder_c,
@@ -75,7 +63,7 @@ def instantiate_agent(cfg: DictConfig):
             encoder=encoder,
         )
 
-    encoder_t = hydra.utils.instantiate(cfg.encoder, in_size=encoder_in_size)
+    encoder_t = hydra.utils.instantiate(cfg.encoder)
     target = hydra.utils.instantiate(
         cfg.linear_model, 
         encoder=encoder_t,

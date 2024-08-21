@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'disabled'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -13,12 +13,17 @@ use_reward_loss: False
 use_spr_loss: True
 device: cuda
 rb_size: 840
-max_seq_len: 50
+use_full_maps: False
+hidden_size: 256
+max_seq_len: 1000
+max_cxt_len: 50
+run_single_agent: True
+debug_mode: True
 
 env:
   type: 'meltingpot'
   batch: 6
-  device: cuda
+  device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
 
@@ -35,35 +40,23 @@ network:
 encoder:
   _target_: train.MeltingpotTransformer
   device: ${device}
-  d_model: 512
-  dim_feedforward: 512 
-  num_layers: 3
+  d_model: ${hidden_size}
+  dim_feedforward: ${hidden_size}
+  num_layers: 2
   max_seq_len: ${max_seq_len}
 
 ss_module:
   _target_: train.SelfSupervisedModule
   n_actions: 8
-  hidden_size: 512
+  hidden_size: ${hidden_size}
   device: ${device}
-  num_layers: 2
-
-transformer_model:
-  _target_: train.MeltingpotTransformer
-  in_size: 50
-  d_model: 512
-  device: ${device}
-  dim_feedforward: 512
   num_layers: 3
-  num_embed_layers: 2
-  nhead: 4
-  max_seq_len: 50
-  dropout: 0.1
 
 mlp_model:
   _target_: train.LinearModel
-  in_size: 512
+  in_size: ${hidden_size}
   device: ${device}
-  hidden_size: 512
+  hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
 
@@ -73,32 +66,23 @@ policy:
 
 linear_model:
   _target_: train.LinearModel
-  in_size: 512
-  hidden_size: 512
+  in_size: ${hidden_size}
+  hidden_size: ${hidden_size}
   out_size: 1
   device: ${device}
   num_layers: 2
 
-spr_model:
-  _target_: train.LinearModel
-  in_size: 512
-  hidden_size: 512
-  out_size: 512
-  device: ${device}
-  num_hidden: 0
-
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-06
-  weight_decay: 1e-8
+  lr: 5e-06
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 5e-06
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 5e-06
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -112,11 +96,11 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.2
-  entropy_beta: 0.15
+  clip_range: 0.5
+  entropy_beta: 0.005
   vanilla: True
-  updates_per_batch: 3
-  kl_threshold: 0.01
+  updates_per_batch: 2
+  kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'MC'
   save_every: 1000
@@ -124,3 +108,5 @@ training:
   aa_weight: 0
   clip_grad_norm: 500
   ss_epochs: 1
+  ss_weight: 1
+  normalize_advantages: True

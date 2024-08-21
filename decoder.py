@@ -5,13 +5,11 @@ Credits to https://github.com/karpathy/minGPT
 
 
 from dataclasses import dataclass
-import math
 from typing import Optional, Tuple
 
 from einops import rearrange
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 import numpy as np
 
 class Cache:
@@ -117,8 +115,7 @@ class AssignWithoutInplaceCheck(torch.autograd.Function):
 
 @dataclass
 class TransformerConfig:
-    tokens_per_block: int
-    max_blocks: int
+    max_seq_len: int  # max tokens in a sequence
     attention: str
 
     num_layers: int
@@ -128,10 +125,6 @@ class TransformerConfig:
     embed_pdrop: float
     resid_pdrop: float
     attn_pdrop: float
-
-    @property
-    def max_tokens(self):
-        return self.tokens_per_block * self.max_blocks
 
 
 class JuanTransformer(nn.Module):
@@ -158,7 +151,7 @@ class JuanTransformer(nn.Module):
         this_kvs = []
         for i, block in enumerate(self.blocks):
             x, this_kv = block(x, None if past_keys_values is None else (past_keys[i], past_values[i]))
-            x = x + src  # skip connection, as for Juan et al.
+            x = x + src  # skip connection
             if not batched:
                 this_k, this_v = this_kv['k'], this_kv['v']
                 this_k = this_k.squeeze(0)
@@ -177,7 +170,7 @@ class Block(nn.Module):
         super().__init__()
         self.ln1 = nn.LayerNorm(config.embed_dim)
         self.ln2 = nn.LayerNorm(config.embed_dim)
-        self.attn = SelfAttention(config)
+        self.attn = CausalSelfAttention(config)
         self.mlp = nn.Sequential(
             nn.Linear(config.embed_dim, 4 * config.embed_dim),
             nn.GELU(),
@@ -192,22 +185,17 @@ class Block(nn.Module):
         return x, this_kv
 
 
-class SelfAttention(nn.Module):
+class CausalSelfAttention(nn.Module):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__()
         assert config.embed_dim % config.num_heads == 0
-        assert config.attention in ('causal', 'block_causal')
         self.num_heads = config.num_heads
         self.key = nn.Linear(config.embed_dim, config.embed_dim)
         self.query = nn.Linear(config.embed_dim, config.embed_dim)
         self.value = nn.Linear(config.embed_dim, config.embed_dim)
-        self.attn_drop = nn.Dropout(config.attn_pdrop)
+        self.attn_drop_p = config.attn_pdrop
         self.resid_drop = nn.Dropout(config.resid_pdrop)
         self.proj = nn.Linear(config.embed_dim, config.embed_dim)
-
-        causal_mask = torch.tril(torch.ones(config.max_tokens, config.max_tokens))
-        block_causal_mask = torch.max(causal_mask, torch.block_diag(*[torch.ones(config.tokens_per_block, config.tokens_per_block) for _ in range(config.max_blocks)]))
-        self.register_buffer('mask', causal_mask if config.attention == 'causal' else block_causal_mask)
 
     def forward(self, x: torch.Tensor, past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> torch.Tensor:
         B, T, C = x.size()
@@ -215,8 +203,6 @@ class SelfAttention(nn.Module):
             past_k, past_v = past_kv
             b, nh, L, c = past_k.shape
             assert nh == self.num_heads and b == B and c * nh == C
-        else:
-            L = 0
 
         q = self.query(x).view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2)   # (B, nh, T, hs)
         k = self.key(x).view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2)     # (B, nh, T, hs)
@@ -228,24 +214,8 @@ class SelfAttention(nn.Module):
             k = torch.cat((past_k, k), dim=2) # todo(milad): check if this is correct
             v = torch.cat((past_v, v), dim=2)
 
-        if self.training:
-            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
-        else:
-            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.mask[L:L + T, :L + T] == 0, float('-inf'))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_drop(att)
-            y = att @ v
-
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_drop_p, is_causal=True)
         y = rearrange(y, 'b h t e -> b t (h e)')
         y = self.resid_drop(self.proj(y))
 
         return y, {'k': this_k, 'v': this_v}
-
-
-from typing import Tuple
-
-import numpy as np
-import torch
-
-
