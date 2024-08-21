@@ -46,6 +46,8 @@ python train.py \
     training.clip_range=${5} \
     training.updates_per_batch=${6} \
     training.kl_threshold=${7} \
+    hidden_size=${8} \
+    encoder.num_layers=${9} \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
     --config-name='meltingpot.yaml' \
