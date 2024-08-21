@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'disabled'
+wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -18,7 +18,7 @@ hidden_size: 256
 max_seq_len: 1000
 max_cxt_len: 50
 run_single_agent: True
-debug_mode: True
+debug_mode: False
 
 env:
   type: 'meltingpot'
