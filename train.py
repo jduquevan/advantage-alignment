@@ -791,7 +791,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         # normalize advantages
         if self.train_cfg.normalize_advantages and self.main_cfg['run_single_agent']:
-            A_s = (A_s - A_s[0, :].mean()) / (A_s[0, :].std() + 1e-8)
+            A_s = (A_s - A_s.view((B, N, -1))[:, 0, :].mean()) / (A_s.view((B, N, -1))[:, 0, :].std() + 1e-8)
         elif self.train_cfg.normalize_advantages:
             A_s = (A_s - A_s.mean()) / (A_s.std() + 1e-8)
 
@@ -1042,7 +1042,7 @@ def call_models_forward(models, observations, actions, full_maps, device, full_s
 
     return vmap_fmodel
 
-
+torch.autograd.set_detect_anomaly(True)
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
