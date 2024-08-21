@@ -10,7 +10,9 @@ from typing import Optional, Tuple
 from einops import rearrange
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
+import math
 
 class Cache:
     def __init__(self, num_samples: int, num_heads: int, max_tokens: int, embed_dim: int, device: torch.device) -> None:
@@ -196,6 +198,8 @@ class CausalSelfAttention(nn.Module):
         self.attn_drop_p = config.attn_pdrop
         self.resid_drop = nn.Dropout(config.resid_pdrop)
         self.proj = nn.Linear(config.embed_dim, config.embed_dim)
+        causal_mask = torch.tril(torch.ones(config.max_seq_len, config.max_seq_len))
+        self.register_buffer('mask', causal_mask)
 
     def forward(self, x: torch.Tensor, past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> torch.Tensor:
         B, T, C = x.size()
@@ -203,6 +207,8 @@ class CausalSelfAttention(nn.Module):
             past_k, past_v = past_kv
             b, nh, L, c = past_k.shape
             assert nh == self.num_heads and b == B and c * nh == C
+        else:
+            L = 0
 
         q = self.query(x).view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2)   # (B, nh, T, hs)
         k = self.key(x).view(B, T, self.num_heads, C // self.num_heads).transpose(1, 2)     # (B, nh, T, hs)
@@ -214,8 +220,12 @@ class CausalSelfAttention(nn.Module):
             k = torch.cat((past_k, k), dim=2) # todo(milad): check if this is correct
             v = torch.cat((past_v, v), dim=2)
 
-        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_drop_p, is_causal=True)
+        
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.mask[L:L + T, :L + T] == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        y = att @ v
         y = rearrange(y, 'b h t e -> b t (h e)')
-        y = self.resid_drop(self.proj(y))
+        y = self.proj(y)
 
         return y, {'k': this_k, 'v': this_v}

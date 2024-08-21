@@ -113,7 +113,7 @@ class SelfSupervisedModule(nn.Module):
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+    def __init__(self, d_model: int, dropout: float = 0.0, max_len: int = 5000):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -953,6 +953,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             start_time = time.time()
 
             # with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
+            past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
             with torch.no_grad():
                 action_logits, this_kvs = call_models_forward(
                     actors,

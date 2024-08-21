@@ -16,6 +16,19 @@ env:
 training:
   max_traj_len: 50
 
+optimizer_actor:
+  lr: 1e-05
+
+optimizer_critic:
+  lr: 1e-05
+
+optimizer_ss:
+  lr: 1e-05
+
+
+
 device: cuda
 
 use_full_maps: False
+
+share_encoder: False
