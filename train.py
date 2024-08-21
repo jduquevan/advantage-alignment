@@ -634,17 +634,15 @@ class TrainingAlgorithm(ABC):
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
-            for i in range(self.train_cfg.updates_per_batch):
+            train_step_metrics = self.train_step(
+                trajectory=trajectory,
+                agents=self.agents,
+                optimize_critic=True
+            )
 
-                train_step_metrics = self.train_step(
-                    trajectory=trajectory,
-                    agents=self.agents,
-                    optimize_critic=True
-                )
-
-                for key, value in train_step_metrics.items():
-                    print(key + ":", value)
-                print()
+            for key, value in train_step_metrics.items():
+                print(key + ":", value)
+            print()
             time_metrics["time_metrics/train_step"] = time.time() - start_time
             start_time = time.time()
 
