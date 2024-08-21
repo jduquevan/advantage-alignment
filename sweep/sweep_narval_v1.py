@@ -10,14 +10,16 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4],
-        'optimizer_critic.lr': [1e-7, 5e-7, 1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4],
-        'training.entropy_beta': [0.005, 0.01, 0.05, 0.1, 0.3],
-        'training.clip_range': [0.1, 0.15, 0.2, 0.3, 0.5],
-        'training.updates_per_batch': [1, 2, 3, 4],
-        'training.kl_threshold': [0.01, 0.05, 0.1],
-        'hidden_size': [32, 64, 128, 256, 512, 1024],
-        'encoder.num_layers': [1, 2, 3, 4, 5, 6, 7]
+        'optimizer_actor.lr': [1e-6, 3e-6, 7e-6, 3e-5, 1e-5, 3e-5, 7e-5, 1e-4, 3e-4],
+        'optimizer_critic.lr': [ 1e-6, 3e-6, 7e-6, 3e-5, 1e-5, 3e-5, 7e-5, 1e-4, 3e-4],
+        'training.entropy_beta': [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.3],
+        'training.clip_range': [0.1, 0.15, 0.2, 0.3, 0.4, 0.5],
+        'training.updates_per_batch': [1, 2, 3],
+        'training.kl_threshold': [0.01, 0.05],
+        'hidden_size': [128, 256, 512],
+        'encoder.num_layers': [3, 4, 5, 6, 7],
+        'training.critic_loss_mode': ['MC', 'td-1', 'interpolate'],
+        'max_cxt_len': [50, 100, 150],
     }
 
     # sample a random config

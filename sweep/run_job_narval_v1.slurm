@@ -17,7 +17,7 @@
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-2:59:00   
+#SBATCH --time=0-5:59:00   
 #SBATCH --gres=gpu:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
@@ -48,6 +48,8 @@ python train.py \
     training.kl_threshold=${7} \
     hidden_size=${8} \
     encoder.num_layers=${9} \
+    training.critic_loss_mode=${10} \
+    max_cxt_len=${11} \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
     --config-name='meltingpot.yaml' \

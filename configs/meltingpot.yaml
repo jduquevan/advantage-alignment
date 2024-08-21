@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -106,7 +106,7 @@ training:
   save_every: 1000
   checkpoint_dir: './experiments'
   aa_weight: 0
-  clip_grad_norm: 500
+  clip_grad_norm: 10
   ss_epochs: 1
   ss_weight: 1
   normalize_advantages: True
