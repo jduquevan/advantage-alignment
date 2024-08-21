@@ -18,7 +18,7 @@ hidden_size: 256
 max_seq_len: 1000
 max_cxt_len: 50
 run_single_agent: True
-debug_mode: False
+debug_mode: True
 
 env:
   type: 'meltingpot'
@@ -42,7 +42,7 @@ encoder:
   device: ${device}
   d_model: ${hidden_size}
   dim_feedforward: ${hidden_size}
-  num_layers: 2
+  num_layers: 5
   max_seq_len: ${max_seq_len}
 
 ss_module:
@@ -74,15 +74,15 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-06
+  lr: 1e-05
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 5e-06
+  lr: 1e-05
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 5e-06
+  lr: 1e-05
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -96,8 +96,8 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.5
-  entropy_beta: 0.005
+  clip_range: 0.3
+  entropy_beta: 0.05
   vanilla: True
   updates_per_batch: 2
   kl_threshold: 0.05
@@ -108,5 +108,6 @@ training:
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
-  ss_weight: 1
+  id_weight: 1
+  spr_weight: 1
   normalize_advantages: True

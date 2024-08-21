@@ -3,4 +3,5 @@
 wandb/
 experiments/
 runs/
+videos/
 *.json
