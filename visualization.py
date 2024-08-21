@@ -1,16 +1,13 @@
 import cv2
 import hydra
 import os
-import time
 
 import numpy as np
 import torch as t
  
 from omegaconf import DictConfig, OmegaConf
-from PIL import Image, ImageDraw, ImageFont
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
-from typing import Callable, Any, Tuple, List, Dict
 
 from train import (
     _gen_sim,
@@ -98,9 +95,6 @@ def main(cfg: DictConfig) -> None:
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    # rewards = np.concatenate(rewards, axis=1)
-    # new_frames = glue_rewards_to_images(frames, rewards)
-    # create_video_from_images(new_frames, output_folder='./', video_name=f'test_rewards_gluing.mov')
     create_video_from_frames(frames, output_folder=output_folder, video_name='output.mp4', frame_rate=3)
 
     
