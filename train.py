@@ -113,7 +113,7 @@ class SelfSupervisedModule(nn.Module):
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+    def __init__(self, d_model: int, dropout: float = 0.0, max_len: int = 5000):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -743,7 +743,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         gammas = torch.pow(gamma, torch.arange(T)).repeat(B * N, 1).to(device)
 
         if proximal:
-            ratios = torch.exp(log_ps - old_log_ps.detach())
+            ratios = torch.exp(torch.clamp(log_ps - old_log_ps.detach(), min=-10, max=10))
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
             surrogates = torch.min(A_1s * A_2s * clipped_log_ps * gammas, A_1s * A_2s * ratios * gammas)
             aa_loss = surrogates.view((B, N, -1)).mean(dim=(0, 2))
@@ -796,7 +796,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             A_s = (A_s - A_s.mean()) / (A_s.std() + 1e-8)
 
         if proximal:
-            ratios = torch.exp(log_ps - old_log_ps.detach())
+            ratios = torch.exp(torch.clamp(log_ps - old_log_ps.detach(), min=-10, max=10))
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
             surrogates = torch.min(A_s * clipped_log_ps[:, :-1], A_s * ratios[:, :-1])
             losses_1 = -surrogates.view((B, N, -1)).mean(dim=(0, 2))
@@ -953,6 +953,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             start_time = time.time()
 
             # with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
+            past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
             with torch.no_grad():
                 action_logits, this_kvs = call_models_forward(
                     actors,
@@ -1042,7 +1044,7 @@ def call_models_forward(models, observations, actions, full_maps, device, full_s
 
     return vmap_fmodel
 
-torch.autograd.set_detect_anomaly(True)
+
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
