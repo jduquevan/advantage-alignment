@@ -80,16 +80,15 @@ def main(cfg: DictConfig) -> None:
 
     state = env.reset()
 
+    replay_buffer = ReplayBuffer(
+        env=env,
+        replay_buffer_size=cfg['rb_size'],
+        n_agents=len(agents),
+        cxt_len=cxt_len,
+        device=cfg['device']
+    )
+
     for i in range(num_frames // cxt_len):
-
-        replay_buffer = ReplayBuffer(
-            env=env,
-            replay_buffer_size=cfg['rb_size'],
-            n_agents=len(agents),
-            cxt_len=cxt_len,
-            device=cfg['device']
-        )
-
         trajectory, state = _gen_sim(state, env, 1, cxt_len, agents, replay_buffer, True)
         images.append(trajectory.data['full_maps'][0].cpu().numpy())
         rewards.append(trajectory.data['rewards'].cpu().numpy())
