@@ -27,7 +27,7 @@ from utils import (
     compute_gae_advantages,
     update_target_network,
     wandb_stats,
-    save_checkpoint
+    save_checkpoint, flatten_native_dict
 )
 
 from collections import defaultdict
@@ -1060,8 +1060,10 @@ def main(cfg: DictConfig) -> None:
         print("Debugger to attached")
     
     seed_all(cfg['seed'])
+    wandb_friendly_cfg = {k: v for (k, v ) in flatten_native_dict(OmegaConf.to_container(cfg, resolve=True))}
+
     wandb.init(
-        config=dict(cfg),
+        config=wandb_friendly_cfg,
         project="Meltingpot",
         dir=cfg["wandb_dir"],
         reinit=True,

@@ -124,3 +124,39 @@ def wandb_stats(trajectory, B, N):
         trajectory.data['rewards'].reshape(B, N, -1), dim=1
     ).unsqueeze(1).repeat(1, N, 1).mean().detach()
     return stats
+
+
+from omegaconf import OmegaConf
+
+
+def flatten_native_dict(cfg, parent_key='', sep='.'):
+    """
+    Recursively flattens a Python dictionary (or list) into a list of key-value pairs.
+    The keys will be in dot notation.
+
+    Args:
+        cfg: Python dict or list to flatten.
+        parent_key: Current key prefix (used in recursion).
+        sep: Separator between keys (default is a dot).
+
+    Returns:
+        A list of tuples containing flattened key-value pairs.
+    """
+    items = []
+
+    if isinstance(cfg, dict):
+        for k, v in cfg.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, (dict, list)):
+                items.extend(flatten_native_dict(v, new_key, sep=sep))
+            else:
+                items.append((new_key, v))
+    elif isinstance(cfg, list):
+        for i, v in enumerate(cfg):
+            new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+            if isinstance(v, (dict, list)):
+                items.extend(flatten_native_dict(v, new_key, sep=sep))
+            else:
+                items.append((new_key, v))
+
+    return items
