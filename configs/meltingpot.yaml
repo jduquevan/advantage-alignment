@@ -15,10 +15,10 @@ device: cuda
 rb_size: 840
 use_full_maps: False
 hidden_size: 256
-max_seq_len: 1000
-max_cxt_len: 50
+max_seq_len: 1500
+max_cxt_len: 100
 run_single_agent: True
-debug_mode: True
+debug_mode: False
 
 env:
   type: 'meltingpot'
