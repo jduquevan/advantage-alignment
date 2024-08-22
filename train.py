@@ -181,7 +181,7 @@ class MeltingpotTransformer(nn.Module):
 
         encoder = RLTransformer(
             TransformerConfig(
-                max_seq_len=max_seq_len,
+                max_seq_len=max_seq_len * 2,
                 attention='causal',
                 attention_impl='scaled_dot',
                 num_layers=num_layers,
