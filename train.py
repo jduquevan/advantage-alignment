@@ -19,7 +19,7 @@ from typing import Any, List, Tuple, Dict
 
 import time
 
-from decoder import JuanTransformer, TransformerConfig
+from decoder import RLTransformer, TransformerConfig
 from utils import (
     seed_all,
     instantiate_agent,
@@ -177,7 +177,7 @@ class MeltingpotTransformer(nn.Module):
 
         # self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
 
-        encoder = JuanTransformer(
+        encoder = RLTransformer(
             TransformerConfig(
                 max_seq_len=max_seq_len,
                 attention='causal',
