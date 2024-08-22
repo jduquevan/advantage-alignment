@@ -933,8 +933,6 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
 
     # create our single kv_cache
     kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
-    past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
-    past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
 
     for i in range(cxt_len):
         start_time = time.time()
