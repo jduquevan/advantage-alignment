@@ -183,6 +183,7 @@ class MeltingpotTransformer(nn.Module):
             TransformerConfig(
                 max_seq_len=max_seq_len,
                 attention='causal',
+                attention_impl='scaled_dot',
                 num_layers=num_layers,
                 num_heads=nhead,
                 embed_dim=d_model,
