@@ -83,7 +83,7 @@ class SelfSupervisedModule(nn.Module):
         self.action_layer = nn.Linear(self.hidden_size, self.n_actions)
 
         self.spr_hidden_layers = nn.ModuleList([
-            nn.Linear(self.hidden_size, self.hidden_size)
+            nn.Linear(self.hidden_size, self.hidden_size) 
             for i in range(num_layers)
         ])
         self.spr_layer = nn.Linear(self.hidden_size, self.hidden_size)
@@ -91,7 +91,7 @@ class SelfSupervisedModule(nn.Module):
         self.to(device)
 
     def forward(self, obs, actions, full_maps, batched: bool = False):
-        obs = obs / 255.0  # normalize
+        obs = obs / 255.0 # normalize
         full_maps = full_maps / 255.0
         actions = actions[:, :-1]
 
@@ -103,7 +103,7 @@ class SelfSupervisedModule(nn.Module):
         action_logits = F.relu(self.action_layer(action_reps))
 
         reps, this_kv = self.encoder(obs, actions, full_maps, batched=batched)
-        next_state_reps = reps[:, 1::2, :]  # Select the state representations a, s, a, s
+        next_state_reps = reps[:, 1::2, :] # Select the state representations a, s, a, s
 
         for layer in self.spr_hidden_layers:
             next_state_reps = F.relu(layer(next_state_reps))
@@ -111,7 +111,6 @@ class SelfSupervisedModule(nn.Module):
         spr_preds = F.relu(self.spr_layer(next_state_reps))
 
         return action_logits, next_state_reps[:, :-1, :], spr_preds[:, 1:, :]
-
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -171,6 +170,7 @@ class MeltingpotTransformer(nn.Module):
             self.embed_fmp_layer = nn.Linear(64 * 14 * 20, d_model - (d_model // 2))
         else:
             self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model)
+        
 
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
@@ -202,8 +202,8 @@ class MeltingpotTransformer(nn.Module):
             T, _, _, _ = obs.shape
             B = 1
 
-        obs = obs / 255.0  # normalize
-        full_maps = full_maps / 255.0  # normalize
+        obs = obs / 255.0 # normalize
+        full_maps = full_maps / 255.0 # normalize
         src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
@@ -582,7 +582,7 @@ class TrainingAlgorithm(ABC):
 
         # --- optimize self-supervised objectives ---
         for update in range(ss_epochs):
-            if self_play and not run_single_agent:
+            if self_play  and not run_single_agent:
                 agent.ss_optimizer.zero_grad()
                 ss_loss_dict = self.self_supervised_losses(trajectory)
                 id_loss = ss_loss_dict['id_losses'].mean()
@@ -789,7 +789,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if old_log_ps == None:
             old_log_ps = log_ps.detach()
 
-        A_s = compute_gae_advantages(rewards, V_s.detach(), gamma)
+        A_s =  compute_gae_advantages(rewards, V_s.detach(), gamma)
 
         # normalize advantages
         if self.train_cfg.normalize_advantages and self.main_cfg['run_single_agent']:
@@ -932,9 +932,9 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
     actions = torch.zeros((B * N, 1)).to(device) # Initial token
 
     # create our single kv_cache
-    _former = actors[0].encoder.transformer_encoder
-    past_ks_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads)
-    past_vs_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads)
+    kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
+    past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
+    past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
 
     for i in range(cxt_len):
         start_time = time.time()
@@ -958,10 +958,8 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
         start_time = time.time()
 
         # with torch.autocast(device_type=device, dtype=torch.bfloat16):
-        past_ks = past_ks_all[:, :, :, :2 * i, :]  # 2i because we are adding 2 tokens at each step, one action, one state
-        past_vs = past_vs_all[:, :, :, :2 * i, :]  # 2i because we are adding 2 tokens at each step, one action, one state
-        print("checks passed")
-
+        past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
+        past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
         with torch.no_grad():
             action_logits, this_kvs = call_models_forward(
                 actors,
@@ -976,10 +974,11 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
         start_time = time.time()
         history_action_logits[:, i, :] = action_logits.reshape(B * N, -1)
 
-        assert this_kvs['k'].shape[-2] == 2
-        past_ks_all[:, :, :, 2 * i:2 * i + 2, :] = this_kvs['k']
-        past_vs_all[:, :, :, 2 * i:2 * i + 2, :] = this_kvs['v']
-
+        # update the kv_caches
+        for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
+            this_layer_k = this_kvs['k'][:, j, ...]
+            this_layer_v = this_kvs['v'][:, j, ...]
+            layer_cache.update(this_layer_k, this_layer_v)
         time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
         start_time = time.time()
         actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
@@ -988,8 +987,8 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
             actions = actions.reshape((B, N))
             mask = torch.zeros_like(actions).to(actions.device)
             mask[:, 0] = 1
-            actions = actions * mask
-
+            actions = actions*mask
+        
         actions = actions.reshape(B * N, 1)
         actions_dict = TensorDict(
             source={'agents': TensorDict(source={'action': actions.reshape(B, N)})},
@@ -1061,7 +1060,7 @@ def main(cfg: DictConfig) -> None:
         print("Waiting for debugger to attach")
         debugpy.wait_for_client()
         print("Debugger to attached")
-
+    
     seed_all(cfg['seed'])
     wandb.init(
         config=dict(cfg),
