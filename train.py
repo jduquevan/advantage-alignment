@@ -883,7 +883,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
     def gen_sim(self, state):
-        return _gen_sim(
+        return self._gen_sim(
             state,
             self.env,
             self.batch_size,
