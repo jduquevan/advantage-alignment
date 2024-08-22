@@ -117,8 +117,10 @@ class AssignWithoutInplaceCheck(torch.autograd.Function):
 
 @dataclass
 class TransformerConfig:
+
     max_seq_len: int  # max tokens in a sequence
     attention: str
+    attention_impl: str
 
     num_layers: int
     num_heads: int
@@ -129,13 +131,14 @@ class TransformerConfig:
     attn_pdrop: float
 
 
-class JuanTransformer(nn.Module):
+class RLTransformer(nn.Module):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__()
         self.config = config
         self.drop = nn.Dropout(config.embed_pdrop)
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.num_layers)])
         self.ln_f = nn.LayerNorm(config.embed_dim)
+        assert config.attention == 'causal', "Only causal attention is supported for now."
 
     def generate_empty_keys_values(self, n: int, max_tokens: int) -> KeysValues:
         device = self.ln_f.weight.device  # Assumption that all submodules are on the same device
@@ -195,11 +198,14 @@ class CausalSelfAttention(nn.Module):
         self.key = nn.Linear(config.embed_dim, config.embed_dim)
         self.query = nn.Linear(config.embed_dim, config.embed_dim)
         self.value = nn.Linear(config.embed_dim, config.embed_dim)
+        assert config.attn_pdrop == 0.0, "Dropout not yet implemented for attention. especially scaled_dot"
+        assert config.resid_pdrop == 0.0, "Dropout not yet implemented for attention. especially scaled_dot"
         self.attn_drop_p = config.attn_pdrop
         self.resid_drop = nn.Dropout(config.resid_pdrop)
         self.proj = nn.Linear(config.embed_dim, config.embed_dim)
         causal_mask = torch.tril(torch.ones(config.max_seq_len, config.max_seq_len))
         self.register_buffer('mask', causal_mask)
+        self.attention_impl = config.attention_impl
 
     def forward(self, x: torch.Tensor, past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> torch.Tensor:
         B, T, C = x.size()
@@ -220,11 +226,16 @@ class CausalSelfAttention(nn.Module):
             k = torch.cat((past_k, k), dim=2) # todo(milad): check if this is correct
             v = torch.cat((past_v, v), dim=2)
 
-        
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.mask[L:L + T, :L + T] == 0, float('-inf'))
-        att = F.softmax(att, dim=-1)
-        y = att @ v
+        if self.attention_impl == 'original':
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            att = att.masked_fill(self.mask[L:L + T, :L + T] == 0, float('-inf'))
+            att = F.softmax(att, dim=-1)
+            y = att @ v
+        elif self.attention_impl == 'scaled_dot':
+            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, self.mask[L:L + T, :L + T] == 1, dropout_p=0.0, scale=(1.0 / math.sqrt(k.size(-1))))
+        else:
+            raise ValueError(f"Unknown attention implementation: {self.attention_impl}")
+
         y = rearrange(y, 'b h t e -> b t (h e)')
         y = self.proj(y)
 

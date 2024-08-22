@@ -19,7 +19,7 @@ from utils import (
 
 num_frames = 1000
 model_folder = 'experiments'
-model_name = 'x3m4fr9o/model_1000.pt'
+model_name = 'jigkkapa/model_5000.pt'
 output_folder = 'videos'
 
 
