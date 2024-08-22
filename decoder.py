@@ -129,13 +129,14 @@ class TransformerConfig:
     attn_pdrop: float
 
 
-class JuanTransformer(nn.Module):
+class RLTransformer(nn.Module):
     def __init__(self, config: TransformerConfig) -> None:
         super().__init__()
         self.config = config
         self.drop = nn.Dropout(config.embed_pdrop)
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.num_layers)])
         self.ln_f = nn.LayerNorm(config.embed_dim)
+        assert config.attention == 'causal', "Only causal attention is supported for now."
 
     def generate_empty_keys_values(self, n: int, max_tokens: int) -> KeysValues:
         device = self.ln_f.weight.device  # Assumption that all submodules are on the same device
