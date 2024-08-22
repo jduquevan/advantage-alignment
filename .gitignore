@@ -1,4 +1,6 @@
 *.pyc
 *.out
+*.json
 wandb/
 experiments/
+videos/

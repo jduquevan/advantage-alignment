@@ -426,8 +426,8 @@ class AdvantageAlignment(TrainingAlgorithm):
         actions_1 = torch.cat([acts_1, acts_2], dim=2)
         actions_2 = torch.cat([acts_2, acts_1], dim=2)
         
-        _, V_1s = self.get_trajectory_values(agent, actions_1, observation_1)
-        _, V_2s = self.get_trajectory_values(other_agent, actions_2, observation_2)
+        V_1s, _ = self.get_trajectory_values(agent, actions_1, observation_1)
+        V_2s, _ = self.get_trajectory_values(other_agent, actions_2, observation_2)
 
         if self.is_f1:
             log_ps, acc_ent, ste_ent = self.get_f1_trajectory_log_ps(agent, trajectory, is_first)
@@ -450,7 +450,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if proximal:
             ratios = torch.exp(log_ps - old_log_ps.detach())
             clipped_log_ps = torch.clamp(ratios, 1 - clip_range, 1 + clip_range)
-            surrogates = torch.min(A_1s * clipped_log_ps[:, :-1], A_1s * log_ps[:, :-1])
+            surrogates = torch.min(A_1s * clipped_log_ps[:, :-1], A_1s * ratios[:, :-1])
             loss_1 = -surrogates.mean()
         else:
             # loss_1 = -(gammas[:, :-1] * A_1s * log_ps[:, :-1]).mean()
