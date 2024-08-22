@@ -14,7 +14,7 @@ env:
   batch: 6
 
 training:
-  max_traj_len: 50
+  max_traj_len: 1000
 
 optimizer_actor:
   lr: 1e-05
