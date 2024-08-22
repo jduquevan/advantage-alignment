@@ -933,8 +933,8 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
 
     # create our single kv_cache
     _former = actors[0].encoder.transformer_encoder
-    past_ks_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads, device=device)
-    past_vs_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads, device=device)
+    past_ks_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads)
+    past_vs_all = torch.empty(B * N, len(_former.blocks), _former.config.num_heads, cxt_len * 2, _former.config.embed_dim // _former.config.num_heads)
 
     for i in range(cxt_len):
         start_time = time.time()
@@ -960,6 +960,7 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
         # with torch.autocast(device_type=device, dtype=torch.bfloat16):
         past_ks = past_ks_all[:, :, :, :2 * i, :]  # 2i because we are adding 2 tokens at each step, one action, one state
         past_vs = past_vs_all[:, :, :, :2 * i, :]  # 2i because we are adding 2 tokens at each step, one action, one state
+        print("checks passed")
 
         with torch.no_grad():
             action_logits, this_kvs = call_models_forward(
