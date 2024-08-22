@@ -50,6 +50,7 @@ python train.py \
     encoder.num_layers=${9} \
     training.critic_loss_mode=${10} \
     max_cxt_len=${11} \
+    debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
     --config-name='meltingpot.yaml' \
