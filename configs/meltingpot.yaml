@@ -75,7 +75,7 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 5e-06
 
 optimizer_critic:
   _target_: torch.optim.Adam

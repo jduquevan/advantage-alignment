@@ -1,5 +1,6 @@
 import cv2
 import hydra
+import imageio
 import os
 
 import numpy as np
@@ -19,9 +20,23 @@ from utils import (
 
 num_frames = 1000
 model_folder = 'experiments'
-model_name = 'jigkkapa/model_5000.pt'
+model_name = 'ewo1jd39/model_3000.pt'
 output_folder = 'videos'
 
+def create_video_with_imageio(frames, output_folder, video_name='output.mp4', frame_rate=3):
+    # Ensure the output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    video_path = os.path.join(output_folder, video_name)
+
+    # Normalize frames if needed and ensure they are in uint8 format
+    if frames.dtype != np.uint8:
+        frames = (frames).astype(np.uint8)
+
+    # Write video using imageio
+    imageio.mimsave(video_path, frames, fps=frame_rate, macro_block_size=None)
+    print(f"Video saved to {video_path}")
 
 def create_video_from_frames(frames, output_folder, video_name='output.mp4', frame_rate=3):
     """
@@ -94,7 +109,7 @@ def main(cfg: DictConfig) -> None:
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    create_video_from_frames(frames, output_folder=output_folder, video_name='cooperative.mp4', frame_rate=3)
+    create_video_with_imageio(frames, output_folder=output_folder, video_name='cooperative.mp4', frame_rate=3)
 
     
 
