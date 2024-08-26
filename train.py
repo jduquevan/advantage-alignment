@@ -147,6 +147,7 @@ class MeltingpotTransformer(nn.Module):
         max_seq_len=100,
         dropout=0.0,
         use_full_maps=False,
+        attention_impl='original',
     ):
 
         super(MeltingpotTransformer, self).__init__()
@@ -159,6 +160,7 @@ class MeltingpotTransformer(nn.Module):
         self.num_layers = num_layers
         self.n_heads = nhead
         self.max_seq_len = max_seq_len
+        self.attention_impl = attention_impl
 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4)
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
@@ -183,7 +185,7 @@ class MeltingpotTransformer(nn.Module):
             TransformerConfig(
                 max_seq_len=max_seq_len,
                 attention='causal',
-                attention_impl='original',
+                attention_impl=attention_impl,
                 num_layers=num_layers,
                 num_heads=nhead,
                 embed_dim=d_model,
