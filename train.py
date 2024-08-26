@@ -96,7 +96,7 @@ class SelfSupervisedModule(nn.Module):
         actions = actions[:, :-1]
 
         actions_reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
-        action_reps = actions_reps[:, 0::2, :]  # Select the action representations in a, s, a, s
+        action_reps = actions_reps[:, 1::2, :]  # Select the state representations in a, s, a, s
         for layer in self.action_hidden_layers:
             action_reps = F.relu(layer(action_reps))
 
@@ -181,9 +181,9 @@ class MeltingpotTransformer(nn.Module):
 
         encoder = RLTransformer(
             TransformerConfig(
-                max_seq_len=max_seq_len * 2,
+                max_seq_len=max_seq_len,
                 attention='causal',
-                attention_impl='scaled_dot',
+                attention_impl='original',
                 num_layers=num_layers,
                 num_heads=nhead,
                 embed_dim=d_model,
@@ -500,6 +500,7 @@ class TrainingAlgorithm(ABC):
         self_play = self.main_cfg['self_play']
         kl_threshold = self.train_cfg['kl_threshold']
         updates_per_batch = self.train_cfg['updates_per_batch']
+        use_ss_loss = self.main_cfg['use_ss_loss']
         ss_epochs = self.train_cfg['ss_epochs']
         id_weight = self.train_cfg['id_weight']
         spr_weight = self.train_cfg['spr_weight']
@@ -582,7 +583,7 @@ class TrainingAlgorithm(ABC):
 
         # --- optimize self-supervised objectives ---
         for update in range(ss_epochs):
-            if self_play  and not run_single_agent:
+            if self_play and use_ss_loss and not run_single_agent:
                 agent.ss_optimizer.zero_grad()
                 ss_loss_dict = self.self_supervised_losses(trajectory)
                 id_loss = ss_loss_dict['id_losses'].mean()
@@ -883,7 +884,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
     def gen_sim(self, state):
-        return self._gen_sim(
+        return _gen_sim(
             state,
             self.env,
             self.batch_size,
@@ -896,115 +897,115 @@ class AdvantageAlignment(TrainingAlgorithm):
     def eval(self, agent):
         pass
 
-    @staticmethod
-    def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_agent=False):
-        time_metrics = defaultdict(int)
-        B = batch_size
-        N = len(agents)
-        device = agents[0].device
+@staticmethod
+def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_agent=False):
+    time_metrics = defaultdict(int)
+    B = batch_size
+    N = len(agents)
+    device = agents[0].device
 
-        _, _, H, W, C = state['agents']['observation']['RGB'].shape
-        _, G, L, _ = state['RGB'].shape
-        history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
-        history_actions = torch.zeros((B * N, cxt_len + 1), device=device)
-        history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
-        history_action_logits = torch.zeros((B * N, cxt_len, 8), device=device)
+    _, _, H, W, C = state['agents']['observation']['RGB'].shape
+    _, G, L, _ = state['RGB'].shape
+    history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
+    history_actions = torch.zeros((B * N, cxt_len + 1), device=device)
+    history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
+    history_action_logits = torch.zeros((B * N, cxt_len, 8), device=device)
 
-        # Self-play only TODO: Add replay buffer of agents
-        actors = [agents[i % N].actor for i in range(B * N)]
-
-
-        # set to eval mode
-        for actor in actors:
-            actor.eval()
-
-        trajectory = TrajectoryBatch(
-            sample_obs=state['agents']['observation']['RGB'],
-            sample_full_map=state['RGB'],
-            batch_size=B,
-            n_agents=N,
-            cxt_len=cxt_len,
-            device=device
-        )
-
-        rewards = torch.zeros((B * N)).to(device)
-        log_probs = torch.zeros((B * N)).to(device)
-        actions = torch.zeros((B * N, 1)).to(device) # Initial token
-
-        # create our single kv_cache
-        kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
-
-        for i in range(cxt_len):
-            start_time = time.time()
-            full_maps = state['RGB']
-            full_maps = full_maps.unsqueeze(1)
-
-            observations = state['agents']['observation']['RGB']
-            observations = observations.reshape(-1, 1, *observations.shape[2:])
-
-            trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
-
-            history[:, i, ...] = observations.squeeze(1)
-            history_actions[:, i] = actions.squeeze(1)
-            history_full_maps[:, i, ...] = full_maps.squeeze(1)
-
-            observations = history[:, :i + 1, ...]
-            actions = history_actions[:, :i + 1]
-            full_maps = history_full_maps[:, :i + 1, ...]
-            full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
-            time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
-            start_time = time.time()
+    # Self-play only TODO: Add replay buffer of agents
+    actors = [agents[i % N].actor for i in range(B * N)]
 
 
-            past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
-            past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
-            with torch.no_grad():
-                action_logits, this_kvs = call_models_forward(
-                    actors,
-                    observations,
-                    actions,
-                    full_maps_repeated,
-                    agents[0].device,
-                    full_seq=0,
-                    past_ks_vs=(past_ks, past_vs)
-                )
-            time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
-            start_time = time.time()
-            history_action_logits[:, i, :] = action_logits.reshape(B * N, -1)
+    # set to eval mode
+    for actor in actors:
+        actor.eval()
 
-            # update the kv_caches
-            for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
-                this_layer_k = this_kvs['k'][:, j, ...]
-                this_layer_v = this_kvs['v'][:, j, ...]
-                layer_cache.update(this_layer_k, this_layer_v)
-            time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
-            start_time = time.time()
-            actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
+    trajectory = TrajectoryBatch(
+        sample_obs=state['agents']['observation']['RGB'],
+        sample_full_map=state['RGB'],
+        batch_size=B,
+        n_agents=N,
+        cxt_len=cxt_len,
+        device=device
+    )
 
-            if run_single_agent:
-                actions = actions.reshape((B, N))
-                mask = torch.zeros_like(actions).to(actions.device)
-                mask[:, 0] = 1
-                actions = actions*mask
+    rewards = torch.zeros((B * N)).to(device)
+    log_probs = torch.zeros((B * N)).to(device)
+    actions = torch.zeros((B * N, 1)).to(device) # Initial token
 
-            actions = actions.reshape(B * N, 1)
-            actions_dict = TensorDict(
-                source={'agents': TensorDict(source={'action': actions.reshape(B, N)})},
-                batch_size=[B]
-            )
-            time_metrics["time_metrics/gen/sample_actions"] += time.time() - start_time
-            start_time = time.time()
+    # create our single kv_cache
+    kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
 
-            state = env.step(actions_dict)['next']
-            time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
-            rewards = state['agents']['reward'].reshape(B * N)
-
+    for i in range(cxt_len):
         start_time = time.time()
-        trajectory.add_actions(actions, cxt_len)
-        replay_buffer.add_trajectory_batch(trajectory)
-        time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
-        print(f"(|||)Time metrics: {time_metrics}")
-        return trajectory, state
+        full_maps = state['RGB']
+        full_maps = full_maps.unsqueeze(1)
+
+        observations = state['agents']['observation']['RGB']
+        observations = observations.reshape(-1, 1, *observations.shape[2:])
+
+        trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
+
+        history[:, i, ...] = observations.squeeze(1)
+        history_actions[:, i] = actions.squeeze(1)
+        history_full_maps[:, i, ...] = full_maps.squeeze(1)
+
+        observations = history[:, :i + 1, ...]
+        actions = history_actions[:, :i + 1]
+        full_maps = history_full_maps[:, :i + 1, ...]
+        full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
+        time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
+        start_time = time.time()
+
+
+        past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
+        past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
+        with torch.no_grad():
+            action_logits, this_kvs = call_models_forward(
+                actors,
+                observations,
+                actions,
+                full_maps_repeated,
+                agents[0].device,
+                full_seq=0,
+                past_ks_vs=(past_ks, past_vs)
+            )
+        time_metrics["time_metrics/gen/nn_forward"] += time.time() - start_time
+        start_time = time.time()
+        history_action_logits[:, i, :] = action_logits.reshape(B * N, -1)
+
+        # update the kv_caches
+        for j, layer_cache in enumerate(kv_cache._keys_values):  # looping over caches for layers
+            this_layer_k = this_kvs['k'][:, j, ...]
+            this_layer_v = this_kvs['v'][:, j, ...]
+            layer_cache.update(this_layer_k, this_layer_v)
+        time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
+        start_time = time.time()
+        actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
+
+        if run_single_agent:
+            actions = actions.reshape((B, N))
+            mask = torch.zeros_like(actions).to(actions.device)
+            mask[:, 0] = 1
+            actions = actions*mask
+
+        actions = actions.reshape(B * N, 1)
+        actions_dict = TensorDict(
+            source={'agents': TensorDict(source={'action': actions.reshape(B, N)})},
+            batch_size=[B]
+        )
+        time_metrics["time_metrics/gen/sample_actions"] += time.time() - start_time
+        start_time = time.time()
+
+        state = env.step(actions_dict)['next']
+        time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
+        rewards = state['agents']['reward'].reshape(B * N)
+
+    start_time = time.time()
+    trajectory.add_actions(actions, cxt_len)
+    replay_buffer.add_trajectory_batch(trajectory)
+    time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
+    print(f"(|||)Time metrics: {time_metrics}")
+    return trajectory, state
 
 
 def sample_actions_categorical(action_logits, actions=None):

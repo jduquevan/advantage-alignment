@@ -89,12 +89,12 @@ def main(cfg: DictConfig) -> None:
     )
 
     for i in range(num_frames // cxt_len):
-        trajectory, state = _gen_sim(state, env, 1, cxt_len, agents, replay_buffer, True)
+        trajectory, state = _gen_sim(state, env, 1, cxt_len, agents, replay_buffer, False)
         images.append(trajectory.data['full_maps'][0].cpu().numpy())
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    create_video_from_frames(frames, output_folder=output_folder, video_name='output.mp4', frame_rate=3)
+    create_video_from_frames(frames, output_folder=output_folder, video_name='cooperative.mp4', frame_rate=3)
 
     
 
