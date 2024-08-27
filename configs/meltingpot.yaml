@@ -45,6 +45,7 @@ encoder:
   dim_feedforward: ${hidden_size}
   num_layers: 4
   max_seq_len: ${max_seq_len}
+  attention_impl: 'original'
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -112,3 +113,4 @@ training:
   id_weight: 0
   spr_weight: 0
   normalize_advantages: True
+  integrated_aa_terms: False
