@@ -728,7 +728,8 @@ class AdvantageAlignment(TrainingAlgorithm):
     def aa_terms(self, A_s):
         B = self.batch_size
         N = self.num_agents
-        device = A_s.device
+        device = A_s.device # shape(B*N, T)
+        assert A_s.shape[0] == B*N
 
         A_1s = torch.cumsum(A_s, dim=1)
 
@@ -738,7 +739,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B * N, -1))
 
-        return A_1s * A_2s
+        return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1)
 
     def aa_loss(self, A_s, log_ps, old_log_ps):
         B = self.batch_size
