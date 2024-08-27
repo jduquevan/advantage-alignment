@@ -51,6 +51,7 @@ python train.py \
     training.critic_loss_mode=${10} \
     max_cxt_len=${11} \
     optimizer_ss.lr=${12} \
+    use_ss_loss=${13} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
