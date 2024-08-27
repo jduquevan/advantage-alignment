@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO', 'sum_rewards']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True

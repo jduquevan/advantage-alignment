@@ -16,12 +16,14 @@ def run_random_job(fake_submit: bool = True):
         'training.clip_range': [0.1, 0.2, 0.3],
         'training.updates_per_batch': [1, 2, 3],
         'training.kl_threshold': [0.01, 0.05],
-        'hidden_size': [128, 256, 512],
+        'hidden_size': [64, 128, 256, 512],
         'encoder.num_layers': [4, 5, 6],
         'training.critic_loss_mode': ['MC', 'td-1', 'interpolate'],
         'max_cxt_len': [50, 70, 90],
         'optimizer_ss.lr': [1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5],
-        'use_ss_loss': [True, False]
+        'use_ss_loss': [True, False],
+        'training.actor_loss_mode': ['integrated_aa', 'separated_aa', 'naive'],
+        'training.aa_weight': [0.2, 0.5, 0.8, 1, 1.5, 2],
     }
 
     # sample a random config
