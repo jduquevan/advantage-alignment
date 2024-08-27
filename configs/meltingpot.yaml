@@ -113,3 +113,4 @@ training:
   id_weight: 0
   spr_weight: 0
   normalize_advantages: True
+  integrated_aa_terms: False
