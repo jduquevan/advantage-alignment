@@ -110,7 +110,7 @@ class SelfSupervisedModule(nn.Module):
 
         spr_preds = F.relu(self.spr_layer(next_state_reps))
 
-        return action_logits, next_state_reps[:, :-1, :], spr_preds[:, 1:, :]
+        return action_logits, next_state_reps[:, 1:, :], spr_preds[:, :-1, :]
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -877,7 +877,9 @@ class AdvantageAlignment(TrainingAlgorithm):
         ).mean()
 
         f_x1 = F.normalize(spr_gts.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
-        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
+        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_preds.shape[2])), p=2., dim=-1, eps=1e-3)
+        # f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2]))
+        # f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
 
         spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
 
