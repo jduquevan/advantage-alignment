@@ -1,6 +1,6 @@
 seed: 41
 batch_size: 512
-wandb: 'online'
+wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO', 'sum_rewards']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -45,6 +45,7 @@ encoder:
   dim_feedforward: ${hidden_size}
   num_layers: 4
   max_seq_len: ${max_seq_len}
+  attention_impl: 'original'
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -99,7 +100,6 @@ training:
   proximal: True
   clip_range: 0.2
   entropy_beta: 0.001
-  vanilla: True
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
@@ -112,3 +112,4 @@ training:
   id_weight: 0
   spr_weight: 0
   normalize_advantages: True
+  actor_loss_mode: 'integrated_aa'
