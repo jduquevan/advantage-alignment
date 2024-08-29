@@ -1,4 +1,6 @@
 import copy
+from pathlib import Path
+
 import hydra
 import math
 import torch
@@ -16,12 +18,14 @@ from torch.func import functional_call, stack_module_state
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
 from typing import Any, List, Tuple, Dict
+import re
 
 import time
 
 from decoder import RLTransformer, TransformerConfig
 from utils import (
     seed_all,
+    instantiate_agent,
     instantiate_agent,
     compute_discounted_returns,
     compute_gae_advantages,
@@ -616,15 +620,16 @@ class TrainingAlgorithm(ABC):
     def save(self):
         pass
 
-    def train_loop(self):
+    def train_loop(self, resume_from_this_step: int = 0):
         # assert either replay buffer or agent replay buffer is used, but not both
         # assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
-        pbar = tqdm(range(self.train_cfg.total_steps))
+        pbar = tqdm(range(resume_from_this_step, self.train_cfg.total_steps),
+                    initial=resume_from_this_step, total=self.train_cfg.total_steps)
 
         time_metrics = {}
 
         for step in pbar:
-            if step % (self.trajectory_len // self.cxt_len) == 0:
+            if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
                 print("Reseting environment")
                 state = self.env.reset()
 
@@ -1093,7 +1098,48 @@ def main(cfg: DictConfig) -> None:
     seed_all(cfg['seed'])
     wandb_friendly_cfg = {k: v for (k, v ) in flatten_native_dict(OmegaConf.to_container(cfg, resolve=True))}
 
+    # ------ (@@-o) checkpointing logic ------ #
+    agent_state_dict = None
+    replay_buffer = None
+    resume_from_this_step = 0
+    if cfg['run_id'] is not None:
+        run_id = cfg['run_id']
+    else:
+        run_id = None
+
+    def is_dir_resumable(d):
+        if not re.match(r'step_\d+', d.name):
+            return False
+        if not (d / 'agent.pt').exists():
+            return False
+        return True
+
+    if cfg['resume']:
+        assert run_id is not None, "(@@-o)Run ID must be provided for resume runs."
+
+        checkpoint_path = (Path(cfg['training']['checkpoint_dir']) / run_id)
+        if checkpoint_path.exists():
+            dirs = [d for d in checkpoint_path.iterdir() if d.is_dir()]
+            print(f"(@@-o)Found {len(dirs)} directories inside {checkpoint_path}. They are {dirs}")
+            dirs = [d for d in dirs if is_dir_resumable(d)]
+            print(f"(@@-o)Filtered and found {len(dirs)} resumable directories.")
+
+            if len(dirs) == 0:
+                print("(@@-o)No checkpoints found, starting from scratch.")
+            else:
+                most_recent_dir = max(dirs, key=lambda x: int(x.name.split('_')[1]))
+                agent_state_dict = torch.load(most_recent_dir / 'agent.pt')
+                resume_from_this_step = int(most_recent_dir.name.split('_')[1])
+                print(f"(@@-o)Resuming from checkpoint: {most_recent_dir}, step: {resume_from_this_step}")
+                if (most_recent_dir / 'replay_buffer').exists():
+                    replay_buffer = torch.load(most_recent_dir / 'replay_buffer')
+                    assert replay_buffer is List, "(@@-o)Replay buffer must be a list of agents state dicts."
+                    print(f"(@@-o)Loaded {len(replay_buffer)} agents from replay buffer {most_recent_dir / 'replay_buffer'}")
+
+    # ------ (@@-o) end of checkpointing logic ------ #
+
     wandb.init(
+        id=run_id,
         config=wandb_friendly_cfg,
         project="Meltingpot",
         dir=cfg["wandb_dir"],
@@ -1102,6 +1148,7 @@ def main(cfg: DictConfig) -> None:
         mode=cfg["wandb"],
         tags=cfg.wandb_tags,
     )
+
     if cfg['env']['type'] == 'meltingpot':
         scenario = cfg['env']['scenario']
         env = ParallelEnv(cfg['env']['batch'], lambda: MeltingpotEnv(scenario))
@@ -1111,9 +1158,18 @@ def main(cfg: DictConfig) -> None:
     if cfg['self_play']:
         agents = []
         agent = instantiate_agent(cfg)
+        # ---- (@@-o) checkpointing logic ---- #
+        if agent_state_dict is not None:
+            assert cfg['resume'], "(@@-o)Cannot load agent state dict when the run is not a resume run."
+            agent.actor.load_state_dict(agent_state_dict['actor_state_dict'])
+            agent.critic.load_state_dict(agent_state_dict['critic_state_dict'])
+            agent.target.load_state_dict(agent_state_dict['target_state_dict'])
+        assert replay_buffer is None, "(@@-o)Replay buffer is still not supported."
+        # ---- (@@-o) end of checkpointing logic ---- #
         for i in range(cfg['env']['num_agents']):
             agents.append(agent)
     else:
+        assert cfg['resume'] is False and agent_state_dict is None and replay_buffer is None, "(@@-o)Resuming runs are only supported for self-play now."
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
@@ -1141,7 +1197,7 @@ def main(cfg: DictConfig) -> None:
         clip_grad_norm=cfg['training']['clip_grad_norm'],
         replay_buffer=replay_buffer
     )
-    algorithm.train_loop()
+    algorithm.train_loop(resume_from_this_step=resume_from_this_step)
 
 
 if __name__ == "__main__":
