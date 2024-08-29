@@ -1,5 +1,5 @@
 resume: False
-run_id: none
+run_id: null
 seed: 41
 batch_size: 512
 wandb: 'online'
