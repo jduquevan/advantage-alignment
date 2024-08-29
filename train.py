@@ -767,7 +767,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B * N, -1))
         assert torch.allclose(A_s[1:N].sum(dim=0), A_2s[0]), "aa loss is buggy :)"
-        return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1)
+        return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1, device=device)
 
     def aa_loss(self, A_s, log_ps, old_log_ps):
         B = self.batch_size
