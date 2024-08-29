@@ -20,7 +20,7 @@ from utils import (
 
 num_frames = 1000
 model_folder = 'experiments'
-model_name = 'ewo1jd39/model_3000.pt'
+model_name = 'ewo1jd39/step_1000/agent.pt'
 output_folder = 'videos'
 
 def create_video_with_imageio(frames, output_folder, video_name='output.mp4', frame_rate=3):
