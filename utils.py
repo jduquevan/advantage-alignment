@@ -9,6 +9,7 @@ import wandb
 
 from omegaconf import DictConfig
 
+
 def seed_all(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -98,9 +99,13 @@ def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
 
-def save_checkpoint(agent, step, checkpoint_dir, replay_buffer=None):
+def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_dir):
     # Get the W&B run ID
     run_id = wandb.run.id
+
+    from train import ReplayBuffer, AgentReplayBuffer
+    replay_buffer: ReplayBuffer
+    agent_replay_buffer: AgentReplayBuffer
 
     # Create a folder with the run ID if it doesn't exist
     run_folder = Path(checkpoint_dir) / run_id
@@ -109,16 +114,19 @@ def save_checkpoint(agent, step, checkpoint_dir, replay_buffer=None):
     # Generate a unique filename
     checkpoint_path = run_folder / ('step_'+str(step))
     os.makedirs(checkpoint_path, exist_ok=True)
-    
+
     agent_checkpoint = {
         'actor_state_dict': agent.actor.state_dict(),
         'critic_state_dict': agent.critic.state_dict(),
         'target_state_dict': agent.target.state_dict(),
     }
-    
+
     torch.save(agent_checkpoint, checkpoint_path / 'agent.pt')
     if replay_buffer is not None:
-        raise NotImplementedError("Replay buffer saving is not implemented yet.")
+        torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
+    if agent_replay_buffer is not None:
+        agents_state_dict = [agent_state_dict for agent_state_dict in agent_replay_buffer.agents if agent_state_dict is not None]
+        torch.save(agents_state_dict, checkpoint_path / 'agent_replay_buffer_state_dicts.pt')
     print(f"(@@-o)Agent Checkpoint saved at: {checkpoint_path}")
 
 

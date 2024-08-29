@@ -22,6 +22,8 @@ max_cxt_len: 70
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
+agent_rb_size: 0
+agent_rb_mode: 'off'
 
 env:
   type: 'meltingpot'

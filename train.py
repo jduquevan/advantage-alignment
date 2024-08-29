@@ -360,6 +360,8 @@ class TrajectoryBatch():
                     dtype=torch.long,
                 ),
             }
+        else:
+            self.data = data
 
     def add_actions(self, actions, t):
         self.data['actions'][:, t] = actions[:, 0]
@@ -482,7 +484,10 @@ class TrainingAlgorithm(ABC):
         discrete: bool,
         clip_grad_norm: float = None,
         replay_buffer: ReplayBuffer = None,
+        agent_replay_buffer: AgentReplayBuffer = None,
+        agent_replay_buffer_mode: str = "off",
     ) -> None:
+
         self.env = env
         self.agents = agents
         self.main_cfg = main_cfg
@@ -496,6 +501,8 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
         self.batch_size = int(env.batch_size[0])
+        self.agent_replay_buffer = agent_replay_buffer
+        self.agent_replay_buffer_mode = agent_replay_buffer_mode
 
     def train_step(
         self,
@@ -580,6 +587,9 @@ class TrainingAlgorithm(ABC):
 
             # --- update target network ---
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
+            # --- update agent replay buffer ---
+            if self.agent_replay_buffer_mode != "off":
+                self.agent_replay_buffer.add_agent(copy.deepcopy(agent))
 
         train_step_metrics.update({
             "critic_loss": critic_loss.detach(),
@@ -631,12 +641,21 @@ class TrainingAlgorithm(ABC):
         time_metrics = {}
 
         for step in pbar:
+            # replay buffer, swap agents other than the first agent with their replay buffer counterparts
+            if self.agent_replay_buffer_mode == "off":
+                pass
+            elif self.agent_replay_buffer_mode == 'uniform-from-history':
+                new_agents = [self.agents[0]]
+                for _ in range(1, self.num_agents):
+                    new_agents.append(self.agent_replay_buffer.sample())
+                self.agents = new_agents
+
             if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
                 print("Reseting environment")
                 state = self.env.reset()
 
             if step % self.train_cfg.save_every == 0:
-                save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
+                save_checkpoint(self.agents[0], self.replay_buffer, self.agent_replay_buffer, step, self.train_cfg.checkpoint_dir)
 
             start_time = time.time()
             trajectory, state = self.gen_sim(state)
@@ -691,7 +710,6 @@ class TrainingAlgorithm(ABC):
     @abstractmethod
     def self_supervised_losses(self, batch):
         pass
-
 
 class AdvantageAlignment(TrainingAlgorithm):
 
@@ -1102,7 +1120,7 @@ def main(cfg: DictConfig) -> None:
 
     # ------ (@@-o) checkpointing logic ------ #
     agent_state_dict = None
-    agent_replay_buffer = None
+    agent_replay_buffer_state_dicts = None
     replay_buffer_data = None
     resume_from_this_step = 0
     if cfg['run_id'] is not None:
@@ -1134,14 +1152,17 @@ def main(cfg: DictConfig) -> None:
                 agent_state_dict = torch.load(most_recent_dir / 'agent.pt')
                 resume_from_this_step = int(most_recent_dir.name.split('_')[1])
                 print(f"(@@-o)Resuming from checkpoint: {most_recent_dir}, step: {resume_from_this_step}")
-                if (most_recent_dir / 'agent_replay_buffer').exists():
-                    agent_replay_buffer = torch.load(most_recent_dir / 'agent_replay_buffer')
-                    assert agent_replay_buffer is List, "(@@-o)Replay buffer must be a list of agents state dicts."
-                    print(f"(@@-o)Loaded {len(agent_replay_buffer)} agents from replay buffer {most_recent_dir / 'agent_replay_buffer'}")
 
-                if (most_recent_dir / 'replay_buffer_data').exists():
-                    replay_buffer_data = torch.load(most_recent_dir / 'replay_buffer_data')
-                    print(f"(@@-o)Loaded replay buffer from {most_recent_dir / 'replay_buffer_data'}")
+                agent_replay_buffer_path = (most_recent_dir / 'agent_replay_buffer')
+                if agent_replay_buffer_path.exists():
+                    agent_replay_buffer_state_dicts = torch.load(agent_replay_buffer_path)
+                    assert agent_replay_buffer_state_dicts is List, "(@@-o)Replay buffer must be a list of agents state dicts."
+                    print(f"(@@-o)Loaded {len(agent_replay_buffer_state_dicts)} agents from replay buffer {agent_replay_buffer_path}")
+
+                replay_buffer_path = (most_recent_dir / 'replay_buffer_data.pt')
+                if replay_buffer_path.exists():
+                    replay_buffer_data = torch.load(replay_buffer_path)
+                    print(f"(@@-o)Loaded replay buffer from {replay_buffer_path}")
 
     # ------ (@@-o) end of checkpointing logic ------ #
 
@@ -1171,12 +1192,12 @@ def main(cfg: DictConfig) -> None:
             agent.actor.load_state_dict(agent_state_dict['actor_state_dict'])
             agent.critic.load_state_dict(agent_state_dict['critic_state_dict'])
             agent.target.load_state_dict(agent_state_dict['target_state_dict'])
-        assert agent_replay_buffer is None, "(@@-o)Replay buffer is still not supported."
+        assert agent_replay_buffer_state_dicts is None, "(@@-o)Replay buffer is still not supported."
         # ---- (@@-o) end of checkpointing logic ---- #
         for i in range(cfg['env']['num_agents']):
             agents.append(agent)
     else:
-        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer is None, "(@@-o)Resuming runs are only supported for self-play now."
+        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer_state_dicts is None, "(@@-o)Resuming runs are only supported for self-play now."
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
@@ -1184,6 +1205,26 @@ def main(cfg: DictConfig) -> None:
     # print the number of parameters
     actor = agents[0].actor
     print(f"Number of parameters in actor: {sum(p.numel() for p in actor.parameters())}")
+
+    agent_replay_buffer = None
+    if cfg['agent_rb_mode'] != "off":
+        assert cfg['self_play'] is True, "We only support agent replay buffer for self-play for now."
+        agent_replay_buffer = AgentReplayBuffer(
+            main_cfg=cfg,
+            replay_buffer_size=cfg['agent_rb_size'],
+            agent_number=cfg['env']['num_agents'],
+        )
+
+        if agent_replay_buffer_state_dicts is not None:
+            print(f"(@@-o)Loading {len(agent_replay_buffer_state_dicts)} agents from replay buffer.")
+            for state_dict in tqdm(agent_replay_buffer_state_dicts, desc='Loading agents from replay buffer of agents'):
+                agent = instantiate_agent(cfg)
+                agent.load_state_dict(state_dict)
+                agent_replay_buffer.add_agent(agent)
+        else:
+            print("(@@-o)No replay buffer of agents loaded. filling in the current agents")
+            for agent in agents:
+                agent_replay_buffer.add_agent(agent)
 
     replay_buffer = ReplayBuffer(
         env=env,
@@ -1203,7 +1244,9 @@ def main(cfg: DictConfig) -> None:
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
-        replay_buffer=replay_buffer
+        replay_buffer=replay_buffer,
+        agent_replay_buffer=agent_replay_buffer,
+        agent_replay_buffer_mode=cfg['agent_rb_mode'],
     )
     algorithm.train_loop(resume_from_this_step=resume_from_this_step)
 
