@@ -390,6 +390,7 @@ class ReplayBuffer():
         n_agents: int,
         cxt_len: int,
         device: torch.device,
+        data=None,
     ):
         state = env.reset()
         self.replay_buffer_size = replay_buffer_size
@@ -406,7 +407,8 @@ class ReplayBuffer():
             n_agents=n_agents,
             cxt_len=cxt_len,
             device=device,
-            is_replay_buffer=True
+            is_replay_buffer=True,
+            data=data,
         )
 
     def add_trajectory_batch(self, new_batch: TrajectoryBatch):
@@ -1100,7 +1102,8 @@ def main(cfg: DictConfig) -> None:
 
     # ------ (@@-o) checkpointing logic ------ #
     agent_state_dict = None
-    replay_buffer = None
+    agent_replay_buffer = None
+    replay_buffer_data = None
     resume_from_this_step = 0
     if cfg['run_id'] is not None:
         run_id = cfg['run_id']
@@ -1131,10 +1134,14 @@ def main(cfg: DictConfig) -> None:
                 agent_state_dict = torch.load(most_recent_dir / 'agent.pt')
                 resume_from_this_step = int(most_recent_dir.name.split('_')[1])
                 print(f"(@@-o)Resuming from checkpoint: {most_recent_dir}, step: {resume_from_this_step}")
-                if (most_recent_dir / 'replay_buffer').exists():
-                    replay_buffer = torch.load(most_recent_dir / 'replay_buffer')
-                    assert replay_buffer is List, "(@@-o)Replay buffer must be a list of agents state dicts."
-                    print(f"(@@-o)Loaded {len(replay_buffer)} agents from replay buffer {most_recent_dir / 'replay_buffer'}")
+                if (most_recent_dir / 'agent_replay_buffer').exists():
+                    agent_replay_buffer = torch.load(most_recent_dir / 'agent_replay_buffer')
+                    assert agent_replay_buffer is List, "(@@-o)Replay buffer must be a list of agents state dicts."
+                    print(f"(@@-o)Loaded {len(agent_replay_buffer)} agents from replay buffer {most_recent_dir / 'agent_replay_buffer'}")
+
+                if (most_recent_dir / 'replay_buffer_data').exists():
+                    replay_buffer_data = torch.load(most_recent_dir / 'replay_buffer_data')
+                    print(f"(@@-o)Loaded replay buffer from {most_recent_dir / 'replay_buffer_data'}")
 
     # ------ (@@-o) end of checkpointing logic ------ #
 
@@ -1164,12 +1171,12 @@ def main(cfg: DictConfig) -> None:
             agent.actor.load_state_dict(agent_state_dict['actor_state_dict'])
             agent.critic.load_state_dict(agent_state_dict['critic_state_dict'])
             agent.target.load_state_dict(agent_state_dict['target_state_dict'])
-        assert replay_buffer is None, "(@@-o)Replay buffer is still not supported."
+        assert agent_replay_buffer is None, "(@@-o)Replay buffer is still not supported."
         # ---- (@@-o) end of checkpointing logic ---- #
         for i in range(cfg['env']['num_agents']):
             agents.append(agent)
     else:
-        assert cfg['resume'] is False and agent_state_dict is None and replay_buffer is None, "(@@-o)Resuming runs are only supported for self-play now."
+        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer is None, "(@@-o)Resuming runs are only supported for self-play now."
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
@@ -1183,7 +1190,8 @@ def main(cfg: DictConfig) -> None:
         replay_buffer_size=cfg['rb_size'],
         n_agents=len(agents),
         cxt_len=cfg['max_cxt_len'],
-        device=cfg['device']
+        device=cfg['device'],
+        data=replay_buffer_data
     )
 
     algorithm = AdvantageAlignment(
