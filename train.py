@@ -457,6 +457,8 @@ class AgentReplayBuffer:
         self.agent_number = agent_number
 
     def add_agent(self, agent):
+        if self.agents[self.marker] is not None:
+            del self.agents[self.marker]
         self.agents[self.marker] = agent.state_dict()
         self.num_added_agents += 1
         self.marker = (self.marker + 1) % self.replay_buffer_size
@@ -589,7 +591,7 @@ class TrainingAlgorithm(ABC):
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
             # --- update agent replay buffer ---
             if self.agent_replay_buffer_mode != "off":
-                self.agent_replay_buffer.add_agent(copy.deepcopy(agent))
+                self.agent_replay_buffer.add_agent(agent)
 
         train_step_metrics.update({
             "critic_loss": critic_loss.detach(),
