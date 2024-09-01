@@ -1,10 +1,10 @@
 seed: 41
 batch_size: 512
 wandb: 'offline'
-wandb_tags: ['meltingpot', 'PPO', 'sum_rewards']
+wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
-sum_rewards: True
+sum_rewards: False
 simultaneous: True
 discrete: True
 self_play: True
@@ -112,7 +112,7 @@ training:
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 0
-  spr_weight: 0
+  id_weight: 1
+  spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
