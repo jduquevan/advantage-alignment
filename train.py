@@ -1142,7 +1142,7 @@ def main(cfg: DictConfig) -> None:
     )
     if cfg['env']['type'] == 'meltingpot':
         scenario = cfg['env']['scenario']
-        env = ParallelEnv(cfg['env']['batch'], lambda: MeltingpotEnv(scenario))
+        env = ParallelEnv(int(cfg['env']['batch']), lambda: MeltingpotEnv(scenario))
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
