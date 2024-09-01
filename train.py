@@ -483,7 +483,7 @@ class EnvironmentResetter():
         self.env_counters = torch.where(needs_resetting, 0, self.env_counters)
 
         if needs_resetting.any():
-            state[env._reset_keys[0]] = needs_resetting.to(self.device)
+            state[env._reset_keys[0]] = needs_resetting.to('cpu')
             state = env.reset(state)
 
         return state
