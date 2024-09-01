@@ -433,12 +433,13 @@ class ReplayBuffer():
         return min(self.number_of_added_trajectories, self.replay_buffer_size)
 
 
-class AgentReplayBuffer:
-    def __init__(self,
-                 main_cfg: DictConfig,  # to instantiate the agents from
-                 replay_buffer_size: int,
-                 agent_number: int,  # either 1 or 2  as it is a two player game
-                 ):
+class AgentReplayBuffer():
+    def __init__(
+        self,
+        main_cfg: DictConfig,  # to instantiate the agents from
+        replay_buffer_size: int,
+        agent_number: int,  # either 1 or 2  as it is a two player game
+        ):
         self.main_cfg = main_cfg
         self.replay_buffer_size = replay_buffer_size
         self.marker = 0
@@ -462,6 +463,42 @@ class AgentReplayBuffer:
 
     def __len__(self):
         return min(self.num_added_agents, self.replay_buffer_size)
+
+
+class EnvironmentResetter():
+    def __init__(self, cfg, device):
+        self.cfg = cfg
+        self.device = device
+        self.mean = cfg['max_seq_len'] // cfg['max_cxt_len']
+        self.lower = max(self.mean - 5, 0)
+        self.upper = self.mean + 5
+        self.env_counters = torch.zeros(cfg['env']['batch']).to(device)
+        self.env_max_steps = self.sample_max_steps(self.cfg, self.device)
+
+    def maybe_reset(self, env, state):
+        self.env_counters = (self.env_counters + 1)
+        needs_resetting = (self.env_counters == self.env_max_steps)
+        env_max_steps = self.sample_max_steps(self.cfg, self.device)
+        self.env_max_steps = torch.where(needs_resetting, env_max_steps, self.env_max_steps)
+        self.env_counters = torch.where(needs_resetting, 0, self.env_counters)
+
+        if needs_resetting.any():
+            state[env._reset_keys[0]] = needs_resetting.to(self.device)
+            state = env.reset(state)
+
+        return state
+
+    def sample_max_steps(self, cfg, device):
+        env_max_steps = torch.poisson(
+            torch.ones(self.cfg['env']['batch']) * self.mean
+        ).to(self.device)
+
+        env_max_steps = torch.clamp(
+            env_max_steps, 
+            self.lower, 
+            self.upper
+        )
+        return env_max_steps
 
 
 class TrainingAlgorithm(ABC):
@@ -490,6 +527,7 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
         self.batch_size = int(env.batch_size[0])
+        self.resetter = EnvironmentResetter(self.main_cfg, self.agents[0].device)
 
     def train_step(
         self,
@@ -622,12 +660,9 @@ class TrainingAlgorithm(ABC):
         pbar = tqdm(range(self.train_cfg.total_steps))
 
         time_metrics = {}
+        state = self.env.reset()
 
         for step in pbar:
-            if step % (self.trajectory_len // self.cxt_len) == 0:
-                print("Reseting environment")
-                state = self.env.reset()
-
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
 
@@ -668,6 +703,7 @@ class TrainingAlgorithm(ABC):
             })
             wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
+            state = self.resetter.maybe_reset(self.env, state)
 
         return
 
