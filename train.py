@@ -473,6 +473,41 @@ class AgentReplayBuffer:
     def __len__(self):
         return min(self.num_added_agents, self.replay_buffer_size)
 
+class GPUMemoryFriendlyAgentReplayBuffer:
+    def __init__(self,
+                 main_cfg: DictConfig,  # to instantiate the agents from
+                 replay_buffer_size: int,
+                 agent_number: int,  # either 1 or 2  as it is a two player game
+                 ):
+        self.main_cfg = main_cfg
+        self.replay_buffer_size = replay_buffer_size
+        self.marker = 0
+        self.num_added_agents = 0
+        agent_blueprint = instantiate_agent(self.main_cfg)
+        batched_state_dicts = {k: torch.zeros((replay_buffer_size, *v.shape), device=v.device) for k, v in agent_blueprint.state_dict().items()}
+        self.agents_batched_state_dicts = batched_state_dicts
+        self.agent_number = agent_number
+
+    def add_agent(self, agent):
+        self.add_agent_state_dict(agent.state_dict())
+
+    def add_agent_state_dict(self, state_dict):
+        for k, v in state_dict.items():
+            self.agents_batched_state_dicts[k][self.marker] = v
+        self.num_added_agents += 1
+        self.marker = (self.marker + 1) % self.replay_buffer_size
+
+    def sample(self):
+        idx = torch.randint(0, self.__len__(), ())
+        state_dict = {}
+        for k, v in self.agents_batched_state_dicts.items():
+            state_dict[k] = v[idx]
+        agent = instantiate_agent(self.main_cfg)
+        agent.load_state_dict(state_dict)
+        return agent
+
+    def __len__(self):
+        return min(self.num_added_agents, self.replay_buffer_size)
 
 class TrainingAlgorithm(ABC):
     def __init__(
@@ -486,7 +521,7 @@ class TrainingAlgorithm(ABC):
         discrete: bool,
         clip_grad_norm: float = None,
         replay_buffer: ReplayBuffer = None,
-        agent_replay_buffer: AgentReplayBuffer = None,
+        agent_replay_buffer: GPUMemoryFriendlyAgentReplayBuffer = None,
         agent_replay_buffer_mode: str = "off",
     ) -> None:
 
@@ -1125,7 +1160,7 @@ def main(cfg: DictConfig) -> None:
 
     # ------ (@@-o) checkpointing logic ------ #
     agent_state_dict = None
-    agent_replay_buffer_state_dicts = None
+    agent_replay_buffer_ckpt = None
     replay_buffer_data = None
     resume_from_this_step = 0
     if cfg['run_id'] is not None:
@@ -1158,11 +1193,10 @@ def main(cfg: DictConfig) -> None:
                 resume_from_this_step = int(most_recent_dir.name.split('_')[1])
                 print(f"(@@-o)Resuming from checkpoint: {most_recent_dir}, step: {resume_from_this_step}")
 
-                agent_replay_buffer_path = (most_recent_dir / 'agent_replay_buffer')
+                agent_replay_buffer_path = (most_recent_dir / 'agent_replay_buffer.pt')
                 if agent_replay_buffer_path.exists():
-                    agent_replay_buffer_state_dicts = torch.load(agent_replay_buffer_path)
-                    assert agent_replay_buffer_state_dicts is List, "(@@-o)Replay buffer must be a list of agents state dicts."
-                    print(f"(@@-o)Loaded {len(agent_replay_buffer_state_dicts)} agents from replay buffer {agent_replay_buffer_path}")
+                    agent_replay_buffer_ckpt = torch.load(agent_replay_buffer_path)
+                    print(f"(@@-o)Loaded {agent_replay_buffer_ckpt['num_added_agents']} agents from replay buffer {agent_replay_buffer_path}")
 
                 replay_buffer_path = (most_recent_dir / 'replay_buffer_data.pt')
                 if replay_buffer_path.exists():
@@ -1197,12 +1231,11 @@ def main(cfg: DictConfig) -> None:
             agent.actor.load_state_dict(agent_state_dict['actor_state_dict'])
             agent.critic.load_state_dict(agent_state_dict['critic_state_dict'])
             agent.target.load_state_dict(agent_state_dict['target_state_dict'])
-        assert agent_replay_buffer_state_dicts is None, "(@@-o)Replay buffer is still not supported."
         # ---- (@@-o) end of checkpointing logic ---- #
         for i in range(cfg['env']['num_agents']):
             agents.append(agent)
     else:
-        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer_state_dicts is None, "(@@-o)Resuming runs are only supported for self-play now."
+        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer_ckpt is None, "(@@-o)Resuming runs are only supported for self-play now."
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
@@ -1214,18 +1247,19 @@ def main(cfg: DictConfig) -> None:
     agent_replay_buffer = None
     if cfg['agent_rb_mode'] != "off":
         assert cfg['self_play'] is True, "We only support agent replay buffer for self-play for now."
-        agent_replay_buffer = AgentReplayBuffer(
+        agent_replay_buffer = GPUMemoryFriendlyAgentReplayBuffer(
             main_cfg=cfg,
             replay_buffer_size=cfg['agent_rb_size'],
             agent_number=cfg['env']['num_agents'],
         )
 
-        if agent_replay_buffer_state_dicts is not None:
-            print(f"(@@-o)Loading {len(agent_replay_buffer_state_dicts)} agents from replay buffer.")
-            for state_dict in tqdm(agent_replay_buffer_state_dicts, desc='Loading agents from replay buffer of agents'):
-                agent = instantiate_agent(cfg)
-                agent.load_state_dict(state_dict)
-                agent_replay_buffer.add_agent(agent)
+        if agent_replay_buffer_ckpt is not None:
+            print(f"(@@-o)Loading {agent_replay_buffer_ckpt['num_added_agents']} agents from replay buffer.")
+            for i in tqdm(range(agent_replay_buffer_ckpt['num_added_agents']), desc='Loading agents from replay buffer of agents'):
+                state_dict = {}
+                for k in agent_replay_buffer_ckpt['params'].keys():
+                    state_dict[k] = agent_replay_buffer_ckpt['params'][k][i]
+                agent_replay_buffer.add_agent_state_dict(state_dict)
         else:
             print("(@@-o)No replay buffer of agents loaded. filling in the current agents")
             for agent in agents:

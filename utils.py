@@ -103,9 +103,9 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
     # Get the W&B run ID
     run_id = wandb.run.id
 
-    from train import ReplayBuffer, AgentReplayBuffer
+    from train import ReplayBuffer, GPUMemoryFriendlyAgentReplayBuffer
     replay_buffer: ReplayBuffer
-    agent_replay_buffer: AgentReplayBuffer
+    agent_replay_buffer: GPUMemoryFriendlyAgentReplayBuffer
 
     # Create a folder with the run ID if it doesn't exist
     run_folder = Path(checkpoint_dir) / run_id
@@ -118,15 +118,14 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
     agent_checkpoint = {
         'actor_state_dict': agent.actor.state_dict(),
         'critic_state_dict': agent.critic.state_dict(),
-        'target_state_dict': agent.target.state_dict(),
+        'target_state_dict': agent.target.state_dict(), # todo: remove all this and just use the state_dict of the agent
     }
 
     torch.save(agent_checkpoint, checkpoint_path / 'agent.pt')
     if replay_buffer is not None:
         torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
     if agent_replay_buffer is not None:
-        agents_state_dict = [agent_state_dict for agent_state_dict in agent_replay_buffer.agents if agent_state_dict is not None]
-        torch.save(agents_state_dict, checkpoint_path / 'agent_replay_buffer_state_dicts.pt')
+        torch.save({'params': agent_replay_buffer.agents_batched_state_dicts, 'num_added_agents': agent_replay_buffer.num_added_agents}, checkpoint_path / 'agent_replay_buffer.pt')
     print(f"(@@-o)Agent Checkpoint saved at: {checkpoint_path}")
 
 
