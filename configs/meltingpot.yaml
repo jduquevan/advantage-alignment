@@ -117,3 +117,4 @@ training:
   spr_weight: 0
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
+  add_to_agent_replay_buffer_every: 20

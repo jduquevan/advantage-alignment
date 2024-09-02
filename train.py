@@ -548,6 +548,7 @@ class TrainingAlgorithm(ABC):
         self,
         trajectory,
         agents,
+        step: int,
         optimize_critic=True,
     ):
 
@@ -628,7 +629,7 @@ class TrainingAlgorithm(ABC):
             # --- update target network ---
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
             # --- update agent replay buffer ---
-            if self.agent_replay_buffer_mode != "off":
+            if self.agent_replay_buffer_mode != "off" and step % self.train_cfg.add_to_agent_replay_buffer_every == 0:
                 self.agent_replay_buffer.add_agent(agent)
 
         train_step_metrics.update({
@@ -707,7 +708,8 @@ class TrainingAlgorithm(ABC):
             train_step_metrics = self.train_step(
                 trajectory=trajectory,
                 agents=self.agents,
-                optimize_critic=True
+                step=step,
+                optimize_critic=True,
             )
 
             for key, value in train_step_metrics.items():
