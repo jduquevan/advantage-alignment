@@ -12,7 +12,7 @@ def run_random_job(fake_submit: bool = True):
     hparams = {
         'optimizer_actor.lr': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
         'optimizer_critic.lr': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
-        'training.entropy_beta': [0, 0.0001, 0.001, 0.01],
+        'training.entropy_beta': [0, 0.00005, 0.0001, 0.0005],
         'training.clip_range': [0.1, 0.2, 0.3],
         'training.updates_per_batch': [1, 2, 3],
         'training.kl_threshold': [0.01, 0.05],
