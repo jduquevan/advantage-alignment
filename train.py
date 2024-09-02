@@ -486,7 +486,6 @@ class GPUMemoryFriendlyAgentReplayBuffer:
         agent_blueprint = instantiate_agent(self.main_cfg)
         batched_state_dicts = {}
         for k in agent_blueprint.state_dict().keys():
-            print(k)
             v = agent_blueprint.state_dict()[k]
             batched_state_dicts[k] = torch.zeros((replay_buffer_size, *v.shape), device=v.device)
         self.agents_batched_state_dicts = batched_state_dicts
