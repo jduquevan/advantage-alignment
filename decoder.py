@@ -204,7 +204,7 @@ class CausalSelfAttention(nn.Module):
         self.resid_drop = nn.Dropout(config.resid_pdrop)
         self.proj = nn.Linear(config.embed_dim, config.embed_dim)
         causal_mask = torch.tril(torch.ones(config.max_seq_len, config.max_seq_len))
-        self.register_buffer('mask', causal_mask)
+        self.register_buffer('mask', causal_mask, persistent=False)
         self.attention_impl = config.attention_impl
 
     def forward(self, x: torch.Tensor, past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> torch.Tensor:

@@ -1,3 +1,5 @@
+resume: False
+run_id: null
 seed: 41
 batch_size: 512
 wandb: 'offline'
@@ -20,6 +22,8 @@ max_cxt_len: 50
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
+agent_rb_size: 0
+agent_rb_mode: 'off'
 
 env:
   type: 'meltingpot'
@@ -116,3 +120,4 @@ training:
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
+  add_to_agent_replay_buffer_every: 20
