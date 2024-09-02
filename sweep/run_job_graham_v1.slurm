@@ -14,11 +14,11 @@
 # Define, how many nodes you need. Here, we ask for 1 node.
 #SBATCH -N 1 #nodes
 #SBATCH -n 1 #tasks
-#SBATCH --account=rrg-bengioy-ad
+#SBATCH --account=def-bengioy
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-11:59:00   
-#SBATCH --gres=gpu:1 
+#SBATCH --time=0-5:59:00   
+#SBATCH --gres=gpu:a100:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -51,10 +51,6 @@ python train.py \
     training.critic_loss_mode=${10} \
     max_cxt_len=${11} \
     optimizer_ss.lr=${12} \
-    use_ss_loss=${13} \
-    training.actor_loss_mode=${14} \
-    training.aa_weight=${15} \
-    env.batch=${15} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \

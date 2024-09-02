@@ -2,11 +2,11 @@ resume: False
 run_id: null
 seed: 41
 batch_size: 512
-wandb: 'online'
-wandb_tags: ['meltingpot', 'PPO', 'sum_rewards']
+wandb: 'offline'
+wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
-sum_rewards: True
+sum_rewards: False
 simultaneous: True
 discrete: True
 self_play: True
@@ -16,9 +16,9 @@ use_spr_loss: True
 device: cuda
 rb_size: 840
 use_full_maps: False
-hidden_size: 512
-max_seq_len: 1500
-max_cxt_len: 70
+hidden_size: 32
+max_seq_len: 1000
+max_cxt_len: 50
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
@@ -31,6 +31,9 @@ env:
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
+  reset_lower: 500
+  reset_upper: 1500
+  reset_mean: 1000
 
 hydra:
   output_subdir: null
@@ -47,7 +50,7 @@ encoder:
   device: ${device}
   d_model: ${hidden_size}
   dim_feedforward: ${hidden_size}
-  num_layers: 4
+  num_layers: 2
   max_seq_len: ${max_seq_len}
   attention_impl: 'original'
 
@@ -113,8 +116,8 @@ training:
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 0
-  spr_weight: 0
+  id_weight: 1
+  spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
   add_to_agent_replay_buffer_every: 20

@@ -26,7 +26,6 @@ from decoder import RLTransformer, TransformerConfig
 from utils import (
     seed_all,
     instantiate_agent,
-    instantiate_agent,
     compute_discounted_returns,
     compute_gae_advantages,
     update_target_network,
@@ -114,7 +113,7 @@ class SelfSupervisedModule(nn.Module):
 
         spr_preds = F.relu(self.spr_layer(next_state_reps))
 
-        return action_logits, next_state_reps[:, :-1, :], spr_preds[:, 1:, :]
+        return action_logits, next_state_reps[:, 1:, :], spr_preds[:, :-1, :]
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -512,6 +511,42 @@ class GPUMemoryFriendlyAgentReplayBuffer:
     def __len__(self):
         return min(self.num_added_agents, self.replay_buffer_size)
 
+class EnvironmentResetter():
+    def __init__(self, cfg, device):
+        self.cfg = cfg
+        self.device = device
+        self.mean = cfg['max_seq_len'] // cfg['max_cxt_len']
+        self.lower = max(self.mean - 5, 0)
+        self.upper = self.mean + 5
+        self.env_counters = torch.zeros(cfg['env']['batch']).to(device)
+        self.env_max_steps = self.sample_max_steps(self.cfg, self.device)
+
+    def maybe_reset(self, env, state):
+        self.env_counters = (self.env_counters + 1)
+        needs_resetting = (self.env_counters == self.env_max_steps)
+        env_max_steps = self.sample_max_steps(self.cfg, self.device)
+        self.env_max_steps = torch.where(needs_resetting, env_max_steps, self.env_max_steps)
+        self.env_counters = torch.where(needs_resetting, 0, self.env_counters)
+
+        if needs_resetting.any():
+            state[env._reset_keys[0]] = needs_resetting.to('cpu')
+            state = env.reset(state)
+
+        return state
+
+    def sample_max_steps(self, cfg, device):
+        env_max_steps = torch.poisson(
+            torch.ones(self.cfg['env']['batch']) * self.mean
+        ).to(self.device)
+
+        env_max_steps = torch.clamp(
+            env_max_steps,
+            self.lower,
+            self.upper
+        )
+        return env_max_steps
+
+
 class TrainingAlgorithm(ABC):
     def __init__(
         self,
@@ -541,6 +576,7 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
         self.batch_size = int(env.batch_size[0])
+        self.resetter = EnvironmentResetter(self.main_cfg, self.agents[0].device)
         self.agent_replay_buffer = agent_replay_buffer
         self.agent_replay_buffer_mode = agent_replay_buffer_mode
 
@@ -680,6 +716,7 @@ class TrainingAlgorithm(ABC):
                     initial=resume_from_this_step, total=self.train_cfg.total_steps)
 
         time_metrics = {}
+        state = self.env.reset()
 
         for step in pbar:
             # replay buffer, swap agents other than the first agent with their replay buffer counterparts
@@ -694,6 +731,7 @@ class TrainingAlgorithm(ABC):
             if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
                 print("Reseting environment")
                 state = self.env.reset()
+
 
             if step % self.train_cfg.save_every == 0:
                 save_checkpoint(self.agents[0], self.replay_buffer, self.agent_replay_buffer, step, self.train_cfg.checkpoint_dir)
@@ -736,6 +774,7 @@ class TrainingAlgorithm(ABC):
             })
             wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
+            state = self.resetter.maybe_reset(self.env, state)
 
         return
 
@@ -974,7 +1013,9 @@ class AdvantageAlignment(TrainingAlgorithm):
         ).mean()
 
         f_x1 = F.normalize(spr_gts.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
-        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
+        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_preds.shape[2])), p=2., dim=-1, eps=1e-3)
+        # f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2]))
+        # f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
 
         spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
 
@@ -1223,7 +1264,7 @@ def main(cfg: DictConfig) -> None:
 
     if cfg['env']['type'] == 'meltingpot':
         scenario = cfg['env']['scenario']
-        env = ParallelEnv(cfg['env']['batch'], lambda: MeltingpotEnv(scenario))
+        env = ParallelEnv(int(cfg['env']['batch']), lambda: MeltingpotEnv(scenario))
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 

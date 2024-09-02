@@ -16,9 +16,9 @@
 #SBATCH -n 1 #tasks
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=40G
-#SBATCH --time=0-11:59:00   
-#SBATCH --gres=gpu:1 
+#SBATCH --mem=32G
+#SBATCH --time=0-7:59:00   
+#SBATCH --gres=gpu:v100l:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -54,7 +54,6 @@ python train.py \
     use_ss_loss=${13} \
     training.actor_loss_mode=${14} \
     training.aa_weight=${15} \
-    env.batch=${15} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \

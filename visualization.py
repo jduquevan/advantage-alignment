@@ -109,7 +109,7 @@ def main(cfg: DictConfig) -> None:
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    create_video_with_imageio(frames, output_folder=output_folder, video_name='cooperative.mp4', frame_rate=3)
+    create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_1.mp4', frame_rate=3)
 
     
 
