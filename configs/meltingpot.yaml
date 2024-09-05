@@ -1,6 +1,6 @@
 resume: False
 run_id: null
-seed: 41
+seed: 42
 batch_size: 512
 wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
@@ -21,8 +21,8 @@ max_seq_len: 1000
 max_cxt_len: 50
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
-agent_rb_size: 0
+use_ss_loss: True
+agent_rb_size: 100
 agent_rb_mode: 'off'
 
 
@@ -32,9 +32,6 @@ env:
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
-  reset_lower: 500
-  reset_upper: 1500
-  reset_mean: 1000
 
 hydra:
   output_subdir: null
@@ -84,15 +81,15 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 5e-06
+  lr: 0.0003
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 1e-06
+  lr: 0.00003
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-06
+  lr: 0.00001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -106,19 +103,19 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.2
-  entropy_beta: 0.001
+  clip_range: 0.1
+  entropy_beta: 0.0002
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
-  critic_loss_mode: 'interpolate'
+  critic_loss_mode: 'td-1'
   save_every: 1000
-  checkpoint_dir: './experiments'
   video_dir: './videos'
+  checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 1
+  id_weight: 0
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'

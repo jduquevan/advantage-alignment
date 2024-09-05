@@ -16,9 +16,9 @@
 #SBATCH -n 1 #tasks
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-09:59:00   
+#SBATCH --time=0-02:59:00   
 #SBATCH --gres=gpu:a100l:1
-#SBATCH --partition=long
+#SBATCH --partition=main
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
