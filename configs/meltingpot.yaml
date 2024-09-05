@@ -25,6 +25,7 @@ use_ss_loss: False
 agent_rb_size: 0
 agent_rb_mode: 'off'
 
+
 env:
   type: 'meltingpot'
   batch: 6
@@ -113,6 +114,7 @@ training:
   critic_loss_mode: 'interpolate'
   save_every: 1000
   checkpoint_dir: './experiments'
+  video_dir: './videos'
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
