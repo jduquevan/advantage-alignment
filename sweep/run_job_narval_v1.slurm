@@ -54,8 +54,9 @@ python train.py \
     use_ss_loss=${13} \
     training.actor_loss_mode=${14} \
     training.aa_weight=${15} \
-    env.batch=${15} \
+    env.batch=${16} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
+    training.checkpoint_dir=./experiments/ \
     --config-name='meltingpot.yaml' \

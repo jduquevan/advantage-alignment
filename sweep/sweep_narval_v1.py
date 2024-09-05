@@ -10,21 +10,21 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
-        'optimizer_critic.lr': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
-        'training.entropy_beta': [0, 0.00005, 0.0001, 0.0005],
-        'training.clip_range': [0.1, 0.2, 0.3],
-        'training.updates_per_batch': [1, 2, 3],
+        'optimizer_actor.lr': [0.0005, 0.001],
+        'optimizer_critic.lr': [0.0001, 0.0003, 0.001],
+        'training.entropy_beta': [0, 0.0001, 0.001],
+        'training.clip_range': [0.2, 0.3],
+        'training.updates_per_batch': [2, 3],
         'training.kl_threshold': [0.01, 0.05],
-        'hidden_size': [32, 64, 128],
-        'encoder.num_layers': [2, 3, 4, 5],
-        'training.critic_loss_mode': ['MC', 'td-1', 'interpolate'],
-        'max_cxt_len': [50, 60, 70],
-        'optimizer_ss.lr': [1e-5, 3e-5, 1e-4, 3e-4,],
-        'use_ss_loss': [True, False],
+        'hidden_size': [128],
+        'encoder.num_layers': [3],
+        'training.critic_loss_mode': ['td-1'],
+        'max_cxt_len': [60],
+        'optimizer_ss.lr': [1e-5, 3e-5, 1e-4],
+        'use_ss_loss': [False],
         'training.actor_loss_mode': ['integrated_aa'],
-        'training.aa_weight': [1, 2, 3, 4],
-        'env.batch': [6, 12, 18, 24, 30],
+        'training.aa_weight': [2],
+        'env.batch': [6, 12],
     }
 
     # sample a random config

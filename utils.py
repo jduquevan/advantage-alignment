@@ -122,7 +122,7 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
     }
 
     torch.save(agent_checkpoint, checkpoint_path / 'agent.pt')
-    if replay_buffer is not None:
+    if replay_buffer is not None and save_agent_replay_buffer:
         torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
     if agent_replay_buffer is not None and save_agent_replay_buffer:
         torch.save({'params': agent_replay_buffer.agents_batched_state_dicts, 'num_added_agents': agent_replay_buffer.num_added_agents}, checkpoint_path / 'agent_replay_buffer.pt')
