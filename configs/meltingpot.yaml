@@ -25,6 +25,7 @@ use_ss_loss: False
 agent_rb_size: 100
 agent_rb_mode: 'off'
 
+
 env:
   type: 'meltingpot'
   batch: 6
@@ -109,6 +110,7 @@ training:
   use_mlm: True
   critic_loss_mode: 'td-1'
   save_every: 1000
+  video_dir: './videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
   aa_weight: 2
   clip_grad_norm: 10

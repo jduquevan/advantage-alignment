@@ -10,10 +10,6 @@ from omegaconf import DictConfig, OmegaConf
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
 
-from train import (
-    _gen_sim,
-    ReplayBuffer,    
-)
 from utils import (
     instantiate_agent
 )
@@ -76,6 +72,10 @@ def create_video_from_frames(frames, output_folder, video_name='output.mp4', fra
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
+    from train import (
+        _gen_sim,
+        ReplayBuffer,
+    )
     cxt_len = cfg['max_cxt_len']
     scenario = cfg['env']['scenario']
 

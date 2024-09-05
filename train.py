@@ -1,8 +1,11 @@
 import copy
+import os
 from pathlib import Path
 
 import hydra
 import math
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,6 +26,7 @@ import re
 import time
 
 from decoder import RLTransformer, TransformerConfig
+from evaluation import evaluate_agents_on_scenario
 from utils import (
     seed_all,
     instantiate_agent,
@@ -36,6 +40,9 @@ from utils import (
 from collections import defaultdict
 
 import warnings
+from meltingpot import substrate, scenario as scene
+
+from visualization import create_video_with_imageio
 
 
 class LinearModel(nn.Module):
@@ -376,10 +383,15 @@ class TrajectoryBatch():
         self.data['log_ps'][:, t] = log_ps
         self.data['actions'][:, t] = actions[:, 0]
 
-    def merge_two_trajectories(self, other):
+    def merge_two_trajectories_batch_wise(self, other):
         for key in self.data.keys():
             self.data[key] = torch.cat((self.data[key], other.data[key]), dim=0)
         self.batch_size += other.batch_size
+        return self
+
+    def merge_two_trajectories_time_wise(self, other):
+        for key in self.data.keys():
+            self.data[key] = torch.cat((self.data[key], other.data[key]), dim=1)
         return self
 
 
@@ -703,8 +715,40 @@ class TrainingAlgorithm(ABC):
 
         return train_step_metrics
 
-    def eval(self, agent):
-        pass
+    def evaluate(self, agent):
+        all_scenarios = scene._scenarios_by_substrate()[self.main_cfg['env']['scenario']]
+
+        scenario_to_info = {}
+
+        for scenario_name in all_scenarios:
+            num_our_agent_in_scenario = len(scene.build_from_config(scene.get_config(scenario_name)).action_spec())
+            agents = []
+            for _ in range(num_our_agent_in_scenario):
+                agents.append(agent)
+
+            new_scenario_to_info = evaluate_agents_on_scenario(agents, scenario_name, num_frames=100, cxt_len=self.cxt_len, num_repeats=1, return_trajectories=True, return_k_trajectories=1)
+            scenario_to_info.update(new_scenario_to_info)
+
+        # log to wandb the average rewards
+        metrics = {}
+        for scenario_name, info in scenario_to_info.items():
+            info: TrajectoryBatch
+            rewards = info['trajectories'][0].data['rewards']
+            metrics[f'eval/{scenario_name}/avg_reward_focal'] = rewards.mean().item()
+        # overall average
+        metrics['eval/overall/avg_reward_focal'] = sum(metrics.values()) / len(metrics)
+
+        # generate videos
+        run_folder = Path(self.train_cfg.video_dir) / wandb.run.id
+        os.makedirs(run_folder, exist_ok=True)
+
+        for scenario_name, info in scenario_to_info.items():
+            info: TrajectoryBatch
+            frames = info['trajectories'][0].data['full_maps'][0].cpu().numpy()
+            create_video_with_imageio(frames, output_folder=run_folder, video_name=f'{scenario_name}.mp4', frame_rate=3)
+            metrics[f'eval/video_{scenario_name}'] = wandb.Video(np.transpose(frames, (0, 3, 1, 2)), fps=3)
+
+        return metrics
 
     def save(self):
         pass
@@ -776,6 +820,11 @@ class TrainingAlgorithm(ABC):
             wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
             state = self.resetter.maybe_reset(self.env, state)
+
+            if step % self.train_cfg.eval_every == 0:
+                eval_metrics = self.evaluate(self.agents[0])
+                print("Evaluation metrics:", eval_metrics)
+                wandb.log(step=step, data=eval_metrics, )
 
         return
 
