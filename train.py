@@ -726,7 +726,7 @@ class TrainingAlgorithm(ABC):
             for _ in range(num_our_agent_in_scenario):
                 agents.append(agent)
 
-            new_scenario_to_info = evaluate_agents_on_scenario(agents, scenario_name, num_frames=100, cxt_len=self.cxt_len, num_repeats=1, return_trajectories=True, return_k_trajectories=1)
+            new_scenario_to_info = evaluate_agents_on_scenario(agents, scenario_name, num_frames=1000, cxt_len=self.cxt_len, num_repeats=1, return_trajectories=True, return_k_trajectories=1)
             scenario_to_info.update(new_scenario_to_info)
 
         # log to wandb the average rewards
