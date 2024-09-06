@@ -154,7 +154,7 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
         if return_trajectories:
             trajectory = trajectories[0]
             for j in range(1, len(trajectories)):
-                trajectory.merge_two_trajectories_time_wise(trajectories[j])  # it's in place, so no need to reassign
+                trajectory = trajectory.merge_two_trajectories_time_wise(trajectories[j])
 
             if i <= return_k_trajectories - 1:
                 scenario_to_info.setdefault(scenario_name, {}).setdefault('trajectories', []).append(trajectory)

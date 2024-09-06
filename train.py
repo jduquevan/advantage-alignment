@@ -715,7 +715,7 @@ class TrainingAlgorithm(ABC):
 
         return train_step_metrics
 
-    def evaluate(self, agent):
+    def evaluate(self, agent, step):
         all_scenarios = scene._scenarios_by_substrate()[self.main_cfg['env']['scenario']]
 
         scenario_to_info = {}
@@ -744,8 +744,10 @@ class TrainingAlgorithm(ABC):
 
         for scenario_name, info in scenario_to_info.items():
             info: TrajectoryBatch
+            video_folder = run_folder / f'step_{step}'
+            os.makedirs(video_folder, exist_ok=True)
             frames = info['trajectories'][0].data['full_maps'][0].cpu().numpy()
-            create_video_with_imageio(frames, output_folder=run_folder, video_name=f'{scenario_name}.mp4', frame_rate=3)
+            create_video_with_imageio(frames, output_folder=video_folder, video_name=f'{scenario_name}.mp4', frame_rate=3)
             metrics[f'eval/video_{scenario_name}'] = wandb.Video(np.transpose(frames, (0, 3, 1, 2)), fps=3)
 
         return metrics
@@ -822,7 +824,7 @@ class TrainingAlgorithm(ABC):
             state = self.resetter.maybe_reset(self.env, state)
 
             if step % self.train_cfg.eval_every == 0:
-                eval_metrics = self.evaluate(self.agents[0])
+                eval_metrics = self.evaluate(self.agents[0], step)
                 print("Evaluation metrics:", eval_metrics)
                 wandb.log(step=step, data=eval_metrics, )
 
