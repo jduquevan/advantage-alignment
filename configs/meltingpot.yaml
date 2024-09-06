@@ -14,7 +14,7 @@ share_encoder: True
 use_reward_loss: False
 use_spr_loss: True
 device: cuda
-rb_size: 840
+rb_size: 420
 use_full_maps: False
 hidden_size: 32
 max_seq_len: 1000
@@ -23,7 +23,7 @@ run_single_agent: False
 debug_mode: False
 use_ss_loss: True
 agent_rb_size: 100
-agent_rb_mode: 'off'
+agent_rb_mode: 'uniform-from-history'
 
 
 env:
@@ -109,7 +109,7 @@ training:
   kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'td-1'
-  save_every: 1000
+  save_every: 500
   video_dir: './videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
   aa_weight: 0

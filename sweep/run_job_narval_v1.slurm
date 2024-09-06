@@ -55,8 +55,11 @@ python train.py \
     training.actor_loss_mode=${14} \
     training.aa_weight=${15} \
     env.batch=${16} \
+    agent_rb_size=${17} \
+    training.add_to_agent_replay_buffer_every=${18} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
     training.checkpoint_dir=./experiments/ \
+    training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
     --config-name='meltingpot.yaml' \

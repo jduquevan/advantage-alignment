@@ -25,16 +25,14 @@ def run_random_job(fake_submit: bool = True):
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [2],
         'env.batch': [6, 12],
+        'agent_rb_size': [100, 500],
+        'training.add_to_agent_replay_buffer_every': [1, 10, 20],
     }
 
     # sample a random config
     config = {}
     for key, values in hparams.items():
         config[key] = random.choice(values)
-
-    # if config['hp.agent_replay_buffer.mode'] == 'disabled':
-    #     config['hp.agent_replay_buffer.capacity'] = 1
-    #     config['hp.agent_replay_buffer.update_freq'] = 1
 
     # submit this job using slurm
     command = gen_command(config)
