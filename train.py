@@ -767,8 +767,9 @@ class TrainingAlgorithm(ABC):
             if self.agent_replay_buffer_mode == "off":
                 pass
             elif self.agent_replay_buffer_mode == 'uniform-from-history':
-                new_agents = [self.agents[0]]
-                for _ in range(1, self.num_agents):
+                n = self.train_cfg.num_on_policy_agents
+                new_agents = [self.agents[0] for _ in range(n)]
+                for _ in range(n, self.num_agents):
                     new_agents.append(self.agent_replay_buffer.sample())
                 self.agents = new_agents
 

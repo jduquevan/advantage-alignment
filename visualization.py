@@ -16,7 +16,7 @@ from utils import (
 
 num_frames = 1000
 model_folder = 'experiments'
-model_name = 'ewo1jd39/step_1000/agent.pt'
+model_name = 'sk6shtt4/agent.pt'
 output_folder = 'videos'
 
 def create_video_with_imageio(frames, output_folder, video_name='output.mp4', frame_rate=3):
@@ -109,7 +109,7 @@ def main(cfg: DictConfig) -> None:
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_1.mp4', frame_rate=3)
+    create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_4.mp4', frame_rate=3)
 
     
 
