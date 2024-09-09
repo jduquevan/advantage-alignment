@@ -781,7 +781,7 @@ class TrainingAlgorithm(ABC):
 
 
             if step % self.train_cfg.save_every == 0:
-                save_checkpoint(self.agents[0], self.replay_buffer, self.agent_replay_buffer, step, self.train_cfg.checkpoint_dir)
+                save_checkpoint(self.agents[0], self.replay_buffer, self.agent_replay_buffer, step, self.train_cfg.checkpoint_dir, also_clean_old=True, save_agent_replay_buffer=False)
 
             start_time = time.time()
             trajectory, state = self.gen_sim(state)

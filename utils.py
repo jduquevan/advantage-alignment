@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import hydra
@@ -99,7 +100,7 @@ def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
 
-def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_dir, save_agent_replay_buffer=False):
+def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_dir, save_agent_replay_buffer=False, also_clean_old=False):
     # Get the W&B run ID
     run_id = wandb.run.id
 
@@ -126,6 +127,21 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
         torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
     if agent_replay_buffer is not None and save_agent_replay_buffer:
         torch.save({'params': agent_replay_buffer.agents_batched_state_dicts, 'num_added_agents': agent_replay_buffer.num_added_agents}, checkpoint_path / 'agent_replay_buffer.pt')
+
+    if also_clean_old:
+        for d in run_folder.iterdir():
+            if re.match(f'step_{str(step)}', d.name):
+                continue
+            elif re.match(r'step_\d+', d.name):
+                # make sure we don't delete the current checkpoint
+                d = Path(d)
+                assert d != checkpoint_path
+                # remove the replay buffer and agent replay buffer if they exist
+                if (d / 'replay_buffer_data.pt').exists():
+                    os.remove(d / 'replay_buffer_data.pt')
+                if (d / 'agent_replay_buffer.pt').exists():
+                    os.remove(d / 'agent_replay_buffer.pt')
+
     print(f"(@@-o)Agent Checkpoint saved at: {checkpoint_path}")
 
 
