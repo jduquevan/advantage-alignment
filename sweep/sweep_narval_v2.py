@@ -27,6 +27,7 @@ def run_random_job(fake_submit: bool = True):
         'env.batch': [6, 12],
         'agent_rb_size': [100, 500],
         'training.add_to_agent_replay_buffer_every': [1, 10, 20],
+        'sum_rewards': [False],
     }
 
     # sample a random config
@@ -35,12 +36,18 @@ def run_random_job(fake_submit: bool = True):
         config[key] = random.choice(values)
 
     # submit this job using slurm
+    assert config['training.actor_loss_mode'] == 'integrated_aa'
+    assert config['sum_rewards'] == False
     aa_command = gen_command(config)
+
     config['training.actor_loss_mode'] = 'naive'
     config['training.aa_weight'] = 0.0
+    assert config['sum_rewards'] == False
     naive_command = gen_command(config)
+
     config['sum_rewards'] = True
     sum_reward_command = gen_command(config)
+
     if fake_submit:
         print('fake submit')
     else:
