@@ -2,7 +2,7 @@ import os
 import random
 
 def gen_command(config):
-    command = "sbatch sweep/run_job_narval_v1.slurm 42"
+    command = "sbatch sweep/run_job_narval_v2.slurm 42"
     for key, value in config.items():
         command += " {}".format(value)
     return command
