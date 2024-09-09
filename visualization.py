@@ -110,7 +110,6 @@ def main(cfg: DictConfig) -> None:
     
     frames = np.concatenate(images)
     create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_4.mp4', frame_rate=3)
-
     
 
 if __name__ == "__main__":
