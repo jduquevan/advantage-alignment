@@ -58,8 +58,8 @@ python train.py \
     agent_rb_size=${17} \
     training.add_to_agent_replay_buffer_every=${18} \
     debug_mode=False \
-    wandb_dir=/home/aghajohm/scratch/wandb_dir \
-    hydra.run.dir=/home/aghajohm/scratch/hydra_dir \
+    wandb_dir=/home/aghajohm/scratch/adalign/wandb_dir \
+    hydra.run.dir=/home/aghajohm/scratch/adalign/hydra_dir \
     training.checkpoint_dir=/home/aghajohm/scratch/adalign/experiments \
     training.video_dir=/home/aghajohm/scratch/adalign/videos/ \
     --config-name='meltingpot.yaml' \
