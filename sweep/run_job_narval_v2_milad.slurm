@@ -57,6 +57,7 @@ python train.py \
     env.batch=${16} \
     agent_rb_size=${17} \
     training.add_to_agent_replay_buffer_every=${18} \
+    sum_rewards=${19} \
     debug_mode=False \
     wandb_dir=/home/aghajohm/scratch/adalign/wandb_dir \
     hydra.run.dir=/home/aghajohm/scratch/adalign/hydra_dir \
