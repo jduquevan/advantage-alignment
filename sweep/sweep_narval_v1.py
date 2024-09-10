@@ -12,7 +12,7 @@ def run_random_job(fake_submit: bool = True):
     hparams = {
         'optimizer_actor.lr': [0.0005, 0.001],
         'optimizer_critic.lr': [0.0001, 0.0003, 0.001],
-        'training.entropy_beta': [0, 0.0001, 0.001],
+        'training.entropy_beta': [0, 0.00001, 0.0001, 0.001],
         'training.clip_range': [0.2, 0.3],
         'training.updates_per_batch': [2, 3],
         'training.kl_threshold': [0.01, 0.05],
@@ -20,13 +20,13 @@ def run_random_job(fake_submit: bool = True):
         'encoder.num_layers': [3],
         'training.critic_loss_mode': ['td-1'],
         'max_cxt_len': [60],
-        'optimizer_ss.lr': [1e-5, 3e-5, 1e-4],
-        'use_ss_loss': [False],
+        'optimizer_ss.lr': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
+        'use_ss_loss': [True],
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [2],
-        'env.batch': [6, 12],
+        'env.batch': [12],
         'agent_rb_size': [100, 500],
-        'training.add_to_agent_replay_buffer_every': [1, 10, 20],
+        'training.add_to_agent_replay_buffer_every': [10, 20],
     }
 
     # sample a random config

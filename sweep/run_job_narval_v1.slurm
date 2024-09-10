@@ -60,6 +60,6 @@ python train.py \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
-    training.checkpoint_dir=./experiments/ \
+    training.checkpoint_dir=/home/jduque/scratch/projects/advantage-alignment/experiments/ \
     training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
     --config-name='meltingpot.yaml' \
