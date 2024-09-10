@@ -27,6 +27,7 @@ def run_random_job(fake_submit: bool = True):
         'env.batch': [12],
         'agent_rb_size': [100, 500],
         'training.add_to_agent_replay_buffer_every': [10, 20],
+        'training.id_weight': [0.1, 0.3, 0.5, 0.7, 0.9],
     }
 
     # sample a random config
