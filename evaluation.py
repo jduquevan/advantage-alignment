@@ -172,7 +172,7 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
             avg_returns.append(trajectory.data['rewards'].sum(axis=-1).mean())
             steps += cxt_len
             if run_until_done:
-                stop = state.last() or steps > 100
+                stop = state.last() or steps > 3000
             elif steps >= num_frames:
                 stop = True
 
