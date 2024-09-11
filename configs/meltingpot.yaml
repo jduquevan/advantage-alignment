@@ -14,7 +14,7 @@ share_encoder: True
 use_reward_loss: False
 use_spr_loss: True
 device: cuda
-rb_size: 420
+rb_size: 840
 use_full_maps: False
 hidden_size: 128
 max_seq_len: 1000
@@ -115,8 +115,8 @@ training:
   aa_weight: 2
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 0
-  spr_weight: 1
+  id_weight: 1
+  spr_weight: 0
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
   add_to_agent_replay_buffer_every: 20

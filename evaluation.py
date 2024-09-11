@@ -3,6 +3,7 @@ import time
 from collections import defaultdict
 
 import hydra
+import pandas as pd
 import torch
 from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
@@ -129,11 +130,27 @@ def evaluate_agents_on_substrate(agents, substrate_name, num_frames, cxt_len, nu
 
     return scenario_to_info  # e.g {'commons_harvest__open_0': {'avg_reward': 0.5, 'trajectories': [TrajectoryBatch, ...]}}
 
-def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_repeats: int = 1, return_trajectories: bool=False, return_k_trajectories: int = 0) -> float:
+def normalize(scenario, focal_per_capita_return_raw):
+    # example usage : normalize('commons_harvest__open_0', 1.8)
+    # load the data
+    scenario_results = pd.read_feather('data/melting_pot_2_scenario_results.feather')
+    scenario_results = scenario_results.reset_index()
+    # filter by scenario
+    scenario_results = scenario_results[scenario_results['scenario'] == scenario]
+    # min scenario score
+    min_score = scenario_results['focal_per_capita_return'].min()
+    # max scenario score
+    max_score = scenario_results['focal_per_capita_return'].max()
+    # normalize the scores
+    return (focal_per_capita_return_raw - min_score) / (max_score - min_score)
+
+def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_repeats: int = 1, return_trajectories: bool=False, return_k_trajectories: int = 0, run_until_done: bool = False) -> float:
     if return_trajectories is False:
         assert return_k_trajectories == 0
     else:
         assert return_k_trajectories <= num_repeats
+
+    assert run_until_done is False or num_frames == -1, "If run_until_done is True, num_frames must be -1"
 
     scenario_to_info = {}
 
@@ -143,12 +160,21 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
 
     trajectories = []
     avg_rewards = []
+    avg_returns = []
 
+    stop = False
     for i in range(num_repeats):
-        for j in range(num_frames // cxt_len):
+        steps = 0
+        while not stop:
             trajectory, state = _gen_sim_scenario(state, env, cxt_len, agents)
             trajectories.append(trajectory)
             avg_rewards.append(trajectory.data['rewards'].mean().item())
+            avg_returns.append(trajectory.data['rewards'].sum(axis=-1).mean())
+            steps += cxt_len
+            if run_until_done:
+                stop = state.last() or steps > 3000
+            elif steps >= num_frames:
+                stop = True
 
         # concat all trajectories
         if return_trajectories:
@@ -160,6 +186,7 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
                 scenario_to_info.setdefault(scenario_name, {}).setdefault('trajectories', []).append(trajectory)
 
     scenario_to_info.setdefault(scenario_name, {})['avg_reward'] = sum(avg_rewards) / len(avg_rewards)
+    scenario_to_info.setdefault(scenario_name, {})['avg_return'] = sum(avg_returns) / len(avg_returns)
     return scenario_to_info
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
