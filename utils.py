@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 import hydra
 import numpy as np
 import os
@@ -6,6 +9,7 @@ import torch
 import wandb
 
 from omegaconf import DictConfig
+
 
 def seed_all(seed):
     np.random.seed(seed)
@@ -96,26 +100,50 @@ def update_target_network(target, source, tau=0.005):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(tau*param.data + (1.0-tau)*target_param.data)
 
-def save_checkpoint(agent, epoch, checkpoint_dir):
+def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_dir, save_agent_replay_buffer=False, also_clean_old=False):
     # Get the W&B run ID
     run_id = wandb.run.id
 
+    from train import ReplayBuffer, GPUMemoryFriendlyAgentReplayBuffer
+    replay_buffer: ReplayBuffer
+    agent_replay_buffer: GPUMemoryFriendlyAgentReplayBuffer
+
     # Create a folder with the run ID if it doesn't exist
-    run_folder = os.path.join(checkpoint_dir, run_id)
+    run_folder = Path(checkpoint_dir) / run_id
     os.makedirs(run_folder, exist_ok=True)
 
     # Generate a unique filename
-    checkpoint_name = f"model_{epoch}.pt"
-    checkpoint_path = os.path.join(run_folder, checkpoint_name)
-    
-    checkpoint = {
-        'epoch': epoch,
+    checkpoint_path = run_folder / ('step_'+str(step))
+    os.makedirs(checkpoint_path, exist_ok=True)
+
+    agent_checkpoint = {
         'actor_state_dict': agent.actor.state_dict(),
-        'critic_state_dict': agent.critic.state_dict()
+        'critic_state_dict': agent.critic.state_dict(),
+        'target_state_dict': agent.target.state_dict(), # todo: remove all this and just use the state_dict of the agent
     }
-    
-    torch.save(checkpoint, checkpoint_path)
-    print(f"Checkpoint saved at: {checkpoint_path}")
+
+    torch.save(agent_checkpoint, checkpoint_path / 'agent.pt')
+    if replay_buffer is not None and save_agent_replay_buffer:
+        torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
+    if agent_replay_buffer is not None and save_agent_replay_buffer:
+        torch.save({'params': agent_replay_buffer.agents_batched_state_dicts, 'num_added_agents': agent_replay_buffer.num_added_agents}, checkpoint_path / 'agent_replay_buffer.pt')
+
+    if also_clean_old:
+        for d in run_folder.iterdir():
+            if re.match(f'step_{str(step)}', d.name):
+                continue
+            elif re.match(r'step_\d+', d.name):
+                # make sure we don't delete the current checkpoint
+                d = Path(d)
+                assert d != checkpoint_path
+                # remove the replay buffer and agent replay buffer if they exist
+                if (d / 'replay_buffer_data.pt').exists():
+                    os.remove(d / 'replay_buffer_data.pt')
+                if (d / 'agent_replay_buffer.pt').exists():
+                    os.remove(d / 'agent_replay_buffer.pt')
+
+    print(f"(@@-o)Agent Checkpoint saved at: {checkpoint_path}")
+
 
 def wandb_stats(trajectory, B, N):
     stats = {}

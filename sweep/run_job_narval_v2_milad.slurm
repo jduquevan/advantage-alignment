@@ -8,8 +8,8 @@
 #SBATCH --job-name=meltingpot
 
 # Remove one # to uncommment
-#SBATCH --output=/scratch/jduque/slurm_output/slurm-%j.out
-#SBATCH --error=/scratch/jduque/slurm_output/job-%j.out
+#SBATCH --output=/scratch/aghajohm/slurm_output/slurm-%j.out
+#SBATCH --error=/scratch/aghajohm/slurm_output/job-%j.out
 
 # Define, how many nodes you need. Here, we ask for 1 node.
 #SBATCH -N 1 #nodes
@@ -17,7 +17,7 @@
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-06:59:00   
+#SBATCH --time=0-05:59:00   
 #SBATCH --gres=gpu:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
@@ -30,11 +30,11 @@
 
 # Submit jobs.
 version=4
-export WANDB_ENTITY="jduque"
+export WANDB_ENTITY="miladink"
 
 module purge
 eval "$(conda shell.bash hook)"
-source /home/jduque/environments/meltingpot/bin/activate
+source /home/aghajohm/repos/advantage-alignment/meltingpot-env/bin/activate
 module load cuda/12.2
 export WANDB_MODE=offline
 
@@ -57,10 +57,10 @@ python train.py \
     env.batch=${16} \
     agent_rb_size=${17} \
     training.add_to_agent_replay_buffer_every=${18} \
-    training.id_weight=${19} \
+    sum_rewards=${19} \
     debug_mode=False \
-    wandb_dir=/home/jduque/scratch/wandb \
-    hydra.run.dir=/home/jduque/scratch/hydra \
-    training.checkpoint_dir=/home/jduque/scratch/projects/advantage-alignment/experiments/ \
-    training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
+    wandb_dir=/home/aghajohm/scratch/adalign/wandb_dir \
+    hydra.run.dir=/home/aghajohm/scratch/adalign/hydra_dir \
+    training.checkpoint_dir=/home/aghajohm/scratch/adalign/experiments \
+    training.video_dir=/home/aghajohm/scratch/adalign/videos/ \
     --config-name='meltingpot.yaml' \

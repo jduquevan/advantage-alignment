@@ -1,6 +1,11 @@
 import copy
+import os
+from pathlib import Path
+
 import hydra
 import math
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,10 +21,12 @@ from torch.func import functional_call, stack_module_state
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
 from typing import Any, List, Tuple, Dict
+import re
 
 import time
 
 from decoder import RLTransformer, TransformerConfig
+from evaluation import evaluate_agents_on_scenario
 from utils import (
     seed_all,
     instantiate_agent,
@@ -33,6 +40,9 @@ from utils import (
 from collections import defaultdict
 
 import warnings
+from meltingpot import substrate, scenario as scene
+
+from visualization import create_video_with_imageio
 
 
 class LinearModel(nn.Module):
@@ -124,7 +134,7 @@ class PositionalEncoding(nn.Module):
         pe = torch.zeros(max_len, 1, d_model)
         pe[:, 0, 0::2] = torch.sin(position * div_term)
         pe[:, 0, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
+        self.register_buffer('pe', pe, persistent=False)
 
     def forward(self, x):
         """
@@ -356,6 +366,8 @@ class TrajectoryBatch():
                     dtype=torch.long,
                 ),
             }
+        else:
+            self.data = data
 
     def add_actions(self, actions, t):
         self.data['actions'][:, t] = actions[:, 0]
@@ -371,10 +383,15 @@ class TrajectoryBatch():
         self.data['log_ps'][:, t] = log_ps
         self.data['actions'][:, t] = actions[:, 0]
 
-    def merge_two_trajectories(self, other):
+    def merge_two_trajectories_batch_wise(self, other):
         for key in self.data.keys():
             self.data[key] = torch.cat((self.data[key], other.data[key]), dim=0)
         self.batch_size += other.batch_size
+        return self
+
+    def merge_two_trajectories_time_wise(self, other):
+        for key in self.data.keys():
+            self.data[key] = torch.cat((self.data[key], other.data[key]), dim=1)
         return self
 
 
@@ -386,6 +403,7 @@ class ReplayBuffer():
         n_agents: int,
         cxt_len: int,
         device: torch.device,
+        data=None,
     ):
         state = env.reset()
         self.replay_buffer_size = replay_buffer_size
@@ -402,7 +420,8 @@ class ReplayBuffer():
             n_agents=n_agents,
             cxt_len=cxt_len,
             device=device,
-            is_replay_buffer=True
+            is_replay_buffer=True,
+            data=data,
         )
 
     def add_trajectory_batch(self, new_batch: TrajectoryBatch):
@@ -449,6 +468,8 @@ class AgentReplayBuffer:
         self.agent_number = agent_number
 
     def add_agent(self, agent):
+        if self.agents[self.marker] is not None:
+            del self.agents[self.marker]
         self.agents[self.marker] = agent.state_dict()
         self.num_added_agents += 1
         self.marker = (self.marker + 1) % self.replay_buffer_size
@@ -463,6 +484,80 @@ class AgentReplayBuffer:
     def __len__(self):
         return min(self.num_added_agents, self.replay_buffer_size)
 
+class GPUMemoryFriendlyAgentReplayBuffer:
+    def __init__(self,
+                 main_cfg: DictConfig,  # to instantiate the agents from
+                 replay_buffer_size: int,
+                 agent_number: int,  # either 1 or 2  as it is a two player game
+                 ):
+        self.main_cfg = main_cfg
+        self.replay_buffer_size = replay_buffer_size
+        self.marker = 0
+        self.num_added_agents = 0
+        agent_blueprint = instantiate_agent(self.main_cfg)
+        batched_state_dicts = {}
+        for k in agent_blueprint.state_dict().keys():
+            v = agent_blueprint.state_dict()[k]
+            batched_state_dicts[k] = torch.zeros((replay_buffer_size, *v.shape), device=v.device)
+        self.agents_batched_state_dicts = batched_state_dicts
+        self.agent_number = agent_number
+
+    def add_agent(self, agent):
+        self.add_agent_state_dict(agent.state_dict())
+
+    def add_agent_state_dict(self, state_dict):
+        for k, v in state_dict.items():
+            self.agents_batched_state_dicts[k][self.marker] = v
+        self.num_added_agents += 1
+        self.marker = (self.marker + 1) % self.replay_buffer_size
+
+    def sample(self):
+        idx = torch.randint(0, self.__len__(), ())
+        state_dict = {}
+        for k, v in self.agents_batched_state_dicts.items():
+            state_dict[k] = v[idx]
+        agent = instantiate_agent(self.main_cfg)
+        agent.load_state_dict(state_dict)
+        return agent
+
+    def __len__(self):
+        return min(self.num_added_agents, self.replay_buffer_size)
+
+class EnvironmentResetter():
+    def __init__(self, cfg, device):
+        self.cfg = cfg
+        self.device = device
+        self.mean = cfg['max_seq_len'] // cfg['max_cxt_len']
+        self.lower = max(self.mean - 5, 0)
+        self.upper = self.mean + 5
+        self.env_counters = torch.zeros(cfg['env']['batch']).to(device)
+        self.env_max_steps = self.sample_max_steps(self.cfg, self.device)
+
+    def maybe_reset(self, env, state):
+        self.env_counters = (self.env_counters + 1)
+        needs_resetting = (self.env_counters == self.env_max_steps)
+        env_max_steps = self.sample_max_steps(self.cfg, self.device)
+        self.env_max_steps = torch.where(needs_resetting, env_max_steps, self.env_max_steps)
+        self.env_counters = torch.where(needs_resetting, 0, self.env_counters)
+
+        if needs_resetting.any():
+            state[env._reset_keys[0]] = needs_resetting.to('cpu')
+            state = env.reset(state)
+
+        return state
+
+    def sample_max_steps(self, cfg, device):
+        env_max_steps = torch.poisson(
+            torch.ones(self.cfg['env']['batch']) * self.mean
+        ).to(self.device)
+
+        env_max_steps = torch.clamp(
+            env_max_steps,
+            self.lower,
+            self.upper
+        )
+        return env_max_steps
+
 
 class TrainingAlgorithm(ABC):
     def __init__(
@@ -476,7 +571,10 @@ class TrainingAlgorithm(ABC):
         discrete: bool,
         clip_grad_norm: float = None,
         replay_buffer: ReplayBuffer = None,
+        agent_replay_buffer: GPUMemoryFriendlyAgentReplayBuffer = None,
+        agent_replay_buffer_mode: str = "off",
     ) -> None:
+
         self.env = env
         self.agents = agents
         self.main_cfg = main_cfg
@@ -490,11 +588,15 @@ class TrainingAlgorithm(ABC):
         self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
         self.batch_size = int(env.batch_size[0])
+        self.resetter = EnvironmentResetter(self.main_cfg, self.agents[0].device)
+        self.agent_replay_buffer = agent_replay_buffer
+        self.agent_replay_buffer_mode = agent_replay_buffer_mode
 
     def train_step(
         self,
         trajectory,
         agents,
+        step: int,
         optimize_critic=True,
     ):
 
@@ -574,6 +676,9 @@ class TrainingAlgorithm(ABC):
 
             # --- update target network ---
             update_target_network(agent.target, agent.critic, self.train_cfg.tau)
+            # --- update agent replay buffer ---
+            if self.agent_replay_buffer_mode != "off" and step % self.train_cfg.add_to_agent_replay_buffer_every == 0:
+                self.agent_replay_buffer.add_agent(agent)
 
         train_step_metrics.update({
             "critic_loss": critic_loss.detach(),
@@ -610,26 +715,80 @@ class TrainingAlgorithm(ABC):
 
         return train_step_metrics
 
-    def eval(self, agent):
-        pass
+    def evaluate(self, agent, step):
+        all_scenarios = scene._scenarios_by_substrate()[self.main_cfg['env']['scenario']]
+
+        scenario_to_info = {}
+
+        for scenario_name in all_scenarios:
+            num_our_agent_in_scenario = len(scene.build_from_config(scene.get_config(scenario_name)).action_spec())
+            agents = []
+            for _ in range(num_our_agent_in_scenario):
+                agents.append(agent)
+
+            new_scenario_to_info = evaluate_agents_on_scenario(agents, scenario_name, num_frames=-1, cxt_len=self.cxt_len, num_repeats=1, return_trajectories=True, return_k_trajectories=1, run_until_done=True)
+            scenario_to_info.update(new_scenario_to_info)
+
+        # log to wandb the average rewards
+        metrics = {}
+        reward_metrics = {}
+        return_metrics = {}
+        normalized_return_metrics = {}
+        for scenario_name, info in scenario_to_info.items():
+            reward_metrics[f'eval/{scenario_name}/avg_reward_focal'] = info['avg_reward']
+            return_metrics[f'eval/{scenario_name}/avg_return_focal'] = info['avg_return'].item()
+            from evaluation import normalize
+            normalized_return_metrics[f'eval/{scenario_name}/avg_return_normalized'] = normalize(scenario_name, info['avg_return'].item())
+        # overall average
+        metrics['eval/overall/avg_reward_focal'] = sum(reward_metrics.values()) / len(reward_metrics)
+        metrics['eval/overall/avg_return_focal'] = sum(return_metrics.values()) / len(return_metrics)
+        metrics['eval/overall/avg_return_normalized'] = sum(normalized_return_metrics.values()) / len(normalized_return_metrics)
+
+        # merge this two in metrics
+        metrics = {**metrics, **reward_metrics, **return_metrics, **normalized_return_metrics}
+
+        # generate videos
+        run_folder = Path(self.train_cfg.video_dir) / wandb.run.id
+        os.makedirs(run_folder, exist_ok=True)
+
+        for scenario_name, info in scenario_to_info.items():
+            video_folder = run_folder / f'step_{step}'
+            os.makedirs(video_folder, exist_ok=True)
+            frames = info['trajectories'][0].data['full_maps'][0].cpu().numpy()
+            create_video_with_imageio(frames, output_folder=video_folder, video_name=f'{scenario_name}.mp4', frame_rate=3)
+            metrics[f'eval/video_{scenario_name}'] = wandb.Video(np.transpose(frames, (0, 3, 1, 2)), fps=3)
+
+        return metrics
 
     def save(self):
         pass
 
-    def train_loop(self):
+    def train_loop(self, resume_from_this_step: int = 0):
         # assert either replay buffer or agent replay buffer is used, but not both
         # assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
-        pbar = tqdm(range(self.train_cfg.total_steps))
+        pbar = tqdm(range(resume_from_this_step, self.train_cfg.total_steps),
+                    initial=resume_from_this_step, total=self.train_cfg.total_steps)
 
         time_metrics = {}
+        state = self.env.reset()
 
         for step in pbar:
-            if step % (self.trajectory_len // self.cxt_len) == 0:
+            # replay buffer, swap agents other than the first agent with their replay buffer counterparts
+            if self.agent_replay_buffer_mode == "off":
+                pass
+            elif self.agent_replay_buffer_mode == 'uniform-from-history':
+                n = self.train_cfg.num_on_policy_agents
+                new_agents = [self.agents[0] for _ in range(n)]
+                for _ in range(n, self.num_agents):
+                    new_agents.append(self.agent_replay_buffer.sample())
+                self.agents = new_agents
+
+            if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
                 print("Reseting environment")
                 state = self.env.reset()
 
             if step % self.train_cfg.save_every == 0:
-                save_checkpoint(self.agents[0], step, self.train_cfg.checkpoint_dir)
+                save_checkpoint(self.agents[0], self.replay_buffer, self.agent_replay_buffer, step, self.train_cfg.checkpoint_dir, also_clean_old=True, save_agent_replay_buffer=False)
 
             start_time = time.time()
             trajectory, state = self.gen_sim(state)
@@ -641,7 +800,8 @@ class TrainingAlgorithm(ABC):
             train_step_metrics = self.train_step(
                 trajectory=trajectory,
                 agents=self.agents,
-                optimize_critic=True
+                step=step,
+                optimize_critic=True,
             )
 
             for key, value in train_step_metrics.items():
@@ -668,6 +828,12 @@ class TrainingAlgorithm(ABC):
             })
             wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
+            state = self.resetter.maybe_reset(self.env, state)
+
+            if step % self.train_cfg.eval_every == 0:
+                eval_metrics = self.evaluate(self.agents[0], step)
+                print("Evaluation metrics:", eval_metrics)
+                wandb.log(step=step, data=eval_metrics, )
 
         return
 
@@ -684,7 +850,6 @@ class TrainingAlgorithm(ABC):
     @abstractmethod
     def self_supervised_losses(self, batch):
         pass
-
 
 class AdvantageAlignment(TrainingAlgorithm):
 
@@ -741,8 +906,8 @@ class AdvantageAlignment(TrainingAlgorithm):
             return mask @ A_s
 
         A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B * N, -1))
-        # assert torch.allclose(A_s[1:N].sum(dim=0), A_2s[0]), "aa loss is buggy :)"
-        return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1).to(device)
+        assert torch.allclose(A_s[1:N].sum(dim=0), A_2s[0], atol=1e-6), "aa loss is buggy :)"
+        return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1, device=device)
 
     def aa_loss(self, A_s, log_ps, old_log_ps):
         B = self.batch_size
@@ -906,10 +1071,10 @@ class AdvantageAlignment(TrainingAlgorithm):
             actions[:, :-1].reshape(B * T, ),
         ).mean()
 
-        f_x1 = F.normalize(spr_gts.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
-        f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_preds.shape[2])), p=2., dim=-1, eps=1e-3)
-        # f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2]))
-        # f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
+        # f_x1 = F.normalize(spr_gts.float().reshape((-1, spr_gts.shape[2])), p=2., dim=-1, eps=1e-3)
+        # f_x2 = F.normalize(spr_preds.float().reshape((-1, spr_preds.shape[2])), p=2., dim=-1, eps=1e-3)
+        f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2]))
+        f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
 
         spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
 
@@ -1095,7 +1260,58 @@ def main(cfg: DictConfig) -> None:
     seed_all(cfg['seed'])
     wandb_friendly_cfg = {k: v for (k, v ) in flatten_native_dict(OmegaConf.to_container(cfg, resolve=True))}
 
+    # check some configs and their conditions
+    assert cfg['sum_rewards'] is False or cfg['training']['actor_loss_mode'] in ['naive'], "Almost certainly you did not want to run AA with summed rewards."
+
+    # ------ (@@-o) checkpointing logic ------ #
+    agent_state_dict = None
+    agent_replay_buffer_ckpt = None
+    replay_buffer_data = None
+    resume_from_this_step = 0
+    if cfg['run_id'] is not None:
+        run_id = cfg['run_id']
+    else:
+        run_id = None
+
+    def is_dir_resumable(d):
+        if not re.match(r'step_\d+', d.name):
+            return False
+        if not (d / 'agent.pt').exists():
+            return False
+        return True
+
+    if cfg['resume']:
+        assert run_id is not None, "(@@-o)Run ID must be provided for resume runs."
+
+        checkpoint_path = (Path(cfg['training']['checkpoint_dir']) / run_id)
+        if checkpoint_path.exists():
+            dirs = [d for d in checkpoint_path.iterdir() if d.is_dir()]
+            print(f"(@@-o)Found {len(dirs)} directories inside {checkpoint_path}. They are {dirs}")
+            dirs = [d for d in dirs if is_dir_resumable(d)]
+            print(f"(@@-o)Filtered and found {len(dirs)} resumable directories.")
+
+            if len(dirs) == 0:
+                print("(@@-o)No checkpoints found, starting from scratch.")
+            else:
+                most_recent_dir = max(dirs, key=lambda x: int(x.name.split('_')[1]))
+                agent_state_dict = torch.load(most_recent_dir / 'agent.pt')
+                resume_from_this_step = int(most_recent_dir.name.split('_')[1])
+                print(f"(@@-o)Resuming from checkpoint: {most_recent_dir}, step: {resume_from_this_step}")
+
+                agent_replay_buffer_path = (most_recent_dir / 'agent_replay_buffer.pt')
+                if agent_replay_buffer_path.exists():
+                    agent_replay_buffer_ckpt = torch.load(agent_replay_buffer_path)
+                    print(f"(@@-o)Loaded {agent_replay_buffer_ckpt['num_added_agents']} agents from replay buffer {agent_replay_buffer_path}")
+
+                replay_buffer_path = (most_recent_dir / 'replay_buffer_data.pt')
+                if replay_buffer_path.exists():
+                    replay_buffer_data = torch.load(replay_buffer_path)
+                    print(f"(@@-o)Loaded replay buffer from {replay_buffer_path}")
+
+    # ------ (@@-o) end of checkpointing logic ------ #
+
     wandb.init(
+        id=run_id,
         config=wandb_friendly_cfg,
         project="Meltingpot",
         dir=cfg["wandb_dir"],
@@ -1104,18 +1320,27 @@ def main(cfg: DictConfig) -> None:
         mode=cfg["wandb"],
         tags=cfg.wandb_tags,
     )
+
     if cfg['env']['type'] == 'meltingpot':
         scenario = cfg['env']['scenario']
-        env = ParallelEnv(cfg['env']['batch'], lambda: MeltingpotEnv(scenario))
+        env = ParallelEnv(int(cfg['env']['batch']), lambda: MeltingpotEnv(scenario))
     else:
         raise ValueError(f"Environment type {cfg['env_conf']['type']} not supported.")
 
     if cfg['self_play']:
         agents = []
         agent = instantiate_agent(cfg)
+        # ---- (@@-o) checkpointing logic ---- #
+        if agent_state_dict is not None:
+            assert cfg['resume'], "(@@-o)Cannot load agent state dict when the run is not a resume run."
+            agent.actor.load_state_dict(agent_state_dict['actor_state_dict'])
+            agent.critic.load_state_dict(agent_state_dict['critic_state_dict'])
+            agent.target.load_state_dict(agent_state_dict['target_state_dict'])
+        # ---- (@@-o) end of checkpointing logic ---- #
         for i in range(cfg['env']['num_agents']):
             agents.append(agent)
     else:
+        assert cfg['resume'] is False and agent_state_dict is None and agent_replay_buffer_ckpt is None, "(@@-o)Resuming runs are only supported for self-play now."
         agents = []
         for i in range(cfg['env']['num_agents']):
             agents.append(instantiate_agent(cfg))
@@ -1124,12 +1349,34 @@ def main(cfg: DictConfig) -> None:
     actor = agents[0].actor
     print(f"Number of parameters in actor: {sum(p.numel() for p in actor.parameters())}")
 
+    agent_replay_buffer = None
+    if cfg['agent_rb_mode'] != "off":
+        assert cfg['self_play'] is True, "We only support agent replay buffer for self-play for now."
+        agent_replay_buffer = GPUMemoryFriendlyAgentReplayBuffer(
+            main_cfg=cfg,
+            replay_buffer_size=cfg['agent_rb_size'],
+            agent_number=cfg['env']['num_agents'],
+        )
+
+        if agent_replay_buffer_ckpt is not None:
+            print(f"(@@-o)Loading {agent_replay_buffer_ckpt['num_added_agents']} agents from replay buffer.")
+            for i in tqdm(range(agent_replay_buffer_ckpt['num_added_agents']), desc='Loading agents from replay buffer of agents'):
+                state_dict = {}
+                for k in agent_replay_buffer_ckpt['params'].keys():
+                    state_dict[k] = agent_replay_buffer_ckpt['params'][k][i]
+                agent_replay_buffer.add_agent_state_dict(state_dict)
+        else:
+            print("(@@-o)No replay buffer of agents loaded. filling in the current agents")
+            for agent in agents:
+                agent_replay_buffer.add_agent(agent)
+
     replay_buffer = ReplayBuffer(
         env=env,
         replay_buffer_size=cfg['rb_size'],
         n_agents=len(agents),
         cxt_len=cfg['max_cxt_len'],
-        device=cfg['device']
+        device=cfg['device'],
+        data=replay_buffer_data
     )
 
     algorithm = AdvantageAlignment(
@@ -1141,9 +1388,11 @@ def main(cfg: DictConfig) -> None:
         simultaneous=cfg['simultaneous'],
         discrete=cfg['discrete'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
-        replay_buffer=replay_buffer
+        replay_buffer=replay_buffer,
+        agent_replay_buffer=agent_replay_buffer,
+        agent_replay_buffer_mode=cfg['agent_rb_mode'],
     )
-    algorithm.train_loop()
+    algorithm.train_loop(resume_from_this_step=resume_from_this_step)
 
 
 if __name__ == "__main__":
