@@ -14,10 +14,10 @@ share_encoder: True
 use_reward_loss: False
 use_spr_loss: True
 device: cuda
-rb_size: 840
+rb_size: 96
 use_full_maps: False
 hidden_size: 128
-max_seq_len: 1000
+max_seq_len: 2000
 max_cxt_len: 60
 run_single_agent: False
 debug_mode: False
@@ -101,7 +101,7 @@ training:
   max_traj_len: ${max_seq_len}
   batch_size: 128 # Training batch size
   total_steps: 10000000 # Number of optimization steps to train for
-  eval_every: 100 # Number of optimization steps before evaluation
+  eval_every: 500 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.3
   entropy_beta: 0.01

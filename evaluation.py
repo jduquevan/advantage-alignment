@@ -114,22 +114,6 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
     print(f"(|||)Time metrics: {time_metrics}")
     return trajectory, state
 
-def evaluate_agents_on_substrate(agents, substrate_name, num_frames, cxt_len, num_repeats: int = 1, return_trajectories: bool=False, return_k_trajectories: int = 0) -> float:
-    if return_trajectories is False:
-        assert return_k_trajectories == 0
-    else:
-        assert return_k_trajectories <= num_repeats
-
-    all_scenarios = scene._scenarios_by_substrate()[substrate_name]
-
-    scenario_to_info = {}
-
-    for scenario_name in all_scenarios:
-        new_scenario_to_info = evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_repeats, return_trajectories, return_k_trajectories)
-        scenario_to_info.update(new_scenario_to_info)
-
-    return scenario_to_info  # e.g {'commons_harvest__open_0': {'avg_reward': 0.5, 'trajectories': [TrajectoryBatch, ...]}}
-
 def normalize(scenario, focal_per_capita_return_raw):
     # example usage : normalize('commons_harvest__open_0', 1.8)
     # load the data
