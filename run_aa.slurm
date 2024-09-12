@@ -18,7 +18,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=0-05:59:00   
 #SBATCH --gres=gpu:a100l:1
-#SBATCH --partition=unkillable
+#SBATCH --partition=main
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)

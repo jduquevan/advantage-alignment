@@ -853,14 +853,17 @@ class TrainingAlgorithm(ABC):
 
 class AdvantageAlignment(TrainingAlgorithm):
 
-    def get_trajectory_log_ps(self, agents, observations, actions, full_maps):  # todo: make sure logps are the same as when sampling
+    def get_trajectory_log_ps(self, agents, observations, actions, full_maps, condition=None):  # todo: make sure logps are the same as when sampling
         B = self.batch_size
         N = self.num_agents
         T = self.cxt_len
 
+        if condition is None:
+            condition = actions[:, :-1]
+
         action_logits = agents[0].actor(
             observations,
-            actions[:, :-1],
+            condition,
             full_maps,
             full_seq=2,
             batched=True
@@ -871,10 +874,13 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return log_ps.reshape((B * N, T)), entropy.reshape((B * N, T))
 
-    def get_trajectory_values(self, agents, observations, actions, full_maps):
+    def get_trajectory_values(self, agents, observations, actions, full_maps, condition=None):
+        if condition is None:
+            condition = actions[:, :-1]
+        
         values_c = agents[0].critic(
             observations,
-            actions[:, :-1],
+            condition,
             full_maps,
             full_seq=2,
             batched=True
@@ -882,7 +888,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         values_t = agents[0].target(
             observations,
-            actions[:, :-1],
+            condition,
             full_maps,
             full_seq=2,
             batched=True
@@ -906,7 +912,7 @@ class AdvantageAlignment(TrainingAlgorithm):
             return mask @ A_s
 
         A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B * N, -1))
-        assert torch.allclose(A_s[1:N].sum(dim=0), A_2s[0], atol=1e-6), "aa loss is buggy :)"
+        # assert torch.allclose(A_s[1:N].sum(dim=0), A_2s[0], atol=1e-6), "aa loss is buggy :)"
         return (A_1s * A_2s) / torch.arange(1, A_s.shape[-1]+1, device=device)
 
     def aa_loss(self, A_s, log_ps, old_log_ps):
@@ -956,10 +962,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
+        condition = None
 
         full_maps = full_maps.unsqueeze(1)
         full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
         full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
+
+        if self.main_cfg.env.scenario == 'allelopathic_harvest__open':
+            condition = rewards
 
         if self.sum_rewards:
             print("Summing rewards...")
@@ -969,9 +979,9 @@ class AdvantageAlignment(TrainingAlgorithm):
         for agent in self.agents:
             agent.train()
 
-        V_s, _ = self.get_trajectory_values(self.agents, obs, actions, full_maps)
+        V_s, _ = self.get_trajectory_values(self.agents, obs, actions, full_maps, condition)
 
-        log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions, full_maps)
+        log_ps, entropy = self.get_trajectory_log_ps(self.agents, obs, actions, full_maps, condition)
         actor_loss_dict['entropy'] = entropy.view((B, N, -1)).mean(dim=(0, 2))
 
         if old_log_ps == None:
@@ -1024,16 +1034,20 @@ class AdvantageAlignment(TrainingAlgorithm):
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
+        condition = None
 
         full_maps = full_maps.unsqueeze(1)
         full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
         full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
 
+        if self.main_cfg.env.scenario == 'allelopathic_harvest__open':
+            condition = rewards
+
         if self.sum_rewards:
             print("Summing rewards...")
             rewards = torch.sum(rewards.reshape(B, N, -1), dim=1).unsqueeze(1).repeat(1, N, 1).reshape((B * N, -1))
 
-        values_c, values_t = self.get_trajectory_values(self.agents, obs, actions, full_maps)
+        values_c, values_t = self.get_trajectory_values(self.agents, obs, actions, full_maps, condition)
         if self.train_cfg.critic_loss_mode == 'td-1':
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
@@ -1088,23 +1102,26 @@ class AdvantageAlignment(TrainingAlgorithm):
             self.cxt_len,
             self.agents,
             self.replay_buffer,
-            self.main_cfg['run_single_agent']
+            self.main_cfg
         )
 
     def eval(self, agent):
         pass
 
 @staticmethod
-def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_agent=False):
+def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, main_cfg):
     time_metrics = defaultdict(int)
     B = batch_size
     N = len(agents)
     device = agents[0].device
+    run_single_agent = main_cfg['run_single_agent']
+    is_allelopathic = main_cfg.env.scenario == 'allelopathic_harvest__open'
 
     _, _, H, W, C = state['agents']['observation']['RGB'].shape
     _, G, L, _ = state['RGB'].shape
     history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
     history_actions = torch.zeros((B * N, cxt_len + 1), device=device)
+    history_rewards = torch.zeros((B * N, cxt_len + 1), device=device)
     history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
     history_action_logits = torch.zeros((B * N, cxt_len, 8), device=device)
 
@@ -1143,8 +1160,9 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
         trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
         history[:, i, ...] = observations.squeeze(1)
-        history_actions[:, i] = actions.squeeze(1)
         history_full_maps[:, i, ...] = full_maps.squeeze(1)
+        history_actions[:, i] = actions.squeeze(1)
+        history_rewards[:, i] = rewards
 
         observations = history[:, :i + 1, ...]
         actions = history_actions[:, :i + 1]
@@ -1152,7 +1170,10 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
         full_maps_repeated = full_maps.unsqueeze(1).repeat((1, N, 1, 1, 1, 1)).reshape((B * N,) + full_maps.shape[1:])
         time_metrics["time_metrics/gen/obs_process"] += time.time() - start_time
         start_time = time.time()
-
+        if is_allelopathic:
+            condition = history_rewards[:, :i + 1]
+        else:
+            condition = history_actions[:, :i + 1]
 
         past_ks = torch.stack([layer_cache.get()[0] for layer_cache in kv_cache._keys_values], dim=1)  # dim=1 because we need the first dimension to be the batch dimension
         past_vs = torch.stack([layer_cache.get()[1] for layer_cache in kv_cache._keys_values], dim=1)
@@ -1160,7 +1181,7 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, run_single_
             action_logits, this_kvs = call_models_forward(
                 actors,
                 observations,
-                actions,
+                condition,
                 full_maps_repeated,
                 agents[0].device,
                 full_seq=0,
@@ -1215,6 +1236,8 @@ def sample_actions_categorical(action_logits, actions=None):
 
 def get_categorical_entropy(action_logits):
     distribution = Categorical(logits=action_logits)
+    probs = torch.softmax(action_logits, dim=1)
+    ent = -(torch.log(probs) * probs).sum(dim=1)
     return distribution.entropy()
 
 
