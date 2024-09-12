@@ -2,7 +2,7 @@ resume: False
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'offline'
+wandb: 'disabled'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -21,17 +21,17 @@ max_seq_len: 1000
 max_cxt_len: 60
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
+use_ss_loss: True
 agent_rb_size: 100
 agent_rb_mode: 'uniform-from-history'
 
 
 env:
   type: 'meltingpot'
-  batch: 12
+  batch: 6
   device: ${device}
-  scenario: 'commons_harvest__open'
-  num_agents: 7
+  scenario: 'allelopathic_harvest__open'
+  num_agents: 16
 
 hydra:
   output_subdir: null
@@ -120,4 +120,4 @@ training:
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
   add_to_agent_replay_buffer_every: 20
-  num_on_policy_agents: 5
+  num_on_policy_agents: 14
