@@ -17,7 +17,7 @@
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=32G
-#SBATCH --time=0-11:59:00   
+#SBATCH --time=0-23:59:00   
 #SBATCH --gres=gpu:v100l:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
@@ -54,8 +54,14 @@ python train.py \
     use_ss_loss=${13} \
     training.actor_loss_mode=${14} \
     training.aa_weight=${15} \
+    env.batch=${16} \
+    agent_rb_size=${17} \
+    training.add_to_agent_replay_buffer_every=${18} \
+    training.id_weight=${19} \
     debug_mode=False \
     sum_rewards=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
+    training.checkpoint_dir=/home/jduque/scratch/projects/advantage-alignment/experiments/ \
+    training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
     --config-name='meltingpot.yaml' \
