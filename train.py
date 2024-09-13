@@ -632,7 +632,9 @@ class TrainingAlgorithm(ABC):
                 if run_single_agent:
                     actor_loss = actor_loss_dict['losses'][0]
                 else:
-                    actor_loss = actor_loss_dict['losses'].mean()
+                    mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
+                    mask[:self.train_cfg.num_on_policy_agents] = 1
+                    actor_loss = (actor_loss_dict['losses'] * mask).mean()
                 ent = actor_loss_dict['entropy'].mean()
                 actor_loss_1 = actor_loss_dict['losses_1'].mean()
                 actor_loss_2 = actor_loss_dict['losses_2'].mean()
@@ -661,7 +663,9 @@ class TrainingAlgorithm(ABC):
             if run_single_agent:
                 critic_loss = critic_losses[0]
             else:
-                critic_loss = critic_losses.mean()
+                mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
+                mask[:self.train_cfg.num_on_policy_agents] = 1
+                critic_loss = (critic_losses * mask).mean()
             critic_values = aux['critic_values']
             target_values = aux['target_values']
             critic_loss.backward()
