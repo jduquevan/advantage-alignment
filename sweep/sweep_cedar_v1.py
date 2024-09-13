@@ -10,8 +10,8 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [0.0003, 0.001, 0.003],
-        'optimizer_critic.lr': [0.0001, 0.0003, 0.001],
+        'optimizer_actor.lr': [0.00003, 0.0001, 0.0003, 0.001, 0.003],
+        'optimizer_critic.lr': [0.00003, 0.0001, 0.0003, 0.001, 0.003],
         'training.entropy_beta': [0.0001, 0.001, 0.003, 0.01],
         'training.clip_range': [0.1, 0.2, 0.3],
         'training.updates_per_batch': [2, 3],
@@ -24,8 +24,8 @@ def run_random_job(fake_submit: bool = True):
         'use_ss_loss': [False],
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [2],
-        'env.batch': [12],
-        'agent_rb_size': [100],
+        'env.batch': [6],
+        'agent_rb_size': [200],
         'training.add_to_agent_replay_buffer_every': [20],
         'training.id_weight': [0],
     }
