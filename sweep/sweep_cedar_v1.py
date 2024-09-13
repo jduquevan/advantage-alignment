@@ -23,7 +23,7 @@ def run_random_job(fake_submit: bool = True):
         'optimizer_ss.lr': [0],
         'use_ss_loss': [False],
         'training.actor_loss_mode': ['integrated_aa'],
-        'training.aa_weight': [2],
+        'training.aa_weight': [1, 1.5, 2, 2.5, 3],
         'env.batch': [6],
         'agent_rb_size': [200],
         'training.add_to_agent_replay_buffer_every': [20],
