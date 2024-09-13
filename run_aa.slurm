@@ -18,7 +18,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=0-05:59:00   
 #SBATCH --gres=gpu:a100l:1
-#SBATCH --partition=main
+#SBATCH --partition=unkillable
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -40,4 +40,4 @@ module load python/3.9
 python train.py\
     seed=${1}\
     debug_mode=False\
-    --config-name='meltingpot.yaml'
+    --config-name='allelopathic.yaml'
