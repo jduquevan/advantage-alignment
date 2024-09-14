@@ -19,7 +19,7 @@ def run_random_job(fake_submit: bool = True):
         'hidden_size': [128],
         'encoder.num_layers': [2, 3, 4],
         'training.critic_loss_mode': ['td-1'],
-        'max_cxt_len': [60],
+        'max_cxt_len': [20, 30, 50],
         'optimizer_ss.lr': [0],
         'use_ss_loss': [False],
         'training.actor_loss_mode': ['integrated_aa'],
