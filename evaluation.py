@@ -161,16 +161,15 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
                 stop = True
 
         # concat all trajectories
-        if return_trajectories:
-            trajectory = trajectories[0]
-            for j in range(1, len(trajectories)):
-                trajectory = trajectory.merge_two_trajectories_time_wise(trajectories[j])
+        trajectory = trajectories[0]
+        for j in range(1, len(trajectories)):
+            trajectory = trajectory.merge_two_trajectories_time_wise(trajectories[j])
 
-            if i <= return_k_trajectories - 1:
-                scenario_to_info.setdefault(scenario_name, {}).setdefault('trajectories', []).append(trajectory)
+        if i <= return_k_trajectories - 1:
+            scenario_to_info.setdefault(scenario_name, {}).setdefault('trajectories', []).append(trajectory)
 
     scenario_to_info.setdefault(scenario_name, {})['avg_reward'] = sum(avg_rewards) / len(avg_rewards)
-    scenario_to_info.setdefault(scenario_name, {})['avg_return'] = sum(avg_returns) / len(avg_returns)
+    scenario_to_info.setdefault(scenario_name, {})['avg_return'] = torch.sum(trajectory.data['rewards'], dim=1).mean()
     return scenario_to_info
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
