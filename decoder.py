@@ -182,11 +182,26 @@ class Block(nn.Module):
             nn.Linear(4 * config.embed_dim, config.embed_dim),
             nn.Dropout(config.resid_pdrop),
         )
+        self.update_gate = nn.Linear(config.embed_dim, config.embed_dim) 
+        self.reset_gate = nn.Linear(config.embed_dim, config.embed_dim)  
 
     def forward(self, x: torch.Tensor, past_keys_values: Optional[KeysValues] = None) -> torch.Tensor:
-        x_attn, this_kv = self.attn(self.ln1(x), past_keys_values)
-        x = x + x_attn
-        x = x + self.mlp(self.ln2(x))
+        # x_attn, this_kv = self.attn(self.ln1(x), past_keys_values)
+        # x = x + x_attn
+        # x = x + self.mlp(self.ln2(x))
+
+        x_norm = self.ln1(x)
+        x_attn, this_kv = self.attn(x_norm, past_keys_values)  # Attention output
+
+        z = torch.sigmoid(self.update_gate(x_norm))
+        r = torch.sigmoid(self.reset_gate(x_norm))   
+
+        h_tilde = torch.tanh(r * x_attn)  
+        x = (1 - z) * x + z * h_tilde  
+
+        x_mlp = self.ln2(x)
+        x = (1 - z) * x + z * self.mlp(x_mlp) 
+
         return x, this_kv
 
 
