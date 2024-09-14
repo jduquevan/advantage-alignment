@@ -17,7 +17,7 @@
 #SBATCH --account=rrg-bengioy-ad
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
-#SBATCH --time=0-06:59:00   
+#SBATCH --time=0-07:59:00   
 #SBATCH --gres=gpu:1 
 
 # Turn on mail notification. There are many possible self-explaining values:
@@ -63,4 +63,4 @@ python train.py \
     hydra.run.dir=/home/jduque/scratch/hydra \
     training.checkpoint_dir=/home/jduque/scratch/projects/advantage-alignment/experiments/ \
     training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
-    --config-name='meltingpot.yaml' \
+    --config-name='allelopathic.yaml' \
