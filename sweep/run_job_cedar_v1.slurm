@@ -64,4 +64,4 @@ python train.py \
     hydra.run.dir=/home/jduque/scratch/hydra \
     training.checkpoint_dir=/home/jduque/scratch/projects/advantage-alignment/experiments/ \
     training.video_dir=/home/jduque/scratch/projects/advantage-alignment/videos/ \
-    --config-name='allelopathic.yaml' \
+    --config-name='meltingpot.yaml' \
