@@ -783,8 +783,9 @@ class TrainingAlgorithm(ABC):
             elif self.agent_replay_buffer_mode == 'uniform-from-history':
                 n = self.train_cfg.num_on_policy_agents
                 new_agents = [self.agents[0] for _ in range(n)]
+                other_agent = self.agent_replay_buffer.sample()
                 for _ in range(n, self.num_agents):
-                    new_agents.append(self.agent_replay_buffer.sample())
+                    new_agents.append(other_agent)
                 self.agents = new_agents
 
             if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
@@ -897,6 +898,7 @@ class AdvantageAlignment(TrainingAlgorithm):
     def aa_terms(self, A_s):
         B = self.batch_size
         N = self.num_agents
+        n = self.train_cfg.num_on_policy_agents
         loss_mode = self.train_cfg.actor_loss_mode
         device = A_s.device # shape(B*N, T)
         assert A_s.shape[0] == B*N
@@ -907,6 +909,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         A_s = A_s[:, 1:]
         def other_A_s(A_s, N):
             mask = torch.ones((N, N), device=device) - torch.eye(N, device=device)
+            mask[:, -(N-n):] = 0
             return mask @ A_s
 
         A_2s = torch.vmap(other_A_s, in_dims=(0, None))(A_s.view(B, N, -1), N).reshape((B * N, -1))

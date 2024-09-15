@@ -40,4 +40,4 @@ module load python/3.9
 python train.py\
     seed=${1}\
     debug_mode=False\
-    --config-name='allelopathic.yaml'
+    --config-name='meltingpot.yaml'
