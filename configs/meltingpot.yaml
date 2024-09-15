@@ -2,7 +2,7 @@ resume: False
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'offline'
+wandb: 'online'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -22,7 +22,7 @@ max_cxt_len: 60
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
-agent_rb_size: 100
+agent_rb_size: 400
 agent_rb_mode: 'uniform-from-history'
 
 
@@ -85,7 +85,7 @@ optimizer_actor:
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0003
+  lr: 3e-05
 
 optimizer_ss:
   _target_: torch.optim.Adam
@@ -103,8 +103,8 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.3
-  entropy_beta: 0.01
+  clip_range: 0.1
+  entropy_beta: 0.001
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
