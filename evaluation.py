@@ -128,7 +128,17 @@ def normalize(scenario, focal_per_capita_return_raw):
     # normalize the scores
     return (focal_per_capita_return_raw - min_score) / (max_score - min_score)
 
-def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_repeats: int = 1, return_trajectories: bool=False, return_k_trajectories: int = 0, run_until_done: bool = False) -> float:
+def evaluate_agents_on_scenario(
+    agents, 
+    scenario_name, 
+    num_frames, 
+    cxt_len, 
+    num_repeats: int = 1, 
+    return_trajectories: bool=False, 
+    return_k_trajectories: int = 0, 
+    run_until_done: bool = False,
+    max_env_steps: int = 3000,
+    ) -> float:
     if return_trajectories is False:
         assert return_k_trajectories == 0
     else:
@@ -156,7 +166,7 @@ def evaluate_agents_on_scenario(agents, scenario_name, num_frames, cxt_len, num_
             avg_returns.append(trajectory.data['rewards'].sum(axis=-1).mean())
             steps += cxt_len
             if run_until_done:
-                stop = state.last() or steps > 3000
+                stop = state.last() or steps > max_env_steps
             elif steps >= num_frames:
                 stop = True
 
