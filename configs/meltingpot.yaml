@@ -22,7 +22,7 @@ max_cxt_len: 30
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
-agent_rb_size: 400
+agent_rb_size: 200
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 
