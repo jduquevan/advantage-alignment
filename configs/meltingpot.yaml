@@ -2,7 +2,7 @@ resume: False
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'online'
+wandb: 'offline'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
@@ -24,7 +24,7 @@ debug_mode: False
 use_ss_loss: False
 agent_rb_size: 400
 agent_rb_mode: 'uniform-from-history'
-
+on_policy_only: True
 
 env:
   type: 'meltingpot'

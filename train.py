@@ -609,6 +609,7 @@ class TrainingAlgorithm(ABC):
         id_weight = self.train_cfg['id_weight']
         spr_weight = self.train_cfg['spr_weight']
         run_single_agent = self.main_cfg['run_single_agent']
+        on_policy_only = self.main_cfg['on_policy_only']
         old_log_ps = None
 
         for update in range(updates_per_batch):
@@ -634,7 +635,10 @@ class TrainingAlgorithm(ABC):
                 else:
                     mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
                     mask[:self.train_cfg.num_on_policy_agents] = 1
-                    actor_loss = (actor_loss_dict['losses'] * mask).mean()
+                    if on_policy_only:
+                        actor_loss = (actor_loss_dict['losses'] * mask).mean()
+                    else:
+                        actor_loss = (actor_loss_dict['losses']).mean()
                 ent = actor_loss_dict['entropy'].mean()
                 actor_loss_1 = actor_loss_dict['losses_1'].mean()
                 actor_loss_2 = actor_loss_dict['losses_2'].mean()
@@ -665,7 +669,10 @@ class TrainingAlgorithm(ABC):
             else:
                 mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
                 mask[:self.train_cfg.num_on_policy_agents] = 1
-                critic_loss = (critic_losses * mask).mean()
+                if on_policy_only:
+                    critic_loss = (critic_losses * mask).mean()
+                else:
+                    critic_loss = (critic_losses).mean()
             critic_values = aux['critic_values']
             target_values = aux['target_values']
             critic_loss.backward()
