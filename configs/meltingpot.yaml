@@ -24,7 +24,7 @@ debug_mode: False
 use_ss_loss: False
 agent_rb_size: 200
 agent_rb_mode: 'uniform-from-history'
-
+on_policy_only: True
 
 env:
   type: 'meltingpot'
