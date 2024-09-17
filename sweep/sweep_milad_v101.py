@@ -20,7 +20,7 @@ def run_job(command, fake_submit: bool = True, partition: str = 'long'):
     if fake_submit:
         print('fake submit')
     else:
-        command = f'sbatch --time=12:0:0 --partition={partition} --gres=gpu:a100:1 --mem=20Gb -c 4 sweep_temp_job.sh --account=rrg-bengioy-ad --cpus-per-task=6 --mem=40G --time=0-05:59:00 --gres=gpu:1 '
+        command = f'sbatch --time=12:0:0 --partition={partition} --gres=gpu:a100:1 --mem=20Gb --account=rrg-bengioy-ad --cpus-per-task=6 --mem=40G --time=0-05:59:00 --gres=gpu:1 -c 4 sweep_temp_job.sh  '
         os.system(command)
 
 
