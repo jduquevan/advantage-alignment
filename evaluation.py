@@ -156,8 +156,8 @@ def evaluate_agents_on_scenario(
     avg_rewards = []
     avg_returns = []
 
-    stop = False
     for i in range(num_repeats):
+        stop = False
         steps = 0
         while not stop:
             trajectory, state = _gen_sim_scenario(state, env, cxt_len, agents)
