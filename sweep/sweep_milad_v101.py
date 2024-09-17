@@ -25,7 +25,7 @@ def run_job(command, fake_submit: bool = True, partition: str = 'long'):
 
 
 def run_random_jobs(fake_submit: bool = True):
-    command = ("train.py seed=42 "
+    command = ("python train.py seed=42 "
                "optimizer_actor.lr={optimizer_actor__lr} "
                "optimizer_critic.lr={optimizer_critic__lr} "
                "training.entropy_beta={training__entropy_beta} "
