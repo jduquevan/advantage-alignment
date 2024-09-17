@@ -53,7 +53,8 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
     # create our single kv_cache
     kv_cache = actors[0].encoder.transformer_encoder.generate_empty_keys_values(n=B * N, max_tokens=cxt_len * 2)
 
-    for i in range(cxt_len):
+    i = 0
+    while i < cxt_len:
         start_time = time.time()
 
         agent_rgb = torch.stack([torch.from_numpy(x['RGB']) for x in state.observation], dim=0)
@@ -108,8 +109,13 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
         time_metrics["time_metrics/gen/env_step_actions"] += time.time() - start_time
         rewards = torch.stack([torch.from_numpy(r) for r in  state.reward], dim=0)
 
+        if state.last():
+            break
+
+        i+=1
+
     start_time = time.time()
-    trajectory.add_actions(actions, cxt_len)
+    trajectory.add_actions(actions, i)
     time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
     print(f"(|||)Time metrics: {time_metrics}")
     return trajectory, state
