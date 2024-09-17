@@ -16,9 +16,9 @@ use_spr_loss: True
 device: cuda
 rb_size: 84
 use_full_maps: False
-hidden_size: 128
+hidden_size: 192
 max_seq_len: 1000
-max_cxt_len: 60
+max_cxt_len: 30
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
@@ -28,10 +28,11 @@ on_policy_only: True
 
 env:
   type: 'meltingpot'
-  batch: 12
+  batch: 6
   device: ${device}
   scenario: 'commons_harvest__open'
   num_agents: 7
+  max_env_steps: 1000
 
 hydra:
   output_subdir: null
@@ -81,11 +82,11 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.001
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 3e-05
+  lr: 0.0003
 
 optimizer_ss:
   _target_: torch.optim.Adam
@@ -105,14 +106,14 @@ training:
   proximal: True
   clip_range: 0.1
   entropy_beta: 0.001
-  updates_per_batch: 2
+  updates_per_batch: 3
   kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'td-1'
   save_every: 500
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 2
+  aa_weight: 0.7
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 1
