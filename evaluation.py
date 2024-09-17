@@ -12,7 +12,6 @@ from meltingpot import scenario as scene, substrate
 from utils import instantiate_agent
 
 
-@staticmethod
 def _gen_sim_scenario(state, scenario, cxt_len, agents):
     from train import call_models_forward, TrajectoryBatch, sample_actions_categorical
     time_metrics = defaultdict(int)
@@ -158,13 +157,12 @@ def evaluate_agents_on_scenario(
     env = scene.build_from_config(scenario_config)
     state = env.reset()
 
-    trajectories = []
-    avg_rewards = []
-    avg_returns = []
-
     for i in range(num_repeats):
         stop = False
         steps = 0
+        trajectories = []
+        avg_rewards = []
+        avg_returns = []
         while not stop:
             trajectory, state = _gen_sim_scenario(state, env, cxt_len, agents)
             trajectories.append(trajectory)
