@@ -32,6 +32,7 @@ env:
   device: ${device}
   scenario: 'allelopathic_harvest__open'
   num_agents: 16
+  max_env_steps: 2000
 
 hydra:
   output_subdir: null

@@ -16,7 +16,7 @@ from utils import (
 
 num_frames = 1000
 model_folder = 'experiments'
-model_name = 'sk6shtt4/agent.pt'
+model_name = '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments/26qp7xmt/step_500/agent.pt'
 output_folder = 'videos'
 
 def create_video_with_imageio(frames, output_folder, video_name='output.mp4', frame_rate=3):
@@ -104,12 +104,12 @@ def main(cfg: DictConfig) -> None:
     )
 
     for i in range(num_frames // cxt_len):
-        trajectory, state = _gen_sim(state, env, 1, cxt_len, agents, replay_buffer, False)
+        trajectory, state = _gen_sim(state, env, 1, cxt_len, agents, replay_buffer, cfg)
         images.append(trajectory.data['full_maps'][0].cpu().numpy())
         rewards.append(trajectory.data['rewards'].cpu().numpy())
     
     frames = np.concatenate(images)
-    create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_4.mp4', frame_rate=3)
+    create_video_with_imageio(frames, output_folder=output_folder, video_name='adalign_5.mp4', frame_rate=3)
     
 
 if __name__ == "__main__":
