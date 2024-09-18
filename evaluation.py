@@ -98,7 +98,7 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
             layer_cache.update(this_layer_k, this_layer_v)
         time_metrics["time_metrics/gen/kv_cache_update"] += time.time() - start_time
         start_time = time.time()
-        actions, log_probs = sample_actions_categorical(action_logits.reshape(B * N, -1))
+        actions = torch.argmax(torch.softmax(action_logits.reshape(B * N, -1), dim=1), dim=1)
 
         actions = actions.reshape(B * N, 1)
         time_metrics["time_metrics/gen/sample_actions"] += time.time() - start_time

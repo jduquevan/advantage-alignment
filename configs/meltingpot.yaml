@@ -21,8 +21,8 @@ max_seq_len: 1000
 max_cxt_len: 30
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
-agent_rb_size: 200
+use_ss_loss: True
+agent_rb_size: 400
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 
@@ -82,7 +82,7 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 0.00005
 
 optimizer_critic:
   _target_: torch.optim.Adam
@@ -90,7 +90,7 @@ optimizer_critic:
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 0.00001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -105,7 +105,7 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.1
-  entropy_beta: 0.001
+  entropy_beta: 0.0005
   updates_per_batch: 3
   kl_threshold: 0.05
   use_mlm: True
@@ -113,12 +113,12 @@ training:
   save_every: 500
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 0.7
+  aa_weight: 0.0
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 0
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
-  add_to_agent_replay_buffer_every: 20
+  add_to_agent_replay_buffer_every: 5
   num_on_policy_agents: 5
