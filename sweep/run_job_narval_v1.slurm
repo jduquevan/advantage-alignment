@@ -59,6 +59,9 @@ python train.py \
     training.add_to_agent_replay_buffer_every=${18} \
     training.id_weight=${19} \
     on_policy_only=${20} \
+    encoder.init_weights=${21} \
+    mlp_model.init_weights=${22} \
+    training.center_rewards=${23} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \

@@ -52,7 +52,7 @@ encoder:
   num_layers: 3
   max_seq_len: ${max_seq_len}
   attention_impl: 'original'
-  init_weights: True
+  init_weights: False
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -68,7 +68,7 @@ mlp_model:
   hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
-  init_weights: True
+  init_weights: False
 
 policy:
   _target_: train.CategoricalPolicy
