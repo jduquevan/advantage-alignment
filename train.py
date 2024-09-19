@@ -48,6 +48,7 @@ class LinearModel(nn.Module):
         super(LinearModel, self).__init__()
         self.encoder = encoder
         self.hidden_size = hidden_size
+        self.in_size = in_size
 
         self.hidden_layers = nn.ModuleList([
             nn.Linear(self.in_size, self.hidden_size) if i == 0

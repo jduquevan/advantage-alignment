@@ -47,7 +47,6 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
 
 def instantiate_agent(cfg: DictConfig):
     assert cfg.use_transformer is True, "Only Transformer is supported for now."
-    use_gru = True
     
     encoder = hydra.utils.instantiate(cfg.encoder)
     actor = hydra.utils.instantiate(
