@@ -22,7 +22,7 @@ max_cxt_len: 30
 run_single_agent: False
 debug_mode: False
 use_ss_loss: True
-agent_rb_size: 400
+agent_rb_size: 200
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 
@@ -52,6 +52,7 @@ encoder:
   num_layers: 3
   max_seq_len: ${max_seq_len}
   attention_impl: 'original'
+  init_weights: True
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -67,6 +68,7 @@ mlp_model:
   hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
+  init_weights: True
 
 policy:
   _target_: train.CategoricalPolicy
@@ -122,3 +124,4 @@ training:
   actor_loss_mode: 'integrated_aa'
   add_to_agent_replay_buffer_every: 5
   num_on_policy_agents: 5
+  center_rewards: False

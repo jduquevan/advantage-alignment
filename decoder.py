@@ -132,13 +132,15 @@ class TransformerConfig:
 
 
 class RLTransformer(nn.Module):
-    def __init__(self, config: TransformerConfig) -> None:
+    def __init__(self, config: TransformerConfig, init_weights: bool = True) -> None:
         super().__init__()
         self.config = config
         self.drop = nn.Dropout(config.embed_pdrop)
         self.blocks = nn.ModuleList([Block(config) for _ in range(config.num_layers)])
         self.ln_f = nn.LayerNorm(config.embed_dim)
         assert config.attention == 'causal', "Only causal attention is supported for now."
+        if init_weights:
+            self.apply(self._init_weights)
 
     def generate_empty_keys_values(self, n: int, max_tokens: int) -> KeysValues:
         device = self.ln_f.weight.device  # Assumption that all submodules are on the same device
@@ -168,6 +170,25 @@ class RLTransformer(nn.Module):
         x = self.ln_f(x)
         this_kvs = {'k': torch.stack([kv['k'] for kv in this_kvs]), 'v': torch.stack([kv['v'] for kv in this_kvs])}
         return x, this_kvs
+    
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            # Xavier uniform initialization
+            nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.LayerNorm):
+            # LayerNorm weight to ones and bias to zeros
+            nn.init.ones_(module.weight)
+            nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            # Embedding weights with mean=0 and std=0.02
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.Conv2d):
+            # Kaiming normal initialization for conv layers (if any)
+            nn.init.kaiming_normal_(module.weight, nonlinearity='relu')
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
 
 
 class Block(nn.Module):

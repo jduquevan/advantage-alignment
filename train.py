@@ -6,13 +6,14 @@ import hydra
 import math
 
 import numpy as np
+import re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
 import wandb
 
 from abc import ABC, abstractmethod
-from collections import deque
 from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
 from tqdm import tqdm
@@ -20,9 +21,7 @@ from torch.distributions import Categorical
 from torch.func import functional_call, stack_module_state
 from torchrl.envs import ParallelEnv
 from torchrl.envs.libs.meltingpot import MeltingpotEnv
-from typing import Any, List, Tuple, Dict
-import re
-
+from typing import Any, Tuple, Dict
 import time
 
 from decoder import RLTransformer, TransformerConfig
@@ -39,19 +38,16 @@ from utils import (
 
 from collections import defaultdict
 
-import warnings
 from meltingpot import substrate, scenario as scene
 
 from visualization import create_video_with_imageio
 
 
 class LinearModel(nn.Module):
-    def __init__(self, in_size, hidden_size, out_size, device, num_layers=1, encoder=None, append_time: bool = False):
+    def __init__(self, in_size, hidden_size, out_size, device, num_layers=1, init_weights=False, encoder=None):
         super(LinearModel, self).__init__()
         self.encoder = encoder
         self.hidden_size = hidden_size
-
-        self.in_size = in_size + (1 if append_time else 0)
 
         self.hidden_layers = nn.ModuleList([
             nn.Linear(self.in_size, self.hidden_size) if i == 0
@@ -59,8 +55,9 @@ class LinearModel(nn.Module):
             for i in range(num_layers)])
 
         self.linear = nn.Linear(self.in_size, out_size)
-        self.append_time = append_time
         self.to(device)
+        if init_weights:
+            self._init_weights()
 
     def forward(self, obs, actions, full_maps, full_seq: int = 1, past_ks_vs=None, batched: bool = False):
         output, this_kv = self.encoder(obs, actions, full_maps, past_ks_vs=past_ks_vs, batched=batched)
@@ -77,6 +74,13 @@ class LinearModel(nn.Module):
             output = F.relu(layer(output))
 
         return self.linear(output), this_kv
+
+    def _init_weights(self):
+        for layer in self.hidden_layers:
+            init.orthogonal_(layer.weight, gain=init.calculate_gain('relu'))
+            init.zeros_(layer.bias)
+        init.orthogonal_(self.linear.weight, gain=0.01)
+        init.zeros_(self.linear.bias)
 
 
 class SelfSupervisedModule(nn.Module):
@@ -158,6 +162,7 @@ class MeltingpotTransformer(nn.Module):
         dropout=0.0,
         use_full_maps=False,
         attention_impl='original',
+        init_weights=False,
     ):
 
         super(MeltingpotTransformer, self).__init__()
@@ -183,13 +188,10 @@ class MeltingpotTransformer(nn.Module):
         else:
             self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model)
         
-
         self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
         self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_embed_layers)])
         self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len * 2)
-
-        # self.gate = nn.GRUCell(input_size=dim_feedforward, hidden_size=d_model)
 
         encoder = RLTransformer(
             TransformerConfig(
@@ -202,7 +204,8 @@ class MeltingpotTransformer(nn.Module):
                 embed_pdrop=dropout,
                 resid_pdrop=dropout,
                 attn_pdrop=dropout,
-            )
+            ),
+            init_weights
         )
 
         self.transformer_encoder = encoder.to(device)
@@ -965,12 +968,16 @@ class AdvantageAlignment(TrainingAlgorithm):
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
         loss_mode = self.train_cfg.actor_loss_mode
+        center_rewards = self.train_cfg.center_rewards
         assert loss_mode in ['integrated_aa', 'separated_aa', 'naive']
 
         obs = trajectory.data['obs']
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
+
+        if center_rewards:
+            rewards = rewards - rewards.mean()
 
         full_maps = full_maps.unsqueeze(1)
         full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
@@ -1034,11 +1041,15 @@ class AdvantageAlignment(TrainingAlgorithm):
         N = self.num_agents
 
         gamma = self.train_cfg.gamma
+        center_rewards = self.train_cfg.center_rewards
 
         obs = trajectory.data['obs']
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
+
+        if center_rewards:
+            rewards = rewards - rewards.mean()
 
         full_maps = full_maps.unsqueeze(1)
         full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
