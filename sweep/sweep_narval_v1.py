@@ -10,24 +10,25 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [0.00003, 0.0001, 0.0003, 0.001, 0.003],
-        'optimizer_critic.lr': [0.00003, 0.0001, 0.0003, 0.001, 0.003],
-        'training.entropy_beta': [0.0001, 0.001, 0.003, 0.01],
+        'optimizer_actor.lr': [0.00001, 0.00003, 0.0001],
+        'optimizer_critic.lr': [0.0001, 0.0003, 0.001],
+        'training.entropy_beta': [0.0001,0.0005, 0.001],
         'training.clip_range': [0.1, 0.2, 0.3],
         'training.updates_per_batch': [2, 3],
         'training.kl_threshold': [0.01, 0.05],
         'hidden_size': [192],
-        'encoder.num_layers': [2, 3, 4],
-        'training.critic_loss_mode': ['td-1', 'MC'],
+        'encoder.num_layers': [3],
+        'training.critic_loss_mode': ['td-1'],
         'max_cxt_len': [30],
-        'optimizer_ss.lr': [0],
-        'use_ss_loss': [False],
+        'optimizer_ss.lr': [0.00001, 0.00003],
+        'use_ss_loss': [True],
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [0.3, 0.5, 0.7, 1, 1.5, 2, 2.5],
         'env.batch': [6],
-        'agent_rb_size': [200],
-        'training.add_to_agent_replay_buffer_every': [20],
-        'training.id_weight': [0],
+        'agent_rb_size': [200, 400],
+        'training.add_to_agent_replay_buffer_every': [10, 20],
+        'training.id_weight': [0, 0.5, 1],
+        'on_policy_only': [True, False],
     }
 
     # sample a random config
