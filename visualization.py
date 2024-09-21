@@ -15,8 +15,8 @@ from utils import (
 )
 
 num_frames = 1000
-model_folder = 'experiments'
-model_name = '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments/26qp7xmt/step_500/agent.pt'
+model_folder = '/home/mila/j/juan.duque/projects/advantage-alignment/experiments/3klboisl'
+model_name = 'agent.pt'
 output_folder = 'videos'
 
 def create_video_with_imageio(frames, output_folder, video_name='output.mp4', frame_rate=3):
