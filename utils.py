@@ -6,9 +6,11 @@ import numpy as np
 import os
 import random
 import torch
+import torch.nn.functional as F
 import wandb
 
 from omegaconf import DictConfig
+from typing import Tuple
 
 
 def seed_all(seed):
@@ -17,6 +19,110 @@ def seed_all(seed):
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+def mask_random_obs(
+    images: torch.Tensor,
+    p: float = 0.15
+) -> torch.Tensor:
+    if not (0 <= p <= 1):
+        raise ValueError(f"Probability p must be between 0 and 1, got {p}")
+
+    B_N, T, H, W, C = images.shape
+    device = images.device
+
+    mask = torch.bernoulli(torch.full((B_N, T, 1, 1, 1), 1 - p, device=device))
+    masked_images = images * mask
+
+    return masked_images
+
+def random_shift(images: torch.Tensor, padding: int = 4) -> torch.Tensor:
+    """
+    Applies a random shift to each image in the batch.
+
+    Args:
+        images (torch.Tensor): Tensor of shape (B * N, T, H, W, C).
+        padding (int, optional): Number of pixels to pad on each side. Defaults to 4.
+
+    Returns:
+        torch.Tensor: Shifted images with the same shape as input.
+    """
+    B_N, T, H, W, C = images.shape
+
+    # Permute to (B * N * T, C, H, W) for processing
+    images = images.permute(0, 4, 1, 2, 3).reshape(B_N * T, C, H, W)
+
+    # Generate random shifts in pixels within [-padding, padding]
+    shift_x = torch.randint(-padding, padding + 1, (B_N * T,), device=images.device).float()
+    shift_y = torch.randint(-padding, padding + 1, (B_N * T,), device=images.device).float()
+
+    # Normalize shifts to [-1, 1] based on image dimensions
+    shift_x_norm = shift_x / W
+    shift_y_norm = shift_y / H
+
+    # Create affine transformation matrices for each image
+    theta = torch.zeros((B_N * T, 2, 3), device=images.device)
+    theta[:, 0, 0] = 1
+    theta[:, 1, 1] = 1
+    theta[:, 0, 2] = shift_x_norm
+    theta[:, 1, 2] = shift_y_norm
+
+    # Generate grids for sampling
+    grid = F.affine_grid(theta, images.size(), align_corners=False)
+
+    # Apply grid sampling with reflection padding to handle borders
+    shifted_images = F.grid_sample(images, grid, padding_mode='reflection', align_corners=False)
+
+    # Reshape back to (B * N, T, H, W, C)
+    shifted_images = shifted_images.view(B_N, T, C, H, W).permute(0, 1, 3, 4, 2)
+
+    return shifted_images
+
+def random_crop(images: torch.Tensor, crop_size: Tuple[int, int] = None) -> torch.Tensor:
+    """
+    Applies a random crop to each image and resizes it back to the original size.
+
+    Args:
+        images (torch.Tensor): Tensor of shape (B * N, T, H, W, C).
+        crop_size (Tuple[int, int], optional): Desired crop size (H_crop, W_crop).
+                                              If None, defaults to original size. Defaults to None.
+
+    Returns:
+        torch.Tensor: Cropped and resized images with the same shape as input.
+    """
+    B_N, T, H, W, C = images.shape
+
+    if crop_size is None:
+        crop_size = (H, W)
+    H_crop, W_crop = crop_size
+
+    # Permute to (B * N * T, C, H, W) for processing
+    images = images.permute(0, 4, 1, 2, 3).reshape(B_N * T, C, H, W)
+
+    # Determine scaling factors
+    scale_h = H_crop / H
+    scale_w = W_crop / W
+
+    # Generate random translations in normalized coordinates
+    translations_h = (torch.randint(0, H - H_crop + 1, (B_N * T,), device=images.device).float() / (H / 2)) - 1.0
+    translations_w = (torch.randint(0, W - W_crop + 1, (B_N * T,), device=images.device).float() / (W / 2)) - 1.0
+
+    # Create affine transformation matrices for cropping and resizing
+    theta = torch.zeros((B_N * T, 2, 3), device=images.device)
+    theta[:, 0, 0] = scale_w
+    theta[:, 1, 1] = scale_h
+    theta[:, 0, 2] = translations_w
+    theta[:, 1, 2] = translations_h
+
+    # Generate grids for sampling
+    grid = F.affine_grid(theta, images.size(), align_corners=False)
+
+    # Apply grid sampling with reflection padding to handle borders
+    cropped_resized_images = F.grid_sample(images, grid, padding_mode='reflection', align_corners=False)
+
+    # Reshape back to (B * N, T, H, W, C)
+    cropped_resized_images = cropped_resized_images.view(B_N, T, C, H, W).permute(0, 1, 3, 4, 2)
+
+    return cropped_resized_images
 
 def compute_discounted_returns(gamma, rewards):
         batch_size, trajectory_len = rewards.shape

@@ -31,9 +31,13 @@ from utils import (
     instantiate_agent,
     compute_discounted_returns,
     compute_gae_advantages,
+    random_crop,
+    random_shift,
+    mask_random_obs,
     update_target_network,
     wandb_stats,
-    save_checkpoint, flatten_native_dict
+    save_checkpoint, 
+    flatten_native_dict
 )
 
 from collections import defaultdict
@@ -85,8 +89,9 @@ class LinearModel(nn.Module):
 
 
 class SelfSupervisedModule(nn.Module):
-    def __init__(self, n_actions, hidden_size, device, num_layers=1, encoder=None):
+    def __init__(self, n_actions, hidden_size, device, num_layers=1, mask_p=0.15, encoder=None):
         super(SelfSupervisedModule, self).__init__()
+        self.mask_p = mask_p
         self.encoder = encoder
         self.n_actions = n_actions
         self.hidden_size = hidden_size
@@ -105,10 +110,19 @@ class SelfSupervisedModule(nn.Module):
 
         self.to(device)
 
-    def forward(self, obs, actions, full_maps, batched: bool = False):
+    def forward(self, obs, actions, full_maps, batched: bool = False, augment: bool = True, use_mlm: bool = False):
         obs = obs / 255.0 # normalize
         full_maps = full_maps / 255.0
         actions = actions[:, :-1]
+
+        if augment:
+            obs_augmented = random_shift(obs, padding=4)
+            obs_augmented = random_crop(obs_augmented)
+        else:
+            obs_augmented = obs
+
+        if use_mlm:
+            obs_augmented = mask_random_obs(obs_augmented, p=self.mask_p)
 
         actions_reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
         action_reps = actions_reps[:, 1::2, :]  # Select the state representations in a, s, a, s
@@ -1084,13 +1098,15 @@ class AdvantageAlignment(TrainingAlgorithm):
     def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
         B = self.train_cfg['batch_size']
         T = self.cxt_len
+        augment = self.train_cfg['augment']
+        use_mlm = self.train_cfg['use_mlm']
             
         trajectory_sample = self.replay_buffer.sample(B)
         obs = trajectory_sample['obs']
         actions = trajectory_sample['actions']
         full_maps = trajectory_sample['full_maps']
 
-        action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True)
+        action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True, augment=augment, use_mlm=use_mlm)
         criterion = nn.CrossEntropyLoss(reduction='none')
 
         inverse_dynamics_losses = criterion(
