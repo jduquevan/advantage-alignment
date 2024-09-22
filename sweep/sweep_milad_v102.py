@@ -50,7 +50,7 @@ def run_random_jobs(fake_submit: bool = True):
                "hydra.run.dir=/home/aghajohm/scratch/adalign/hydra_dir "
                "training.checkpoint_dir=/home/aghajohm/scratch/adalign/experiments "
                "training.video_dir=/home/aghajohm/scratch/adalign/videos/ "
-               "wandb_tags=['commons_harvest', 'v102'] "
+               "wandb_tags=commons_harvest,v102 "
                "--config-name=meltingpot.yaml ")
 
     hparams = {
