@@ -20,7 +20,7 @@ def run_job(command, fake_submit: bool = True):
     if fake_submit:
         print('fake submit')
     else:
-        command = f'sbatch --time=12:0:0  --gres=gpu:a100:1 --mem=20Gb --account=rrg-bengioy-ad --cpus-per-task=6 --mem=40G --time=0-05:59:00 --gres=gpu:1 -c 4 sweep_temp_job.sh  '
+        command = f'sbatch --time=12:0:0  --gres=gpu:a100:1 --account=rrg-bengioy-ad --cpus-per-task=6 --mem=40G --gres=gpu:1 -c 4 sweep_temp_job.sh  '
         os.system(command)
 
 
@@ -37,7 +37,7 @@ def run_random_jobs(fake_submit: bool = True):
                "training.critic_loss_mode=td-1 "
                "max_cxt_len={max_cxt_len} "
                "optimizer_ss.lr=0 "
-               "use_ss_loss={use_ss_loss}"
+               "use_ss_loss={use_ss_loss} "
                "training.actor_loss_mode={actor_loss_mode} "
                "training.aa_weight={training__aa_weight} "
                "env.batch=6 "
