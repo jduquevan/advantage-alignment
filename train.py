@@ -562,7 +562,7 @@ class EnvironmentResetter():
             state[env._reset_keys[0]] = needs_resetting.to('cpu')
             state = env.reset(state)
 
-        return state
+        return state, needs_resetting
 
     def sample_max_steps(self, cfg, device):
         env_max_steps = torch.poisson(
@@ -616,6 +616,7 @@ class TrainingAlgorithm(ABC):
         agents,
         step: int,
         optimize_critic=True,
+        dones=None,
     ):
 
         train_step_metrics = {}
@@ -681,7 +682,7 @@ class TrainingAlgorithm(ABC):
         # --- optimize critic ---
         if self_play:
             agent.critic_optimizer.zero_grad()
-            critic_losses, aux = self.critic_losses(trajectory)
+            critic_losses, aux = self.critic_losses(trajectory, dones)
             if run_single_agent:
                 critic_loss = critic_losses[0]
             else:
@@ -825,6 +826,7 @@ class TrainingAlgorithm(ABC):
             trajectory, state = self.gen_sim(state)
             time_metrics["time_metrics/total_gen"] = time.time() - start_time
             start_time = time.time()
+            state, needs_resetting = self.resetter.maybe_reset(self.env, state)
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
 
@@ -833,6 +835,7 @@ class TrainingAlgorithm(ABC):
                 agents=self.agents,
                 step=step,
                 optimize_critic=True,
+                dones=needs_resetting,
             )
 
             for key, value in train_step_metrics.items():
@@ -859,7 +862,6 @@ class TrainingAlgorithm(ABC):
             })
             wandb_metrics.update(time_metrics)
             wandb.log(step=step, data=wandb_metrics)
-            state = self.resetter.maybe_reset(self.env, state)
 
             if step % self.train_cfg.eval_every == 0:
                 eval_metrics = self.evaluate(self.agents[0], step)
@@ -875,7 +877,7 @@ class TrainingAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def critic_losses(self, batch):
+    def critic_losses(self, batch, dones):
         pass
 
     @abstractmethod
@@ -1051,7 +1053,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return actor_loss_dict
 
-    def critic_losses(self, trajectory: TrajectoryBatch) -> Tuple[float, Dict]:
+    def critic_losses(self, trajectory: TrajectoryBatch, dones: torch.Tensor) -> Tuple[float, Dict]:
         B = self.batch_size
         N = self.num_agents
 
@@ -1062,6 +1064,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
         full_maps = trajectory.data['full_maps']
+        dones = dones.unsqueeze(1).repeat(1, N).reshape(B * N)
 
         if center_rewards:
             rewards = rewards - rewards.mean()
@@ -1079,7 +1082,13 @@ class AdvantageAlignment(TrainingAlgorithm):
             values_c_shifted = values_c[:, :-1]
             values_t_shifted = values_t[:, 1:]
             rewards_shifted = rewards[:, :-1]
-            critic_loss = F.huber_loss(values_c_shifted, rewards_shifted + gamma * values_t_shifted, reduction='none')
+            mask = torch.ones_like(values_t_shifted)
+            mask[dones, -1] = 0
+            critic_loss = F.huber_loss(
+                values_c_shifted, 
+                (rewards_shifted + gamma * values_t_shifted * mask).detach(), 
+                reduction='none'
+            )
         elif self.train_cfg.critic_loss_mode == 'MC':
             discounted_returns = compute_discounted_returns(gamma, rewards)
             critic_loss = F.huber_loss(values_c, discounted_returns, reduction='none')
