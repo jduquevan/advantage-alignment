@@ -10,10 +10,10 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [0.00001, 0.00003, 0.0001, 0.0003],
+        'optimizer_actor.lr': [0.00003, 0.0001, 0.0003],
         'optimizer_critic.lr': [0.0001],
-        'training.entropy_beta': [0.0001, 0.0003, 0.001, 0.003],
-        'training.clip_range': [0.1, 0.2, 0.3],
+        'training.entropy_beta': [0.0001, 0.001, 0.003],
+        'training.clip_range': [0.2, 0.3],
         'training.updates_per_batch': [2],
         'training.kl_threshold': [0.01],
         'hidden_size': [192],
@@ -32,6 +32,7 @@ def run_random_job(fake_submit: bool = True):
         'encoder.init_weights': [False],
         'mlp_model.init_weights': [False],
         'training.center_rewards': [False],
+        'ss_module.mask_p': [0.1, 0.2, 0.3, 0.4, 0.5, 0.7],
     }
 
     # sample a random config
