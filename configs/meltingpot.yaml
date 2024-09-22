@@ -69,7 +69,7 @@ mlp_model:
   hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
-  init_weights: False
+  init_weights: True
 
 policy:
   _target_: train.CategoricalPolicy
@@ -81,20 +81,20 @@ linear_model:
   hidden_size: ${hidden_size}
   out_size: 1
   device: ${device}
-  num_layers: 2
+  num_layers: 3
   init_weights: False
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.0003
+  lr: 0.00005
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.00005
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 0.00003
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -108,23 +108,23 @@ training:
   total_steps: 10000000 # Number of optimization steps to train for
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
-  clip_range: 0.2
+  clip_range: 0.1
   entropy_beta: 0.0001
   updates_per_batch: 2
-  kl_threshold: 0.01
+  kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'td-1'
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 0.8
+  aa_weight: 0.5
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 1
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
-  add_to_agent_replay_buffer_every: 20
+  add_to_agent_replay_buffer_every: 10
   num_on_policy_agents: 5
   center_rewards: False
   augment: False
