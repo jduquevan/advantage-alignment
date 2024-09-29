@@ -5,3 +5,4 @@ experiments/
 runs/
 videos/
 *.json
+*.txt
