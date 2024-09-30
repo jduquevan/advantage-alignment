@@ -14,11 +14,11 @@
 # Define, how many nodes you need. Here, we ask for 1 node.
 #SBATCH -N 1 #nodes
 #SBATCH -n 1 #tasks
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=0-23:59:00   
+#SBATCH --time=0-04:59:00   
 #SBATCH --gres=gpu:l40s:1
-#SBATCH --partition=long
+#SBATCH --partition=unkillable
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -37,8 +37,7 @@ eval "$(conda shell.bash hook)"
 conda activate meltingpot
 module load python/3.9
 
-python train.py\
+python evaluation.py\
     seed=${1}\
     debug_mode=False\
-    run_id=lively_bird_AA_weight_1.5_${1}\
     --config-name='meltingpot.yaml'

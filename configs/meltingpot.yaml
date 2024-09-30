@@ -1,9 +1,9 @@
-resume: False
+resume: True
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'offline'
-wandb_tags: ['meltingpot', 'PPO', 'aa']
+wandb: 'online'
+wandb_tags: ['meltingpot', 'PPO', 'aa', 'ICLR_2025']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: False
@@ -18,11 +18,11 @@ rb_size: 840
 use_full_maps: False
 hidden_size: 192
 max_seq_len: 1000
-max_cxt_len: 30
+max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
-use_ss_loss: True
-agent_rb_size: 400
+use_ss_loss: False
+agent_rb_size: 200
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 
@@ -60,7 +60,7 @@ ss_module:
   hidden_size: ${hidden_size}
   device: ${device}
   num_layers: 3
-  mask_p: 0.3
+  mask_p: 0.15
 
 mlp_model:
   _target_: train.LinearModel
@@ -86,15 +86,15 @@ linear_model:
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.00005
+  lr: 0.00001
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.00005
+  lr: 0.00001
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.00003
+  lr: 0
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -109,7 +109,7 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.1
-  entropy_beta: 0.0001
+  entropy_beta: 0.1
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
@@ -117,14 +117,14 @@ training:
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 0.5
+  aa_weight: 1.5
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 1
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
-  add_to_agent_replay_buffer_every: 10
+  add_to_agent_replay_buffer_every: 20
   num_on_policy_agents: 5
   center_rewards: False
   augment: False

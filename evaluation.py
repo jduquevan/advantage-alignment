@@ -5,6 +5,8 @@ from collections import defaultdict
 import hydra
 import pandas as pd
 import torch
+import wandb 
+
 from omegaconf import DictConfig, OmegaConf
 from tensordict import TensorDict
 from meltingpot import scenario as scene, substrate
@@ -188,33 +190,71 @@ def evaluate_agents_on_scenario(
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
-
-    model_folder = 'experiments'
-    model_name = 'thegoat/agent.pt'
+    model_folder = '/home/mila/j/juan.duque/projects/advantage-alignment/experiments/31lvjmzj/step_33200'
+    model_name = 'agent.pt'
     cxt_len = cfg['max_cxt_len']
 
-    scenario_config = scene.get_config('commons_harvest__open_0')
-    env = scene.build_from_config(scenario_config)
-
-    print(scenario_config.description)
-    print(scenario_config.roles)
-    print(scenario_config.bots_by_role)
-
-    agents = []
+    wandb.init(
+        project="Meltingpot",
+        config=OmegaConf.to_container(cfg, resolve=True),
+        dir=cfg["wandb_dir"],
+        anonymous="allow",
+        mode=cfg["wandb"], 
+    )
+    
     agent = instantiate_agent(cfg)
-
     model_path = os.path.join(model_folder, model_name)
-    model_dict = torch.load(model_path, map_location=torch.device('cpu'))
+    model_dict = torch.load(model_path, map_location=torch.device(cfg['device']))
     agent.actor.load_state_dict(model_dict['actor_state_dict'])
+    
+    # Get all substrates and their corresponding scenarios
+    substrates_scenarios = scene._scenarios_by_substrate()
+    scenario = cfg['env']['scenario']
+    print(f"Evaluating substrate: {scenario}")
 
-    num_our_agent_in_scenario = len(env.action_spec())
-    for i in range(num_our_agent_in_scenario):
-        agents.append(agent)
+    results = []
+    
+    for scenario_name in substrates_scenarios[scenario]:
+        print(f"Evaluating scenario: {scenario_name}")
 
-    state = env.reset()
-    scenario_to_info = evaluate_agents_on_substrate(agents, 'commons_harvest__open', 100, cxt_len, return_trajectories=True, return_k_trajectories=1)
+        scenario_config = scene.get_config(scenario_name)
+        env = scene.build_from_config(scenario_config)
+        num_agents_in_scenario = len(env.action_spec())
+        agents = [agent for _ in range(num_agents_in_scenario)]
+        
+        scenario_to_info = evaluate_agents_on_scenario(
+            agents=agents,
+            scenario_name=scenario_name,
+            num_frames=-1,
+            cxt_len=cxt_len,
+            num_repeats=100,  # Evaluate n times
+            return_trajectories=False,
+            run_until_done=True,
+            max_env_steps=cfg['env']['max_env_steps']
+        )
+        avg_reward = scenario_to_info[scenario_name]['avg_reward']
+        avg_return = scenario_to_info[scenario_name]['avg_return'].item()  # Convert tensor to float if necessary
+        normalized_return = normalize(scenario_name, avg_return)
+        
+        print(f"Scenario: {scenario_name}, Avg Reward over 100 runs: {avg_reward}, Avg Return over 100 runs: {avg_return}, Normalized Return: {normalized_return}")
+        
+        results.append({
+            'substrate': scenario,
+            'scenario': scenario_name,
+            'avg_reward': avg_reward,
+            'avg_return': avg_return,
+            'normalized_return': normalized_return
+        })
 
-    return scenario_to_info
+        wandb.log({
+            f'{scenario}/{scenario_name}/avg_reward': avg_reward,
+            f'{scenario}/{scenario_name}/avg_return': avg_return,
+            f'{scenario}/{scenario_name}/normalized_return': normalized_return,
+        })
+    
+    with open('evaluation_results.txt', 'w') as f:
+        for result in results:
+            f.write(f"Substrate: {result['substrate']}, Scenario: {result['scenario']}, Avg Reward: {result['avg_reward']}, Avg Return: {result['avg_return']}, Normalized Return: {result['normalized_return']}\n")
 
 
 if __name__ == "__main__":
