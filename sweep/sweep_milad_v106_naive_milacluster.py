@@ -25,7 +25,7 @@ def run_job(command, fake_submit: bool = True):
 
 
 def run_random_jobs(fake_submit: bool = True):
-    command = ("python train.py seed={seed} "
+    command = ("python train.py run_id={run_id} seed={seed} "
                "optimizer_actor.lr=1e-05 "
                "optimizer_critic.lr=1e-05 "
                "optimizer_ss.lr=1e-05 "
@@ -55,7 +55,7 @@ def run_random_jobs(fake_submit: bool = True):
                "wandb_tags=[commons_harvest,v106,naive] --config-name=meltingpot.yaml")
 
     for seed in [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]:
-        run_job(command.format(seed=seed), fake_submit=fake_submit)
+        run_job(command.format(seed=seed, run_id=f"iclr2025_naive_{seed}"), fake_submit=fake_submit)
 
 def main(num_jobs: int, fake_submit: bool = True):
     for i in range(num_jobs):
