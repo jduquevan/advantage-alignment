@@ -6,3 +6,5 @@ runs/
 videos/
 *.json
 *.txt
+*.pdf
+*.gif

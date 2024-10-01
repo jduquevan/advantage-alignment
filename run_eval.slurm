@@ -15,10 +15,10 @@
 #SBATCH -N 1 #nodes
 #SBATCH -n 1 #tasks
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=16G
 #SBATCH --time=0-04:59:00   
 #SBATCH --gres=gpu:l40s:1
-#SBATCH --partition=unkillable
+#SBATCH --partition=main
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -39,5 +39,6 @@ module load python/3.9
 
 python evaluation.py\
     seed=${1}\
+    +agent_folder=${2}\
     debug_mode=False\
     --config-name='meltingpot.yaml'

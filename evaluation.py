@@ -160,6 +160,7 @@ def evaluate_agents_on_scenario(
     state = env.reset()
 
     for i in range(num_repeats):
+        print(f'Evaluating currently at step {i}')
         stop = False
         steps = 0
         trajectories = []
@@ -190,7 +191,8 @@ def evaluate_agents_on_scenario(
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
 def main(cfg: DictConfig) -> None:
-    model_folder = '/home/mila/j/juan.duque/projects/advantage-alignment/experiments/31lvjmzj/step_33200'
+    model_folder = f"/home/mila/j/juan.duque/projects/advantage-alignment/experiments/{cfg['agent_folder']}/"
+    print(f'model folder is: {model_folder}')
     model_name = 'agent.pt'
     cxt_len = cfg['max_cxt_len']
 
