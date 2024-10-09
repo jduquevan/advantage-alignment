@@ -10,17 +10,17 @@ def gen_command(config):
 
 def run_random_job(fake_submit: bool = True):
     hparams = {
-        'optimizer_actor.lr': [0.00005],
-        'optimizer_critic.lr': [0.0001],
-        'training.entropy_beta': [0.01, 0.03, 0.05, 0.07, 0.1],
+        'optimizer_actor.lr': [0.00001],
+        'optimizer_critic.lr': [0.00001],
+        'training.entropy_beta': [0.03, 0.05, 0.07, 0.1, 0.2],
         'training.clip_range': [0.1, 0.2, 0.3],
-        'training.updates_per_batch': [2, 3],
+        'training.updates_per_batch': [2],
         'training.kl_threshold': [0.05],
         'hidden_size': [192],
         'encoder.num_layers': [3],
         'training.critic_loss_mode': ['td-1'],
-        'max_cxt_len': [10, 15, 20, 25, 30],
-        'optimizer_ss.lr': [0],
+        'max_cxt_len': [15],
+        'optimizer_ss.lr': [0.0000005, 0.000001, 0.000005, 0.00001, 0.00005],
         'use_ss_loss': [False],
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [0.5, 1, 1.5, 2],
@@ -28,11 +28,11 @@ def run_random_job(fake_submit: bool = True):
         'agent_rb_size': [100, 300, 500],
         'training.add_to_agent_replay_buffer_every': [1, 10, 20],
         'training.id_weight': [1],
-        'on_policy_only': [True, False],
+        'on_policy_only': [True],
         'encoder.init_weights': [False],
         'mlp_model.init_weights': [False],
         'training.center_rewards': [False],
-        'ss_module.mask_p': [0.15],
+        'ss_module.mask_p': [0.15, 0.3, 0.5, 0.7],
     }
 
     # sample a random config
