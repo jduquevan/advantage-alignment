@@ -2,8 +2,8 @@ resume: True
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'online'
-wandb_tags: ['meltingpot', 'PPO', 'aa', 'ICLR_2025']
+wandb: 'offline'
+wandb_tags: ['meltingpot', 'PPO', 'ICLR_2025']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: False
@@ -117,13 +117,13 @@ training:
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 1.5
+  aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 1
   spr_weight: 1
   normalize_advantages: True
-  actor_loss_mode: 'integrated_aa'
+  actor_loss_mode: 'naive'
   add_to_agent_replay_buffer_every: 20
   num_on_policy_agents: 5
   center_rewards: False
