@@ -1,4 +1,4 @@
-resume: True
+resume: False
 run_id: null
 seed: 42
 batch_size: 512
@@ -14,14 +14,14 @@ share_encoder: True
 use_reward_loss: False
 use_spr_loss: True
 device: cuda
-rb_size: 840
+rb_size: 1680
 use_full_maps: False
 hidden_size: 192
 max_seq_len: 1000
 max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
+use_ss_loss: True
 agent_rb_size: 200
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
@@ -94,7 +94,7 @@ optimizer_critic:
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0
+  lr: 0.00001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -120,10 +120,11 @@ training:
   aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 1
+  id_weight: 0
   spr_weight: 1
   normalize_advantages: True
-  actor_loss_mode: 'naive'
+  actor_loss_mode: 'integrated_aa'
+  add_to_replay_buffer_every: 20
   add_to_agent_replay_buffer_every: 20
   num_on_policy_agents: 5
   center_rewards: False
