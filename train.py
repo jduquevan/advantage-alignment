@@ -437,7 +437,8 @@ class ReplayBuffer():
             batch_size=replay_buffer_size,
             n_agents=n_agents,
             cxt_len=cxt_len,
-            device=device,
+            # device=device,
+            device='cpu',
             is_replay_buffer=True,
             data=data,
         )
@@ -450,7 +451,7 @@ class ReplayBuffer():
             if key == 'full_maps':
                 self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key]
             else:
-                self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key]
+                self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu()
         self.fm_marker = (self.fm_marker + F) % (self.replay_buffer_size // self.n_agents)
         self.marker = (self.marker + B) % self.replay_buffer_size
 
@@ -803,6 +804,7 @@ class TrainingAlgorithm(ABC):
         time_metrics = {}
         state = self.env.reset()
 
+        add_to_replay_buffer_every = self.train_cfg.add_to_replay_buffer_every
         for step in pbar:
             # replay buffer, swap agents other than the first agent with their replay buffer counterparts
             if self.agent_replay_buffer_mode == "off":
@@ -829,6 +831,9 @@ class TrainingAlgorithm(ABC):
             state, needs_resetting = self.resetter.maybe_reset(self.env, state)
 
             wandb_metrics = wandb_stats(trajectory, self.batch_size, self.num_agents)
+            
+            if step % add_to_replay_buffer_every == 0:
+                self.replay_buffer.add_trajectory_batch(trajectory)
 
             train_step_metrics = self.train_step(
                 trajectory=trajectory,
@@ -1107,13 +1112,14 @@ class AdvantageAlignment(TrainingAlgorithm):
     def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
         B = self.train_cfg['batch_size']
         T = self.cxt_len
+        device = self.agents[0].device
         augment = self.train_cfg['augment']
         use_mlm = self.train_cfg['use_mlm']
             
         trajectory_sample = self.replay_buffer.sample(B)
-        obs = trajectory_sample['obs']
-        actions = trajectory_sample['actions']
-        full_maps = trajectory_sample['full_maps']
+        obs = trajectory_sample['obs'].to(device)
+        actions = trajectory_sample['actions'].to(device)
+        full_maps = trajectory_sample['full_maps'].to(device)
 
         action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True, augment=augment, use_mlm=use_mlm)
         criterion = nn.CrossEntropyLoss(reduction='none')
@@ -1139,7 +1145,6 @@ class AdvantageAlignment(TrainingAlgorithm):
             self.batch_size,
             self.cxt_len,
             self.agents,
-            self.replay_buffer,
             self.main_cfg
         )
 
@@ -1147,7 +1152,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         pass
 
 @staticmethod
-def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, main_cfg):
+def _gen_sim(state, env, batch_size, cxt_len, agents, main_cfg):
     time_metrics = defaultdict(int)
     B = batch_size
     N = len(agents)
@@ -1250,8 +1255,6 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, replay_buffer, main_cfg):
 
     start_time = time.time()
     trajectory.add_actions(actions, cxt_len)
-    replay_buffer.add_trajectory_batch(trajectory)
-    time_metrics["time_metrics/gen/replay_buffer"] += time.time() - start_time
     print(f"(|||)Time metrics: {time_metrics}")
     return trajectory, state
 
