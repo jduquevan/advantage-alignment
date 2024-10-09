@@ -30,7 +30,7 @@
 
 # Submit jobs.
 version=4
-export WANDB_ENTITY="jduque"
+export WANDB_ENTITY="simon-lacoste-julien"
 
 module purge
 eval "$(conda shell.bash hook)"

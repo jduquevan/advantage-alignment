@@ -2,8 +2,8 @@ resume: True
 run_id: null
 seed: 42
 batch_size: 512
-wandb: 'online'
-wandb_tags: ['meltingpot', 'PPO', 'aa', 'ICLR_2025']
+wandb: 'offline'
+wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: False
