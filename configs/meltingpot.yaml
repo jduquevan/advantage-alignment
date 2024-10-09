@@ -117,7 +117,7 @@ training:
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 1.5
+  aa_weight: 0
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 0
