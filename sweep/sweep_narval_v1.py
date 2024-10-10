@@ -26,13 +26,13 @@ def run_random_job(fake_submit: bool = True):
         'training.aa_weight': [0.5, 1, 1.5, 2],
         'env.batch': [6],
         'agent_rb_size': [100, 300, 500],
-        'training.add_to_agent_replay_buffer_every': [1, 10, 20],
+        'training.add_to_agent_replay_buffer_every': [20],
         'training.id_weight': [1],
         'on_policy_only': [True],
         'encoder.init_weights': [False],
         'mlp_model.init_weights': [False],
         'training.center_rewards': [False],
-        'ss_module.mask_p': [0.15, 0.3, 0.5, 0.7],
+        'ss_module.mask_p': [0.15, 0.3, 0.5],
     }
 
     # sample a random config
