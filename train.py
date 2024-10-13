@@ -343,7 +343,9 @@ class TrajectoryBatch():
         cxt_len: int,
         device: torch.device,
         data=None,
-        is_replay_buffer=False
+        is_replay_buffer=False,
+        use_memmap=False,
+        memmap_dir=None,
     ) -> None:
 
         self.batch_size = batch_size
@@ -357,49 +359,51 @@ class TrajectoryBatch():
             B = self.batch_size // N
 
         if data is None:
-            self.data = {
-                "obs": torch.ones(
-                    (B * N, T, H, W, C),
-                    dtype=torch.float32,
-                    device=device,
-                ),
-                "full_maps": torch.ones(
-                    (B, T, G, L, C),
-                    dtype=torch.float32,
-                    device=device,
-                ),
-                "rewards": torch.ones(
-                    (B * N, T),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "log_ps": torch.ones(
-                    (B * N, T),
-                    device=device,
-                    dtype=torch.float32,
-                ),
-                "actions": torch.ones(
-                    (B * N, T + 1),
-                    device=device,
-                    dtype=torch.long,
-                ),
-            }
+
+            if use_memmap:
+                assert memmap_dir is not None, "memmap_dir must be specified when use_memmap is True"
+                os.makedirs(memmap_dir, exist_ok=True)
+                self.data = {
+                    "obs": np.memmap(os.path.join(memmap_dir, "obs.dat"), mode='w+', dtype=np.float32, shape=(B * N, T, H, W, C),),
+                    "full_maps": np.memmap(os.path.join(memmap_dir, "full_maps.dat"), mode='w+', dtype=np.float32, shape=(B, T, G, L, C),),
+                    "rewards": np.memmap(os.path.join(memmap_dir, "rewards.dat"), mode='w+',dtype=np.float32, shape=(B * N, T),),
+                    "log_ps": np.memmap(os.path.join(memmap_dir, "log_ps.dat"), mode='w+', dtype=np.float32, shape=(B * N, T),),
+                    "actions": np.memmap(os.path.join(memmap_dir, "actions.dat"), mode='w+', dtype=np.int64, shape=(B * N, T + 1),),
+                }
+            else:
+                self.data = {
+                    "obs": torch.ones((B * N, T, H, W, C), dtype=torch.float32, device=device,),
+                    "full_maps": torch.ones((B, T, G, L, C), dtype=torch.float32, device=device,),
+                    "rewards": torch.ones((B * N, T), device=device, dtype=torch.float32,),
+                    "log_ps": torch.ones((B * N, T), device=device, dtype=torch.float32,),
+                    "actions": torch.ones((B * N, T + 1), device=device, dtype=torch.long,),
+                }
         else:
             self.data = data
 
     def add_actions(self, actions, t):
-        self.data['actions'][:, t] = actions[:, 0]
+        if isinstance(self.data['actions'], np.memmap):
+            self.data['actions'][:, t] = actions.cpu().numpy()[:, 0]
+        else:
+            self.data['actions'][:, t] = actions[:, 0]
 
     def subsample(self, batch_size: int):
         idxs = torch.randint(0, self.batch_size, (batch_size,))
         return TrajectoryBatch.create_from_data({k: v[idxs] for k, v in self.data.items()})
 
     def add_step(self, obs, full_maps, rewards, log_ps, actions, t):
-        self.data['obs'][:, t, :, :, :] = obs[:, 0, :, :, :]
-        self.data['full_maps'][:, t, :, :, :] = full_maps[:, 0, :, :, :]
-        self.data['rewards'][:, t] = rewards
-        self.data['log_ps'][:, t] = log_ps
-        self.data['actions'][:, t] = actions[:, 0]
+        if isinstance(self.data['obs'], np.memmap):
+            self.data['obs'][:, t, :, :, :] = obs.cpu().numpy()[:, 0, :, :, :]
+            self.data['full_maps'][:, t, :, :, :] = full_maps.cpu().numpy()[:, 0, :, :, :]
+            self.data['rewards'][:, t] = rewards.cpu().numpy()
+            self.data['log_ps'][:, t] = log_ps.cpu().numpy()
+            self.data['actions'][:, t] = actions.cpu().numpy()[:, 0]
+        else:
+            self.data['obs'][:, t, :, :, :] = obs[:, 0, :, :, :]
+            self.data['full_maps'][:, t, :, :, :] = full_maps[:, 0, :, :, :]
+            self.data['rewards'][:, t] = rewards
+            self.data['log_ps'][:, t] = log_ps
+            self.data['actions'][:, t] = actions[:, 0]
 
     def merge_two_trajectories_batch_wise(self, other):
         for key in self.data.keys():
@@ -422,6 +426,8 @@ class ReplayBuffer():
         cxt_len: int,
         device: torch.device,
         data=None,
+        use_memmap=False,
+        memmap_dir=None,
     ):
         state = env.reset()
         self.replay_buffer_size = replay_buffer_size
@@ -441,6 +447,8 @@ class ReplayBuffer():
             device='cpu',
             is_replay_buffer=True,
             data=data,
+            use_memmap=use_memmap,
+            memmap_dir=memmap_dir,
         )
 
     def add_trajectory_batch(self, new_batch: TrajectoryBatch):
@@ -448,10 +456,16 @@ class ReplayBuffer():
         F = new_batch.data['full_maps'].size(0)
         assert (self.marker + B) <= self.replay_buffer_size  # WARNING: we are assuming new data always comes in the same size, and the replay buffer is a multiple of that size
         for key in self.trajectory_batch.data.keys():
-            if key == 'full_maps':
-                self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key]
+            if isinstance(self.trajectory_batch.data[key], np.memmap):
+                if key == 'full_maps':
+                    self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key].cpu().numpy()
+                else:
+                    self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu().numpy()
             else:
-                self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu()
+                if key == 'full_maps':
+                    self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key]
+                else:
+                    self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu()
         self.fm_marker = (self.fm_marker + F) % (self.replay_buffer_size // self.n_agents)
         self.marker = (self.marker + B) % self.replay_buffer_size
 
@@ -461,10 +475,16 @@ class ReplayBuffer():
         idxs = torch.randint(0, self.__len__(), (batch_size,))
         sample = {}
         for k, v in self.trajectory_batch.data.items():
-            if k == 'full_maps':
-                sample[k] = v[idxs // self.n_agents]
+            if isinstance(v, np.memmap):
+                if k == 'full_maps':
+                    sample[k] = torch.from_numpy(v[idxs // self.n_agents])
+                else:
+                    sample[k] = torch.from_numpy(v[idxs])
             else:
-                sample[k] = v[idxs]
+                if k == 'full_maps':
+                    sample[k] = v[idxs // self.n_agents]
+                else:
+                    sample[k] = v[idxs]
         return sample
 
     def __len__(self):
@@ -1367,7 +1387,7 @@ def main(cfg: DictConfig) -> None:
 
     # ------ (@@-o) end of checkpointing logic ------ #
 
-    wandb.init(
+    run = wandb.init(
         id=run_id,
         config=wandb_friendly_cfg,
         project="Meltingpot",
@@ -1433,7 +1453,9 @@ def main(cfg: DictConfig) -> None:
         n_agents=len(agents),
         cxt_len=cfg['max_cxt_len'],
         device=cfg['device'],
-        data=replay_buffer_data
+        data=replay_buffer_data,
+        use_memmap=cfg['use_memmap'],
+        memmap_dir=os.path.join(cfg['memmap_dir'], run.id)
     )
 
     algorithm = AdvantageAlignment(
