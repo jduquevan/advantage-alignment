@@ -21,18 +21,18 @@ def run_random_job(fake_submit: bool = True):
         'training.critic_loss_mode': ['td-1'],
         'max_cxt_len': [15],
         'optimizer_ss.lr': [0.0000005, 0.000001, 0.000005, 0.00001, 0.00005],
-        'use_ss_loss': [False],
+        'use_ss_loss': [True],
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [0.8, 1, 1.3, 1.5],
         'env.batch': [6],
-        'agent_rb_size': [100, 300, 500],
+        'agent_rb_size': [300, 500, 700],
         'training.add_to_agent_replay_buffer_every': [20],
         'training.id_weight': [0],
         'on_policy_only': [True],
         'encoder.init_weights': [False],
         'mlp_model.init_weights': [False],
         'training.center_rewards': [False],
-        'ss_module.mask_p': [0.15, 0.3, 0.5],
+        'ss_module.mask_p': [0.3, 0.4, 0.5],
     }
 
     # sample a random config
