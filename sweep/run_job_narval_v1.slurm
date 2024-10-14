@@ -33,7 +33,7 @@ version=4
 export WANDB_ENTITY="simon-lacoste-julien"
 
 module purge
-eval "$(conda shell.bash hook)"
+# eval "$(conda shell.bash hook)"
 source /home/jduque/environments/meltingpot/bin/activate
 module load cuda/12.2
 export WANDB_MODE=offline
