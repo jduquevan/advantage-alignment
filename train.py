@@ -89,12 +89,13 @@ class LinearModel(nn.Module):
 
 
 class SelfSupervisedModule(nn.Module):
-    def __init__(self, n_actions, hidden_size, device, num_layers=1, mask_p=0.15, encoder=None):
+    def __init__(self, n_actions, hidden_size, device, num_layers=1, mask_p=0.15, encoder=None, use_full_maps=False):
         super(SelfSupervisedModule, self).__init__()
         self.mask_p = mask_p
         self.encoder = encoder
         self.n_actions = n_actions
         self.hidden_size = hidden_size
+        self.use_full_maps = use_full_maps
 
         self.action_hidden_layers = nn.ModuleList([
             nn.Linear(self.hidden_size, self.hidden_size)
@@ -111,9 +112,12 @@ class SelfSupervisedModule(nn.Module):
         self.to(device)
 
     def forward(self, obs, actions, full_maps, batched: bool = False, augment: bool = True, use_mlm: bool = False):
-        obs = obs / 255.0 # normalize
-        full_maps = full_maps / 255.0
         actions = actions[:, :-1]
+        obs = obs / 255.0 # normalize
+        if self.use_full_maps:
+            full_maps = full_maps / 255.0
+        else:
+            full_maps = None
 
         if augment:
             obs_augmented = random_shift(obs, padding=4)
@@ -233,7 +237,10 @@ class MeltingpotTransformer(nn.Module):
             B = 1
 
         obs = obs / 255.0 # normalize
-        full_maps = full_maps / 255.0 # normalize
+        if self.use_full_maps:
+            full_maps = full_maps / 255.0 # normalize
+        else:
+            full_maps = None
         src = self.get_embeds(obs, actions, full_maps, batched)
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
@@ -252,30 +259,35 @@ class MeltingpotTransformer(nn.Module):
     def get_embeds(self, obs, actions, full_maps, batched=False):
         if batched:
             B, T, H, W, C = obs.shape
-            _, _, L, M, _ = full_maps.shape
             obs = obs.permute(0, 1, 4, 2, 3).reshape(B * T, C, H, W)
-            full_maps = full_maps.permute(0, 1, 4, 2, 3).reshape(B * T, C, L, M)
+            if self.use_full_maps:
+                _, _, L, M, _ = full_maps.shape
+                full_maps = full_maps.permute(0, 1, 4, 2, 3).reshape(B * T, C, L, M)
         else:
             T, _, _, _ = obs.shape
             obs = obs.permute(0, 3, 1, 2)
-            full_maps = full_maps.permute(0, 3, 1, 2)
+            if self.use_full_maps:
+                full_maps = full_maps.permute(0, 3, 1, 2)
         H = self.d_model
 
         obs = F.relu(self.conv1(obs))
         obs = F.relu(self.conv2(obs))
         obs = F.relu(self.conv3(obs))
 
-        full_maps = F.relu(self.conv1(full_maps))
-        full_maps = F.relu(self.conv2(full_maps))
-        full_maps = F.relu(self.conv3(full_maps))
+        if self.use_full_maps:
+            full_maps = F.relu(self.conv1(full_maps))
+            full_maps = F.relu(self.conv2(full_maps))
+            full_maps = F.relu(self.conv3(full_maps))
 
         if batched:
             obs = obs.reshape(B * T, -1)
-            full_maps = full_maps.reshape(B * T, -1)
             actions = actions.reshape(B * T)
+            if self.use_full_maps:
+                full_maps = full_maps.reshape(B * T, -1)
         else:
             obs = obs.reshape(T, -1)
-            full_maps = full_maps.reshape(T, -1)
+            if self.use_full_maps:
+                full_maps = full_maps.reshape(T, -1)
         embed_obs = F.relu(self.embed_obs_layer(obs))
 
         if self.use_full_maps:
@@ -284,7 +296,6 @@ class MeltingpotTransformer(nn.Module):
 
         embed_actions = self.embed_action(actions)
         
-
         for embed_layer in self.embed_layers:
             embed_obs = F.relu(embed_layer(embed_obs))
             embed_actions = F.relu(embed_layer(embed_actions))
@@ -346,10 +357,12 @@ class TrajectoryBatch():
         is_replay_buffer=False,
         use_memmap=False,
         memmap_dir=None,
+        use_full_maps=False,
     ) -> None:
 
         self.batch_size = batch_size
         self.device = device
+        self.use_full_maps = use_full_maps
 
         B, N, H, W, C = sample_obs.shape
         _, G, L, _ = sample_full_map.shape
@@ -359,25 +372,26 @@ class TrajectoryBatch():
             B = self.batch_size // N
 
         if data is None:
-
             if use_memmap:
                 assert memmap_dir is not None, "memmap_dir must be specified when use_memmap is True"
                 os.makedirs(memmap_dir, exist_ok=True)
                 self.data = {
                     "obs": np.memmap(os.path.join(memmap_dir, "obs.dat"), mode='w+', dtype=np.float32, shape=(B * N, T, H, W, C),),
-                    "full_maps": np.memmap(os.path.join(memmap_dir, "full_maps.dat"), mode='w+', dtype=np.float32, shape=(B, T, G, L, C),),
                     "rewards": np.memmap(os.path.join(memmap_dir, "rewards.dat"), mode='w+',dtype=np.float32, shape=(B * N, T),),
                     "log_ps": np.memmap(os.path.join(memmap_dir, "log_ps.dat"), mode='w+', dtype=np.float32, shape=(B * N, T),),
                     "actions": np.memmap(os.path.join(memmap_dir, "actions.dat"), mode='w+', dtype=np.int64, shape=(B * N, T + 1),),
                 }
+                if self.use_full_maps:
+                    self.data["full_maps"] = np.memmap(os.path.join(memmap_dir, "full_maps.dat"), mode='w+', dtype=np.float32, shape=(B, T, G, L, C),)
             else:
                 self.data = {
                     "obs": torch.ones((B * N, T, H, W, C), dtype=torch.float32, device=device,),
-                    "full_maps": torch.ones((B, T, G, L, C), dtype=torch.float32, device=device,),
                     "rewards": torch.ones((B * N, T), device=device, dtype=torch.float32,),
                     "log_ps": torch.ones((B * N, T), device=device, dtype=torch.float32,),
                     "actions": torch.ones((B * N, T + 1), device=device, dtype=torch.long,),
                 }
+                if self.use_full_maps:
+                    self.data["full_maps"] = torch.ones((B, T, G, L, C), dtype=torch.float32, device=device,)
         else:
             self.data = data
 
@@ -394,16 +408,19 @@ class TrajectoryBatch():
     def add_step(self, obs, full_maps, rewards, log_ps, actions, t):
         if isinstance(self.data['obs'], np.memmap):
             self.data['obs'][:, t, :, :, :] = obs.cpu().numpy()[:, 0, :, :, :]
-            self.data['full_maps'][:, t, :, :, :] = full_maps.cpu().numpy()[:, 0, :, :, :]
             self.data['rewards'][:, t] = rewards.cpu().numpy()
             self.data['log_ps'][:, t] = log_ps.cpu().numpy()
             self.data['actions'][:, t] = actions.cpu().numpy()[:, 0]
+            if self.use_full_maps:
+                self.data['full_maps'][:, t, :, :, :] = full_maps.cpu().numpy()[:, 0, :, :, :]
+
         else:
             self.data['obs'][:, t, :, :, :] = obs[:, 0, :, :, :]
-            self.data['full_maps'][:, t, :, :, :] = full_maps[:, 0, :, :, :]
             self.data['rewards'][:, t] = rewards
             self.data['log_ps'][:, t] = log_ps
             self.data['actions'][:, t] = actions[:, 0]
+            if self.use_full_maps:
+                self.data['full_maps'][:, t, :, :, :] = full_maps[:, 0, :, :, :]
 
     def merge_two_trajectories_batch_wise(self, other):
         for key in self.data.keys():
@@ -428,6 +445,7 @@ class ReplayBuffer():
         data=None,
         use_memmap=False,
         memmap_dir=None,
+        use_full_maps=False,
     ):
         state = env.reset()
         self.replay_buffer_size = replay_buffer_size
@@ -437,6 +455,7 @@ class ReplayBuffer():
         self.number_of_added_trajectories = 0
         self.cxt_len = cxt_len
         self.device = device
+        self.use_full_maps = use_full_maps
         self.trajectory_batch = TrajectoryBatch(
             sample_obs=state['agents']['observation']['RGB'],
             sample_full_map=state['RGB'],
@@ -453,20 +472,22 @@ class ReplayBuffer():
 
     def add_trajectory_batch(self, new_batch: TrajectoryBatch):
         B = new_batch.data['obs'].size(0)
-        F = new_batch.data['full_maps'].size(0)
+        if self.use_full_maps:
+            F = new_batch.data['full_maps'].size(0)
         assert (self.marker + B) <= self.replay_buffer_size  # WARNING: we are assuming new data always comes in the same size, and the replay buffer is a multiple of that size
         for key in self.trajectory_batch.data.keys():
             if isinstance(self.trajectory_batch.data[key], np.memmap):
-                if key == 'full_maps':
+                if self.use_full_maps and key == 'full_maps':
                     self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key].cpu().numpy()
                 else:
                     self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu().numpy()
             else:
-                if key == 'full_maps':
+                if self.use_full_maps and key == 'full_maps':
                     self.trajectory_batch.data[key][self.fm_marker:self.fm_marker + F] = new_batch.data[key]
                 else:
                     self.trajectory_batch.data[key][self.marker:self.marker + B] = new_batch.data[key].cpu()
-        self.fm_marker = (self.fm_marker + F) % (self.replay_buffer_size // self.n_agents)
+        if self.use_full_maps:
+            self.fm_marker = (self.fm_marker + F) % (self.replay_buffer_size // self.n_agents)
         self.marker = (self.marker + B) % self.replay_buffer_size
 
         self.number_of_added_trajectories += B
@@ -476,12 +497,12 @@ class ReplayBuffer():
         sample = {}
         for k, v in self.trajectory_batch.data.items():
             if isinstance(v, np.memmap):
-                if k == 'full_maps':
+                if self.use_full_maps and k == 'full_maps':
                     sample[k] = torch.from_numpy(v[idxs // self.n_agents])
                 else:
                     sample[k] = torch.from_numpy(v[idxs])
             else:
-                if k == 'full_maps':
+                if self.use_full_maps and k == 'full_maps':
                     sample[k] = v[idxs // self.n_agents]
                 else:
                     sample[k] = v[idxs]
@@ -912,7 +933,7 @@ class TrainingAlgorithm(ABC):
 
 class AdvantageAlignment(TrainingAlgorithm):
 
-    def get_trajectory_log_ps(self, agents, observations, actions, full_maps):  # todo: make sure logps are the same as when sampling
+    def get_trajectory_log_ps(self, agents, observations, actions, full_maps=None):  # todo: make sure logps are the same as when sampling
         B = self.batch_size
         N = self.num_agents
         T = self.cxt_len
@@ -930,7 +951,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return log_ps.reshape((B * N, T)), entropy.reshape((B * N, T))
 
-    def get_trajectory_values(self, agents, observations, actions, full_maps):
+    def get_trajectory_values(self, agents, observations, actions, full_maps=None):
         values_c = agents[0].critic(
             observations,
             actions[:, :-1],
@@ -1012,19 +1033,23 @@ class AdvantageAlignment(TrainingAlgorithm):
         clip_range = self.train_cfg.clip_range
         loss_mode = self.train_cfg.actor_loss_mode
         center_rewards = self.train_cfg.center_rewards
+        use_full_maps = self.main_cfg.use_full_maps
         assert loss_mode in ['integrated_aa', 'separated_aa', 'naive']
 
         obs = trajectory.data['obs']
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
-        full_maps = trajectory.data['full_maps']
 
         if center_rewards:
             rewards = rewards - rewards.mean()
 
-        full_maps = full_maps.unsqueeze(1)
-        full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
-        full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
+        if use_full_maps:
+            full_maps = trajectory.data['full_maps']
+            full_maps = full_maps.unsqueeze(1)
+            full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
+            full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
+        else:
+            full_maps = None
 
         if self.sum_rewards:
             print("Summing rewards...")
@@ -1085,19 +1110,23 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         gamma = self.train_cfg.gamma
         center_rewards = self.train_cfg.center_rewards
+        use_full_maps = self.main_cfg.use_full_maps
 
         obs = trajectory.data['obs']
         rewards = trajectory.data['rewards']
         actions = trajectory.data['actions']
-        full_maps = trajectory.data['full_maps']
         dones = dones.unsqueeze(1).repeat(1, N).reshape(B * N)
 
         if center_rewards:
             rewards = rewards - rewards.mean()
 
-        full_maps = full_maps.unsqueeze(1)
-        full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
-        full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
+        if use_full_maps:
+            full_maps = trajectory.data['full_maps']
+            full_maps = full_maps.unsqueeze(1)
+            full_maps = full_maps.repeat((1, N, 1, 1, 1, 1))
+            full_maps = full_maps.reshape((B * N,) + full_maps.shape[2:])
+        else:
+            full_maps = None
 
         if self.sum_rewards:
             print("Summing rewards...")
@@ -1136,11 +1165,15 @@ class AdvantageAlignment(TrainingAlgorithm):
         device = self.agents[0].device
         augment = self.train_cfg['augment']
         use_mlm = self.train_cfg['use_mlm']
+        use_full_maps = self.main_cfg.use_full_maps
             
         trajectory_sample = self.replay_buffer.sample(B)
         obs = trajectory_sample['obs'].to(device)
         actions = trajectory_sample['actions'].to(device)
-        full_maps = trajectory_sample['full_maps'].to(device)
+        if use_full_maps:
+            full_maps = trajectory_sample['full_maps'].to(device)
+        else:
+            full_maps = None
 
         action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True, augment=augment, use_mlm=use_mlm)
         criterion = nn.CrossEntropyLoss(reduction='none')
@@ -1184,8 +1217,8 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, main_cfg):
     _, G, L, _ = state['RGB'].shape
     history = torch.zeros((B * N, cxt_len, H, W, C), device=device)
     history_actions = torch.zeros((B * N, cxt_len + 1), device=device)
-    history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
     history_action_logits = torch.zeros((B * N, cxt_len, 8), device=device)
+    history_full_maps = torch.zeros((B, cxt_len, G, L, C), device=device)
 
     # Self-play only TODO: Add replay buffer of agents
     actors = [agents[i % N].actor for i in range(B * N)]
@@ -1217,12 +1250,12 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, main_cfg):
 
         observations = state['agents']['observation']['RGB']
         observations = observations.reshape(-1, 1, *observations.shape[2:])
-
+        
         trajectory.add_step(observations, full_maps, rewards, log_probs.detach(), actions, i)
 
         history[:, i, ...] = observations.squeeze(1)
-        history_full_maps[:, i, ...] = full_maps.squeeze(1)
         history_actions[:, i] = actions.squeeze(1)
+        history_full_maps[:, i, ...] = full_maps.squeeze(1)
 
         observations = history[:, :i + 1, ...]
         actions = history_actions[:, :i + 1]
