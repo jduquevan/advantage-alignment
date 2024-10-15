@@ -456,6 +456,7 @@ class ReplayBuffer():
         self.cxt_len = cxt_len
         self.device = device
         self.use_full_maps = use_full_maps
+        self.use_memmap = use_memmap
         self.trajectory_batch = TrajectoryBatch(
             sample_obs=state['agents']['observation']['RGB'],
             sample_full_map=state['RGB'],
@@ -657,10 +658,10 @@ class TrainingAlgorithm(ABC):
         trajectory,
         agents,
         step: int,
+        trajectory_sub_sample: Dict[str, torch.Tensor],
         optimize_critic=True,
         dones=None,
     ):
-
         train_step_metrics = {}
         self_play = self.main_cfg['self_play']
         kl_threshold = self.train_cfg['kl_threshold']
@@ -764,7 +765,7 @@ class TrainingAlgorithm(ABC):
         for update in range(ss_epochs):
             if self_play and use_ss_loss and not run_single_agent:
                 agent.ss_optimizer.zero_grad()
-                ss_loss_dict = self.self_supervised_losses(trajectory)
+                ss_loss_dict = self.self_supervised_losses(trajectory_sub_sample)
                 id_loss = ss_loss_dict['id_losses'].mean()
                 spr_loss = ss_loss_dict['spr_loss'].mean()
                 ss_loss = id_weight * id_loss + spr_weight * spr_loss
@@ -845,8 +846,13 @@ class TrainingAlgorithm(ABC):
 
         time_metrics = {}
         state = self.env.reset()
-
+        B = self.train_cfg['batch_size']
+        device = self.agents[0].device
+        sfrbe = self.train_cfg['sample_from_replay_buffer_every']
         add_to_replay_buffer_every = self.train_cfg.add_to_replay_buffer_every
+
+        trajectory_sample = {}
+
         for step in pbar:
             # replay buffer, swap agents other than the first agent with their replay buffer counterparts
             if self.agent_replay_buffer_mode == "off":
@@ -877,10 +883,21 @@ class TrainingAlgorithm(ABC):
             if step % add_to_replay_buffer_every == 0:
                 self.replay_buffer.add_trajectory_batch(trajectory)
 
+            sub_index = step % sfrbe
+            if sub_index == 0:
+                trajectory_sample = self.replay_buffer.sample(B * sfrbe)
+                for k, v in  trajectory_sample.items():
+                    trajectory_sample[k] = trajectory_sample[k].to(device)
+
+            trajectory_sub_sample = {}
+            for k, v in  trajectory_sample.items():
+                trajectory_sub_sample[k] = trajectory_sample[k][sub_index*B: (sub_index+1)*B, ...]
+
             train_step_metrics = self.train_step(
                 trajectory=trajectory,
                 agents=self.agents,
                 step=step,
+                trajectory_sub_sample=trajectory_sub_sample,
                 optimize_critic=True,
                 dones=needs_resetting,
             )
@@ -1159,7 +1176,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         return critic_losses, {'target_values': values_t, 'critic_values': values_c, }
 
-    def self_supervised_losses(self, trajectory: TrajectoryBatch) -> float:
+    def self_supervised_losses(self, trajectory_sample: TrajectoryBatch) -> float:
         B = self.train_cfg['batch_size']
         T = self.cxt_len
         device = self.agents[0].device
@@ -1167,7 +1184,6 @@ class AdvantageAlignment(TrainingAlgorithm):
         use_mlm = self.train_cfg['use_mlm']
         use_full_maps = self.main_cfg.use_full_maps
             
-        trajectory_sample = self.replay_buffer.sample(B)
         obs = trajectory_sample['obs'].to(device)
         actions = trajectory_sample['actions'].to(device)
         if use_full_maps:
@@ -1177,7 +1193,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         action_logits, spr_gts, spr_preds = self.agents[0].ss_module(obs, actions, full_maps, batched=True, augment=augment, use_mlm=use_mlm)
         criterion = nn.CrossEntropyLoss(reduction='none')
-
+        
         inverse_dynamics_losses = criterion(
             action_logits.view(B * T, -1),
             actions[:, :-1].reshape(B * T, ),
