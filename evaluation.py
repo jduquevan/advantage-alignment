@@ -44,7 +44,8 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
         batch_size=B,
         n_agents=N,
         cxt_len=cxt_len,
-        device=device
+        device=device,
+        use_full_maps=True
     )
 
     rewards = torch.zeros((B * N)).to(device)
