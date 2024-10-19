@@ -22,7 +22,7 @@ max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
 use_ss_loss: True
-agent_rb_size: 200
+agent_rb_size: 500
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 use_memmap: True
@@ -127,8 +127,8 @@ training:
   spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
-  add_to_replay_buffer_every: 10
-  sample_from_replay_buffer_every: 10
+  add_to_replay_buffer_every: 20
+  sample_from_replay_buffer_every: 20
   add_to_agent_replay_buffer_every: 20
   num_on_policy_agents: 5
   center_rewards: False
