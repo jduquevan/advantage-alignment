@@ -142,8 +142,11 @@ class SelfSupervisedModule(nn.Module):
             next_state_reps = F.relu(layer(next_state_reps))
 
         spr_preds = F.relu(self.spr_layer(next_state_reps))
+        
+        gt_state_reps, _ = self.encoder.get_embeds(obs, actions, full_maps, batched=batched)
+        gt_state_reps = gt_state_reps.view(spr_preds.shape)
 
-        return action_logits, next_state_reps[:, 1:, :], spr_preds[:, :-1, :]
+        return action_logits, gt_state_reps[:, 1:, :], spr_preds[:, :-1, :]
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -231,17 +234,24 @@ class MeltingpotTransformer(nn.Module):
 
     def forward(self, obs, actions, full_maps, past_ks_vs=None, batched=False, gated=False):  # todo(milad): I changed gated to False, it was True
         if batched:
-            B, T, _, _, _ = obs.shape
+            B, T, H, W, C  = obs.shape
         else:
             T, _, _, _ = obs.shape
             B = 1
+        H = self.d_model
 
         obs = obs / 255.0 # normalize
         if self.use_full_maps:
             full_maps = full_maps / 255.0 # normalize
         else:
             full_maps = None
-        src = self.get_embeds(obs, actions, full_maps, batched)
+        embed_obs, embed_actions = self.get_embeds(obs, actions, full_maps, batched)
+        # Interleave states and actions: a, s, a, ...
+        if batched:
+            src = torch.stack((embed_actions, embed_obs), dim=2).view(B, -1, H)
+        else:
+            src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
+
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
 
@@ -300,15 +310,7 @@ class MeltingpotTransformer(nn.Module):
             embed_obs = F.relu(embed_layer(embed_obs))
             embed_actions = F.relu(embed_layer(embed_actions))
 
-        # Interleave states and actions: a, s, a, ...
-        if batched:
-            # obs = obs.reshape((B, T, -1))
-            # actions = actions.reshape((B, T))
-            src = torch.stack((embed_actions, embed_obs), dim=2).view(B, -1, H)
-        else:
-            src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
-
-        return src
+        return embed_obs, embed_actions
 
 
 class Agent(ABC):
