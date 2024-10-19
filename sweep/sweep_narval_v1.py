@@ -25,7 +25,7 @@ def run_random_job(fake_submit: bool = True):
         'training.actor_loss_mode': ['integrated_aa'],
         'training.aa_weight': [0.8, 1, 1.3, 1.5],
         'env.batch': [6],
-        'agent_rb_size': [300, 500, 700],
+        'agent_rb_size': [500],
         'training.add_to_agent_replay_buffer_every': [20],
         'training.id_weight': [0],
         'on_policy_only': [True],
@@ -33,6 +33,7 @@ def run_random_job(fake_submit: bool = True):
         'mlp_model.init_weights': [False],
         'training.center_rewards': [False],
         'ss_module.mask_p': [0.3, 0.4, 0.5],
+        'training.batch_size': [128]
     }
 
     # sample a random config

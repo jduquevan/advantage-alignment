@@ -63,6 +63,7 @@ python train.py \
     mlp_model.init_weights=${22} \
     training.center_rewards=${23} \
     ss_module.mask_p=${24} \
+    training.batch_size=${25} \
     debug_mode=False \
     wandb_dir=/home/jduque/scratch/wandb \
     hydra.run.dir=/home/jduque/scratch/hydra \
