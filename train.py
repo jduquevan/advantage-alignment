@@ -64,14 +64,12 @@ class LinearModel(nn.Module):
         if init_weights:
             self._init_weights()
 
-    def forward(self, obs, actions, full_maps, full_seq: int = 1, past_ks_vs=None, batched: bool = False):
-        output, this_kv = self.encoder(obs, actions, full_maps, past_ks_vs=past_ks_vs, batched=batched)
+    def forward(self, obs, full_maps, full_seq: int = 1, past_ks_vs=None, batched: bool = False):
+        output, this_kv = self.encoder(obs, full_maps, past_ks_vs=past_ks_vs, batched=batched)
         if full_seq == 0:
             output = output[:, -1, :]
-        elif full_seq == 1:
-            output = output[:, ::2, :]
-        elif full_seq == 2:
-            output = output[:, 1::2, :]
+        elif full_seq == 1 or full_seq == 2:
+            output = output
         else:
             raise NotImplementedError("The full_seq value is invalid")
 
@@ -128,22 +126,20 @@ class SelfSupervisedModule(nn.Module):
         if use_mlm:
             obs_augmented = mask_random_obs(obs_augmented, p=self.mask_p)
 
-        actions_reps, this_kv = self.encoder(obs, torch.zeros_like(actions), full_maps, batched=batched)
-        action_reps = actions_reps[:, 1::2, :]  # Select the state representations in a, s, a, s
+        action_reps, this_kv = self.encoder(obs, full_maps, batched=batched)
         for layer in self.action_hidden_layers:
             action_reps = F.relu(layer(action_reps))
 
         action_logits = F.relu(self.action_layer(action_reps))
 
-        reps, this_kv = self.encoder(obs, actions, full_maps, batched=batched)
-        next_state_reps = reps[:, 1::2, :] # Select the state representations a, s, a, s
+        next_state_reps, this_kv = self.encoder(obs, full_maps, batched=batched)
 
         for layer in self.spr_hidden_layers:
             next_state_reps = F.relu(layer(next_state_reps))
 
         spr_preds = F.relu(self.spr_layer(next_state_reps))
         
-        gt_state_reps, _ = self.encoder.get_embeds(obs, actions, full_maps, batched=batched)
+        gt_state_reps = self.encoder.get_embeds(obs, full_maps, batched=batched)
         gt_state_reps = gt_state_reps.view(spr_preds.shape)
 
         return action_logits, gt_state_reps[:, 1:, :], spr_preds[:, :-1, :]
@@ -209,8 +205,6 @@ class MeltingpotTransformer(nn.Module):
             self.embed_fmp_layer = nn.Linear(64 * 14 * 20, d_model - (d_model // 2))
         else:
             self.embed_obs_layer = nn.Linear(64 * 7 * 7, d_model)
-        
-        self.embed_action = nn.Embedding(num_embeddings=8, embedding_dim=d_model)
 
         self.embed_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_embed_layers)])
         self.pos_encoder = PositionalEncoding(d_model, dropout, max_seq_len * 2)
@@ -232,7 +226,7 @@ class MeltingpotTransformer(nn.Module):
 
         self.transformer_encoder = encoder.to(device)
 
-    def forward(self, obs, actions, full_maps, past_ks_vs=None, batched=False, gated=False):  # todo(milad): I changed gated to False, it was True
+    def forward(self, obs, full_maps, past_ks_vs=None, batched=False, gated=False):  # todo(milad): I changed gated to False, it was True
         if batched:
             B, T, H, W, C  = obs.shape
         else:
@@ -245,28 +239,28 @@ class MeltingpotTransformer(nn.Module):
             full_maps = full_maps / 255.0 # normalize
         else:
             full_maps = None
-        embed_obs, embed_actions = self.get_embeds(obs, actions, full_maps, batched)
-        # Interleave states and actions: a, s, a, ...
+        embed_obs = self.get_embeds(obs, full_maps, batched).view(B, -1, H)
+
         if batched:
-            src = torch.stack((embed_actions, embed_obs), dim=2).view(B, -1, H)
+            src = embed_obs.view(B, -1, H)
         else:
-            src = torch.stack((embed_actions, embed_obs), dim=2).view(1, -1, H)
+            src = embed_obs.view(1, -1, H)
 
         src = src * math.sqrt(self.d_model)
         src = self.pos_encoder(src.permute((1, 0, 2))).permute((1, 0, 2))
 
         output = src
         if past_ks_vs is not None:
-            assert output.shape[1] % 2 == 0, "action state action state, ... violated"
-            output = output[:, -2:, ...]  # just the new tokens
+            # assert output.shape[1] % 2 == 0, "action state action state, ... violated"
+            output = output[:, -1:, ...]  # just the new tokens
             output, this_kv = self.transformer_encoder(output, past_ks_vs, batched=batched)
-            output = output.reshape((B, 2, -1))
+            output = output.reshape((B, 1, -1))
         else:
             output, this_kv = self.transformer_encoder(output, past_ks_vs, batched=batched)
-            output = output.reshape((B, T * 2, -1))
+            output = output.reshape((B, T, -1))
         return output, this_kv
 
-    def get_embeds(self, obs, actions, full_maps, batched=False):
+    def get_embeds(self, obs, full_maps, batched=False):
         if batched:
             B, T, H, W, C = obs.shape
             obs = obs.permute(0, 1, 4, 2, 3).reshape(B * T, C, H, W)
@@ -291,7 +285,6 @@ class MeltingpotTransformer(nn.Module):
 
         if batched:
             obs = obs.reshape(B * T, -1)
-            actions = actions.reshape(B * T)
             if self.use_full_maps:
                 full_maps = full_maps.reshape(B * T, -1)
         else:
@@ -303,14 +296,11 @@ class MeltingpotTransformer(nn.Module):
         if self.use_full_maps:
             embed_full_maps = F.relu(self.embed_fmp_layer(full_maps))
             embed_obs = torch.cat([embed_obs, embed_full_maps], dim=-1)
-
-        embed_actions = self.embed_action(actions)
         
         for embed_layer in self.embed_layers:
             embed_obs = F.relu(embed_layer(embed_obs))
-            embed_actions = F.relu(embed_layer(embed_actions))
 
-        return embed_obs, embed_actions
+        return embed_obs
 
 
 class Agent(ABC):
@@ -927,11 +917,17 @@ class TrainingAlgorithm(ABC):
                 "agent_critic_weight_norms": agent_critic_weight_norms.detach()
             })
             wandb_metrics.update(time_metrics)
+            for key, value in wandb_metrics.items():
+                if isinstance(value, torch.Tensor):
+                    wandb_metrics[key] = value.cpu()
             wandb.log(step=step, data=wandb_metrics)
 
             if step % self.train_cfg.eval_every == 0:
                 eval_metrics = self.evaluate(self.agents[0], step)
                 print("Evaluation metrics:", eval_metrics)
+                for key, value in eval_metrics.items():
+                    if isinstance(value, torch.Tensor):
+                        eval_metrics[key] = value.cpu()
                 wandb.log(step=step, data=eval_metrics, )
 
         return
@@ -959,7 +955,6 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         action_logits = agents[0].actor(
             observations,
-            actions[:, :-1],
             full_maps,
             full_seq=2,
             batched=True
@@ -973,7 +968,6 @@ class AdvantageAlignment(TrainingAlgorithm):
     def get_trajectory_values(self, agents, observations, actions, full_maps=None):
         values_c = agents[0].critic(
             observations,
-            actions[:, :-1],
             full_maps,
             full_seq=2,
             batched=True
@@ -981,7 +975,6 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         values_t = agents[0].target(
             observations,
-            actions[:, :-1],
             full_maps,
             full_seq=2,
             batched=True
@@ -1184,6 +1177,8 @@ class AdvantageAlignment(TrainingAlgorithm):
         device = self.agents[0].device
         augment = self.train_cfg['augment']
         use_mlm = self.train_cfg['use_mlm']
+        student_temp = self.train_cfg['student_temp']
+        teacher_temp = self.train_cfg['teacher_temp']
         use_full_maps = self.main_cfg.use_full_maps
             
         obs = trajectory_sample['obs'].to(device)
@@ -1207,6 +1202,14 @@ class AdvantageAlignment(TrainingAlgorithm):
         f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
 
         spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
+        # f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2]))
+        # f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
+
+        # teacher_output = F.softmax(f_x1 / teacher_temp, dim=-1).detach()
+        # student_output = F.log_softmax(f_x2 / student_temp, dim=-1)
+
+        # # Compute DINO loss (cross-entropy between teacher and student outputs)
+        # spr_loss = torch.sum(-teacher_output * student_output, dim=-1).mean()
 
         return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
@@ -1288,7 +1291,6 @@ def _gen_sim(state, env, batch_size, cxt_len, agents, main_cfg):
             action_logits, this_kvs = call_models_forward(
                 actors,
                 observations,
-                actions,
                 full_maps_repeated,
                 agents[0].device,
                 full_seq=0,
@@ -1346,7 +1348,7 @@ def get_categorical_entropy(action_logits):
     return distribution.entropy()
 
 
-def call_models_forward(models, observations, actions, full_maps, device, full_seq=0, past_ks_vs=None):
+def call_models_forward(models, observations, full_maps, device, full_seq=0, past_ks_vs=None):
     observations = observations.to(device).float()
     full_maps = full_maps.to(device).float()
 
@@ -1356,17 +1358,17 @@ def call_models_forward(models, observations, actions, full_maps, device, full_s
     base_model = copy.deepcopy(models[0])
     base_model = base_model.to('meta')
 
-    def fmodel(params, buffers, x, actions, full_maps, full_seq, past_ks_vs=None):
+    def fmodel(params, buffers, x, full_maps, full_seq, past_ks_vs=None):
         batched = False
-        return functional_call(base_model, (params, buffers), (x, actions, full_maps, full_seq, past_ks_vs, batched))
+        return functional_call(base_model, (params, buffers), (x, full_maps, full_seq, past_ks_vs, batched))
 
     if past_ks_vs is not None:
         past_ks, past_vs = past_ks_vs
-        vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, 0, None, (0, 0)), randomness='different')(
-            params, buffers, observations, actions.long(), full_maps, full_seq, past_ks_vs)
+        vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, None, (0, 0)), randomness='different')(
+            params, buffers, observations, full_maps, full_seq, past_ks_vs)
     else:
-        vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, 0, None), randomness='different')(
-            params, buffers, observations, actions.long(), full_maps, full_seq)
+        vmap_fmodel = torch.vmap(fmodel, in_dims=(0, 0, 0, 0, None), randomness='different')(
+            params, buffers, observations, full_maps, full_seq)
 
     return vmap_fmodel
 

@@ -18,7 +18,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=0-23:59:00   
 #SBATCH --gres=gpu:l40s:1
-#SBATCH --partition=long
+#SBATCH --partition=unkillable
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -40,5 +40,4 @@ module load python/3.9
 python train.py\
     seed=${1}\
     debug_mode=False\
-    run_id=lively_bird_AA_weight_1.5_${1}\
     --config-name='meltingpot.yaml'

@@ -22,7 +22,7 @@ max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
 use_ss_loss: False
-agent_rb_size: 500
+agent_rb_size: 400
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 use_memmap: True
@@ -63,7 +63,7 @@ ss_module:
   hidden_size: ${hidden_size}
   device: ${device}
   num_layers: 3
-  mask_p: 0.15
+  mask_p: 0.6
 
 mlp_model:
   _target_: train.LinearModel
@@ -97,7 +97,7 @@ optimizer_critic:
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.00001
+  lr: 5e-07
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -112,7 +112,7 @@ training:
   eval_every: 100 # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.1
-  entropy_beta: 0.1
+  entropy_beta: 0.03
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
@@ -120,7 +120,7 @@ training:
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 0
+  aa_weight: 1.5
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 0
@@ -133,4 +133,6 @@ training:
   num_on_policy_agents: 5
   center_rewards: False
   augment: False
+  student_temp: 0.1
+  teacher_temp: 0.07
 
