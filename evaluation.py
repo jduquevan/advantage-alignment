@@ -84,7 +84,6 @@ def _gen_sim_scenario(state, scenario, cxt_len, agents):
             action_logits, this_kvs = call_models_forward(
                 actors,
                 observations,
-                actions,
                 full_maps_repeated,
                 agents[0].device,
                 full_seq=0,
