@@ -1,11 +1,9 @@
 import copy
-import os
-from pathlib import Path
-
 import hydra
 import math
-
 import numpy as np
+import os
+import random
 import re
 import torch
 import torch.nn as nn
@@ -14,7 +12,10 @@ import torch.nn.init as init
 import wandb
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
+from meltingpot import substrate, scenario as scene
 from omegaconf import DictConfig, OmegaConf
+from pathlib import Path
 from tensordict import TensorDict
 from tqdm import tqdm
 from torch.distributions import Categorical
@@ -39,13 +40,7 @@ from utils import (
     save_checkpoint, 
     flatten_native_dict
 )
-
-from collections import defaultdict
-
-from meltingpot import substrate, scenario as scene
-
 from visualization import create_video_with_imageio
-
 
 class LinearModel(nn.Module):
     def __init__(self, in_size, hidden_size, out_size, device, num_layers=1, init_weights=False, encoder=None):
@@ -515,43 +510,13 @@ class ReplayBuffer():
         return min(self.number_of_added_trajectories, self.replay_buffer_size)
 
 
-class AgentReplayBuffer:
-    def __init__(self,
-                 main_cfg: DictConfig,  # to instantiate the agents from
-                 replay_buffer_size: int,
-                 agent_number: int,  # either 1 or 2  as it is a two player game
-                 ):
-        self.main_cfg = main_cfg
-        self.replay_buffer_size = replay_buffer_size
-        self.marker = 0
-        self.num_added_agents = 0
-        self.agents = []
-        for i in range(replay_buffer_size):
-            self.agents.append(None)  # create a [None, ..., None] list
-        self.agent_number = agent_number
-
-    def add_agent(self, agent):
-        if self.agents[self.marker] is not None:
-            del self.agents[self.marker]
-        self.agents[self.marker] = agent.state_dict()
-        self.num_added_agents += 1
-        self.marker = (self.marker + 1) % self.replay_buffer_size
-
-    def sample(self):
-        idx = torch.randint(0, self.__len__(), (1,))
-        state_dict = self.agents[idx]
-        agent = instantiate_agent(self.main_cfg)
-        agent.load_state_dict(state_dict)
-        return agent
-
-    def __len__(self):
-        return min(self.num_added_agents, self.replay_buffer_size)
-
 class GPUMemoryFriendlyAgentReplayBuffer:
     def __init__(self,
-                 main_cfg: DictConfig,  # to instantiate the agents from
+                 main_cfg: DictConfig, 
                  replay_buffer_size: int,
-                 agent_number: int,  # either 1 or 2  as it is a two player game
+                 agent_number: int,
+                 use_memmap=False,
+                 memmap_dir=None,
                  ):
         self.main_cfg = main_cfg
         self.replay_buffer_size = replay_buffer_size
@@ -559,18 +524,41 @@ class GPUMemoryFriendlyAgentReplayBuffer:
         self.num_added_agents = 0
         agent_blueprint = instantiate_agent(self.main_cfg)
         batched_state_dicts = {}
-        for k in agent_blueprint.state_dict().keys():
-            v = agent_blueprint.state_dict()[k]
-            batched_state_dicts[k] = torch.zeros((replay_buffer_size, *v.shape), device=v.device)
+        if use_memmap:
+            assert memmap_dir is not None, "memmap_dir must be specified when use_memmap is True"
+            os.makedirs(memmap_dir, exist_ok=True)
+            batched_state_dicts = {}
+            for k in agent_blueprint.state_dict().keys():
+                v = agent_blueprint.state_dict()[k]
+                dtype = v.cpu().numpy().dtype
+                shape = (replay_buffer_size, *v.shape)
+                filepath = os.path.join(memmap_dir, f"{k}.dat")
+                if os.path.exists(filepath):
+                    batched_state_dicts[k] = np.memmap(filepath, mode='r+', dtype=dtype, shape=shape)
+                else:
+                    batched_state_dicts[k] = np.memmap(filepath, mode='w+', dtype=dtype, shape=shape)
+        else:
+            for k in agent_blueprint.state_dict().keys():
+                v = agent_blueprint.state_dict()[k]
+                batched_state_dicts[k] = torch.zeros((replay_buffer_size, *v.shape), device=v.device)
+        
         self.agents_batched_state_dicts = batched_state_dicts
         self.agent_number = agent_number
+        self.use_memmap = use_memmap
+        self.memmap_dir = memmap_dir
+        self.mini_buffer_size = main_cfg['sampled_agent_rb_size']
+        self.mini_buffer_agents = []
+        self.mini_buffer_index = 0
 
     def add_agent(self, agent):
         self.add_agent_state_dict(agent.state_dict())
 
     def add_agent_state_dict(self, state_dict):
         for k, v in state_dict.items():
-            self.agents_batched_state_dicts[k][self.marker] = v
+            if self.use_memmap:
+                self.agents_batched_state_dicts[k][self.marker] = v.cpu().numpy()
+            else:
+                self.agents_batched_state_dicts[k][self.marker] = v
         self.num_added_agents += 1
         self.marker = (self.marker + 1) % self.replay_buffer_size
 
@@ -578,9 +566,37 @@ class GPUMemoryFriendlyAgentReplayBuffer:
         idx = torch.randint(0, self.__len__(), ())
         state_dict = {}
         for k, v in self.agents_batched_state_dicts.items():
-            state_dict[k] = v[idx]
+            if self.use_memmap:
+                state_dict[k] = torch.from_numpy(v[idx])
+            else:
+                state_dict[k] = v[idx]
         agent = instantiate_agent(self.main_cfg)
         agent.load_state_dict(state_dict)
+        return agent
+
+    def sample_mini_buffer(self):
+        mini_buffer_agents = []
+        idxs = np.random.randint(0, self.__len__(), size=self.mini_buffer_size)
+        for idx in idxs:
+            state_dict = {}
+            for k, v in self.agents_batched_state_dicts.items():
+                if self.use_memmap:
+                    state_dict[k] = torch.from_numpy(v[idx])
+                else:
+                    state_dict[k] = v[idx]
+            agent = instantiate_agent(self.main_cfg)
+            agent.load_state_dict(state_dict)
+            agent.to(self.main_cfg['device'])
+            mini_buffer_agents.append(agent)
+        self.mini_buffer_agents = mini_buffer_agents
+        self.mini_buffer_index = 0
+
+    def get_mini_buffer_agent(self):
+        if self.mini_buffer_index >= len(self.mini_buffer_agents):
+            # We've exhausted the mini buffer; sample a new one
+            self.sample_mini_buffer()
+        agent = self.mini_buffer_agents[self.mini_buffer_index]
+        self.mini_buffer_index += 1
         return agent
 
     def __len__(self):
@@ -630,8 +646,6 @@ class TrainingAlgorithm(ABC):
         main_cfg: DictConfig,
         train_cfg: DictConfig,
         sum_rewards: bool,
-        simultaneous: bool,
-        discrete: bool,
         clip_grad_norm: float = None,
         replay_buffer: ReplayBuffer = None,
         agent_replay_buffer: GPUMemoryFriendlyAgentReplayBuffer = None,
@@ -645,8 +659,6 @@ class TrainingAlgorithm(ABC):
         self.trajectory_len = train_cfg.max_traj_len
         self.cxt_len = main_cfg.max_cxt_len
         self.sum_rewards = sum_rewards
-        self.simultaneous = simultaneous
-        self.discrete = discrete
         self.clip_grad_norm = clip_grad_norm
         self.replay_buffer = replay_buffer
         self.num_agents = len(agents)
@@ -689,6 +701,7 @@ class TrainingAlgorithm(ABC):
             new_log_ps = actor_loss_dict['log_ps']
             old_log_ps = actor_loss_dict['old_log_ps']
             kl_divergence = (old_log_ps - new_log_ps).mean()
+            mask = torch.tensor([1 if agent_type == 0 else 0 for agent_type in self.agent_types], dtype=torch.int32).to(self.main_cfg.device)
 
             if update >= 1 and kl_divergence > kl_threshold:
                 break
@@ -697,8 +710,6 @@ class TrainingAlgorithm(ABC):
                 if run_single_agent:
                     actor_loss = actor_loss_dict['losses'][0]
                 else:
-                    mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
-                    mask[:self.train_cfg.num_on_policy_agents] = 1
                     if on_policy_only:
                         actor_loss = (actor_loss_dict['losses'] * mask).mean()
                     else:
@@ -731,8 +742,6 @@ class TrainingAlgorithm(ABC):
             if run_single_agent:
                 critic_loss = critic_losses[0]
             else:
-                mask = torch.zeros(self.num_agents, dtype=torch.int32).to(self.main_cfg.device)
-                mask[:self.train_cfg.num_on_policy_agents] = 1
                 if on_policy_only:
                     critic_loss = (critic_losses * mask).mean()
                 else:
@@ -841,31 +850,32 @@ class TrainingAlgorithm(ABC):
         pass
 
     def train_loop(self, resume_from_this_step: int = 0):
-        # assert either replay buffer or agent replay buffer is used, but not both
-        # assert self.use_replay_buffer != self.use_agent_replay_buffer, "Cannot use both replay buffer and agent replay buffer at the same time."
-        pbar = tqdm(range(resume_from_this_step, self.train_cfg.total_steps),
-                    initial=resume_from_this_step, total=self.train_cfg.total_steps)
-
+        pbar = tqdm(
+            range(resume_from_this_step, self.train_cfg.total_steps),
+            initial=resume_from_this_step, total=self.train_cfg.total_steps
+        )
         time_metrics = {}
         state = self.env.reset()
         B = self.train_cfg['batch_size']
         device = self.agents[0].device
         sfrbe = self.train_cfg['sample_from_replay_buffer_every']
-        add_to_replay_buffer_every = self.train_cfg.add_to_replay_buffer_every
-
+        add_to_replay_buffer_every = self.train_cfg['add_to_replay_buffer_every']
+        agent_rb_sfrbe = self.main_cfg['sampled_agent_rb_size']
         trajectory_sample = {}
 
         for step in pbar:
-            # replay buffer, swap agents other than the first agent with their replay buffer counterparts
+            if (step % agent_rb_sfrbe == 0) and (self.agent_replay_buffer_mode != "off"):
+                self.agent_replay_buffer.sample_mini_buffer()
+
             if self.agent_replay_buffer_mode == "off":
-                pass
+                self.agent_types = [0] * self.num_agents
             elif self.agent_replay_buffer_mode == 'uniform-from-history':
                 n = self.train_cfg.num_on_policy_agents
-                new_agents = [self.agents[0] for _ in range(n)]
-                other_agent = self.agent_replay_buffer.sample()
-                for _ in range(n, self.num_agents):
-                    new_agents.append(other_agent)
-                self.agents = new_agents
+                other_agent = self.agent_replay_buffer.get_mini_buffer_agent()
+                agent_types = [0]*n + [1]*(self.num_agents - n)
+                # random.shuffle(agent_types)
+                self.agents = [self.agents[0] if agent_type == 0 else other_agent for agent_type in agent_types]
+                self.agent_types = agent_types
 
             if step % (self.trajectory_len // self.cxt_len) == 0 or step == resume_from_this_step:
                 print("Reseting environment")
@@ -1484,17 +1494,16 @@ def main(cfg: DictConfig) -> None:
             main_cfg=cfg,
             replay_buffer_size=cfg['agent_rb_size'],
             agent_number=cfg['env']['num_agents'],
+            use_memmap=cfg['use_memmap'],
+            memmap_dir=os.path.join(cfg['memmap_dir'], run.id)
         )
 
         if agent_replay_buffer_ckpt is not None:
             print(f"(@@-o)Loading {agent_replay_buffer_ckpt['num_added_agents']} agents from replay buffer.")
-            for i in tqdm(range(agent_replay_buffer_ckpt['num_added_agents']), desc='Loading agents from replay buffer of agents'):
-                state_dict = {}
-                for k in agent_replay_buffer_ckpt['params'].keys():
-                    state_dict[k] = agent_replay_buffer_ckpt['params'][k][i]
-                agent_replay_buffer.add_agent_state_dict(state_dict)
+            agent_replay_buffer.num_added_agents = agent_replay_buffer_ckpt['num_added_agents']
+            agent_replay_buffer.marker = agent_replay_buffer_ckpt['marker']
         else:
-            print("(@@-o)No replay buffer of agents loaded. filling in the current agents")
+            print("(@@-o)No replay buffer of agents loaded. Filling in the current agents.")
             for agent in agents:
                 agent_replay_buffer.add_agent(agent)
 
@@ -1515,8 +1524,6 @@ def main(cfg: DictConfig) -> None:
         main_cfg=cfg,
         train_cfg=cfg.training,
         sum_rewards=cfg['sum_rewards'],
-        simultaneous=cfg['simultaneous'],
-        discrete=cfg['discrete'],
         clip_grad_norm=cfg['training']['clip_grad_norm'],
         replay_buffer=replay_buffer,
         agent_replay_buffer=agent_replay_buffer,

@@ -217,21 +217,38 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
     run_folder = Path(checkpoint_dir) / run_id
     os.makedirs(run_folder, exist_ok=True)
 
-    # Generate a unique filename
+    # Generate a unique checkpoint directory for the current step
     checkpoint_path = run_folder / ('step_'+str(step))
     os.makedirs(checkpoint_path, exist_ok=True)
 
-    agent_checkpoint = {
-        'actor_state_dict': agent.actor.state_dict(),
-        'critic_state_dict': agent.critic.state_dict(),
-        'target_state_dict': agent.target.state_dict(), # todo: remove all this and just use the state_dict of the agent
-    }
-
+    agent_checkpoint = agent.state_dict()
     torch.save(agent_checkpoint, checkpoint_path / 'agent.pt')
+
     if replay_buffer is not None and save_agent_replay_buffer:
-        torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
+        if replay_buffer.use_memmap:
+            # When using memmap, only save the metadata
+            replay_buffer_state_dict = {
+                'number_of_added_trajectories': replay_buffer.number_of_added_trajectories,
+                'marker': replay_buffer.marker,
+                'fm_marker': replay_buffer.fm_marker
+            }
+            torch.save(replay_buffer_state_dict, checkpoint_path / 'replay_buffer_meta.pt')
+        else:
+            # If not using memmap, save the entire data
+            torch.save(replay_buffer.trajectory_batch.data, checkpoint_path / 'replay_buffer_data.pt')
     if agent_replay_buffer is not None and save_agent_replay_buffer:
-        torch.save({'params': agent_replay_buffer.agents_batched_state_dicts, 'num_added_agents': agent_replay_buffer.num_added_agents}, checkpoint_path / 'agent_replay_buffer.pt')
+        if agent_replay_buffer.use_memmap:
+            # When using memmap, only save the metadata
+            agent_replay_buffer_state_dict = {
+                'num_added_agents': agent_replay_buffer.num_added_agents,
+                'marker': agent_replay_buffer.marker
+            }
+            torch.save(agent_replay_buffer_state_dict, checkpoint_path / 'agent_replay_buffer_meta.pt')
+        else:
+            # If not using memmap, save the entire data
+            torch.save({'params': agent_replay_buffer.agents_batched_state_dicts,
+                        'num_added_agents': agent_replay_buffer.num_added_agents},
+                       checkpoint_path / 'agent_replay_buffer.pt')
 
     if also_clean_old:
         for d in run_folder.iterdir():
@@ -246,6 +263,11 @@ def save_checkpoint(agent, replay_buffer, agent_replay_buffer, step, checkpoint_
                     os.remove(d / 'replay_buffer_data.pt')
                 if (d / 'agent_replay_buffer.pt').exists():
                     os.remove(d / 'agent_replay_buffer.pt')
+                # Remove the metadata files as well
+                if (d / 'replay_buffer_meta.pt').exists():
+                    os.remove(d / 'replay_buffer_meta.pt')
+                if (d / 'agent_replay_buffer_meta.pt').exists():
+                    os.remove(d / 'agent_replay_buffer_meta.pt')
 
     print(f"(@@-o)Agent Checkpoint saved at: {checkpoint_path}")
 

@@ -2,13 +2,11 @@ resume: False
 run_id: null
 seed: 42
 batch_size: 1024
-wandb: 'offline'
+wandb: 'online'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
 wandb_dir: /network/scratch/j/juan.duque/wandb/
 use_transformer: True
 sum_rewards: False
-simultaneous: True
-discrete: True
 self_play: True
 share_encoder: True
 use_reward_loss: False
@@ -22,12 +20,13 @@ max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
 use_ss_loss: True
-agent_rb_size: 500
+agent_rb_size: 4000
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
 use_memmap: True
 memmap_dir: /network/scratch/j/juan.duque/advantage-alignment/rb
 store_wandb_video: False
+sampled_agent_rb_size: 100
 
 env:
   type: 'meltingpot'

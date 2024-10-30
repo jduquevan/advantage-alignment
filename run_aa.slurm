@@ -18,7 +18,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=0-23:59:00   
 #SBATCH --gres=gpu:l40s:1
-#SBATCH --partition=long
+#SBATCH --partition=unkillable
 
 # Turn on mail notification. There are many possible self-explaining values:
 # NONE, BEGIN, END, FAIL, ALL (including all aforementioned)
@@ -31,6 +31,7 @@
 # Submit jobs.
 version=4
 export WANDB_ENTITY="simon-lacoste-julien"
+export WANDB_SERVICE_WAIT=60
 
 module purge
 eval "$(conda shell.bash hook)"
