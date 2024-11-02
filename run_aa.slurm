@@ -41,5 +41,4 @@ module load python/3.9
 python train.py\
     seed=${1}\
     debug_mode=False\
-    run_id=lively_bird_AA_weight_1.5_${1}\
     --config-name='meltingpot.yaml'

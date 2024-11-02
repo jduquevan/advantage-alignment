@@ -10,7 +10,6 @@ sum_rewards: False
 self_play: True
 share_encoder: True
 use_reward_loss: False
-use_spr_loss: True
 device: cuda
 rb_size: 84000
 use_full_maps: False
@@ -19,7 +18,7 @@ max_seq_len: 1000
 max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
-use_ss_loss: True
+use_ss_loss: False
 agent_rb_size: 4000
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
@@ -115,11 +114,11 @@ training:
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
-  critic_loss_mode: 'td-1'
+  critic_loss_mode: 'gae'
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 0
+  aa_weight: 1
   clip_grad_norm: 10
   ss_epochs: 1
   id_weight: 0
@@ -132,4 +131,5 @@ training:
   num_on_policy_agents: 5
   center_rewards: False
   augment: False
+  lmbda: 0.95
 

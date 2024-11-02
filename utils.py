@@ -136,7 +136,7 @@ def compute_discounted_returns(gamma, rewards):
             returns[:, t] = rewards[:, t] + gamma * returns[:, t+1]
         return returns
 
-def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
+def compute_gae_advantages(rewards, values, gamma=0.96, lmbda=0.95):
     # Compute deltas
     with torch.no_grad():
         deltas = rewards[:, :-1] + gamma * values[:, 1:] - values[:, :-1]
@@ -144,7 +144,7 @@ def compute_gae_advantages(rewards, values, gamma=0.96, tau=0.95):
         advantages = torch.empty_like(deltas)
         advantage = 0
         for t in reversed(range(deltas.size(1))):
-            advantages[:, t] = advantage = deltas[:, t] + gamma * tau * advantage
+            advantages[:, t] = advantage = deltas[:, t] + gamma * lmbda * advantage
         
         # Normalize advantages
         # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

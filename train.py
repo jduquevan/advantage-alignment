@@ -1058,6 +1058,7 @@ class AdvantageAlignment(TrainingAlgorithm):
 
         actor_loss_dict = {}
         gamma = self.train_cfg.gamma
+        lmbda = self.train_cfg.lmbda
         proximal = self.train_cfg.proximal
         clip_range = self.train_cfg.clip_range
         loss_mode = self.train_cfg.actor_loss_mode
@@ -1096,7 +1097,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         if old_log_ps == None:
             old_log_ps = log_ps.detach()
 
-        A_s = compute_gae_advantages(rewards, V_s.detach(), gamma) # shape (B*N, T-1)
+        A_s = compute_gae_advantages(rewards, V_s.detach(), gamma, lmbda) # shape (B*N, T-1)
 
         # normalize advantages
         if self.train_cfg.normalize_advantages and self.main_cfg['run_single_agent']:
@@ -1138,6 +1139,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         N = self.num_agents
 
         gamma = self.train_cfg.gamma
+        lmbda = self.train_cfg.lmbda
         center_rewards = self.train_cfg.center_rewards
         use_full_maps = self.main_cfg.use_full_maps
 
@@ -1176,13 +1178,11 @@ class AdvantageAlignment(TrainingAlgorithm):
         elif self.train_cfg.critic_loss_mode == 'MC':
             discounted_returns = compute_discounted_returns(gamma, rewards)
             critic_loss = F.huber_loss(values_c, discounted_returns, reduction='none')
-        elif self.train_cfg.critic_loss_mode == 'interpolate':
-            values_c_shifted = values_c[:, :-1]
-            values_t_shifted = values_t[:, 1:]
-            rewards_shifted = rewards[:, :-1]
-            td_0_error = rewards_shifted + gamma * values_t_shifted
-            discounted_returns = compute_discounted_returns(gamma, rewards)[:, :-1]
-            critic_loss = F.huber_loss(values_c_shifted, (discounted_returns + td_0_error) / 2, reduction='none')
+        elif self.train_cfg.critic_loss_mode == 'gae':
+            V_s = values_c
+            A_s = compute_gae_advantages(rewards, V_s.detach(), gamma, lmbda=lmbda)
+            V_targets = A_s + V_s[:, :-1]
+            critic_loss = F.huber_loss(values_c[:, :-1], V_targets.detach(), reduction='none')
 
         critic_losses = critic_loss.view((B, N, -1)).mean(dim=(0, 2))
 
