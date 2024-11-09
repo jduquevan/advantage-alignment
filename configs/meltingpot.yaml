@@ -18,7 +18,7 @@ max_seq_len: 1000
 max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
+use_ss_loss: True
 agent_rb_size: 4000
 agent_rb_mode: 'uniform-from-history'
 on_policy_only: True
@@ -62,6 +62,7 @@ ss_module:
   device: ${device}
   num_layers: 3
   mask_p: 0.15
+  num_spr_preds: 7
 
 mlp_model:
   _target_: train.LinearModel
@@ -95,7 +96,7 @@ optimizer_critic:
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 0.00001
+  lr: 0.000001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -114,7 +115,7 @@ training:
   updates_per_batch: 2
   kl_threshold: 0.05
   use_mlm: True
-  critic_loss_mode: 'gae'
+  critic_loss_mode: 'td-1'
   save_every: 100
   video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
   checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'

@@ -84,13 +84,14 @@ class LinearModel(nn.Module):
 
 
 class SelfSupervisedModule(nn.Module):
-    def __init__(self, n_actions, hidden_size, device, num_layers=1, mask_p=0.15, encoder=None, use_full_maps=False):
+    def __init__(self, n_actions, hidden_size, device, num_layers=1, mask_p=0.15, num_spr_preds=1, encoder=None, use_full_maps=False):
         super(SelfSupervisedModule, self).__init__()
         self.mask_p = mask_p
         self.encoder = encoder
         self.n_actions = n_actions
         self.hidden_size = hidden_size
         self.use_full_maps = use_full_maps
+        self.num_spr_preds = num_spr_preds
 
         self.action_hidden_layers = nn.ModuleList([
             nn.Linear(self.hidden_size, self.hidden_size)
@@ -137,11 +138,30 @@ class SelfSupervisedModule(nn.Module):
             next_state_reps = F.relu(layer(next_state_reps))
 
         spr_preds = F.relu(self.spr_layer(next_state_reps))
+
+        spr_preds_list = [spr_preds]
+        spr_preds_current = spr_preds
+
+        for _ in range(1, self.num_spr_preds):
+            spr_preds_current = spr_preds_current[:, :-1, :]
+
+            pad = spr_preds[:, :1, :]
+            spr_preds_current = torch.cat([pad, spr_preds_current], dim=1)
+
+            next_spr_preds = spr_preds_current
+            for layer in self.spr_hidden_layers:
+                next_spr_preds = F.relu(layer(next_spr_preds))
+            next_spr_preds = F.relu(self.spr_layer(next_spr_preds))
+
+            spr_preds_list.append(next_spr_preds)
+            spr_preds_current = next_spr_preds
+
+        spr_preds_avg = sum(spr_preds_list) / len(spr_preds_list)
         
         gt_state_reps, _ = self.encoder.get_embeds(obs, actions, full_maps, batched=batched)
         gt_state_reps = gt_state_reps.view(spr_preds.shape)
 
-        return action_logits, gt_state_reps[:, 1:, :], spr_preds[:, :-1, :]
+        return action_logits, gt_state_reps[:, 1:, :], spr_preds_avg[:, :-1, :]
 
 # Taken from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class PositionalEncoding(nn.Module):
@@ -923,10 +943,6 @@ class TrainingAlgorithm(ABC):
             wandb_metrics.update(train_step_metrics)
             print(f"train step metrics: {train_step_metrics}")
 
-            # eval_metrics = self.eval(self.agents[0])
-            # print("Evaluation metrics:", eval_metrics)
-            # wandb_metrics.update(eval_metrics)
-
             agent_actor_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].actor.parameters()]))
             agent_critic_weight_norms = torch.sqrt(sum([torch.norm(p.data) ** 2 for p in self.agents[0].critic.parameters()]))
 
@@ -1216,7 +1232,7 @@ class AdvantageAlignment(TrainingAlgorithm):
         f_x1 = spr_gts.float().reshape((-1, spr_gts.shape[2])).detach()
         f_x2 = spr_preds.float().reshape((-1, spr_preds.shape[2]))
 
-        spr_loss = F.mse_loss(f_x1, f_x2, reduction="none").sum(-1).mean(0)
+        spr_loss = F.mse_loss(f_x1.detach(), f_x2, reduction="none").sum(-1).mean(0)
 
         return {'id_losses': inverse_dynamics_losses, 'spr_loss': spr_loss}
 
