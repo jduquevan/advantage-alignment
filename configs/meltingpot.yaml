@@ -133,4 +133,6 @@ training:
   center_rewards: False
   augment: False
   lmbda: 0.95
+  student_temp: 0.1
+  teacher_temp: 0.04
 
