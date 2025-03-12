@@ -5,7 +5,6 @@ experiments/
 runs/
 videos/
 *.json
-*.txt
 *.pdf
 *.gif
 *.mp4
