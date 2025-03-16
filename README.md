@@ -42,7 +42,7 @@ python train.py
 The core contribution of this work is a modification to the standard PPO advantage. Instead of using only the agent’s advantage $A^1$, our method introduces a term based on the opponent’s advantage $A^2$ as follows:
 
 $$
-A^*(s_t, a_t, b_t) = A^1(s_t, a_t, b_t) + \beta\, \gamma\, \left(\sum_{k < t} \gamma^{t-k} A^1(s_k, a_k, b_k)\right) A^2(s_t, a_t, b_t)
+A^*(s_t, a_t, b_t) = A^1(s_t, a_t, b_t) + \beta\ \gamma\ \left(\sum_{k < t} \gamma^{t-k} A^1(s_k, a_k, b_k)\right) A^2(s_t, a_t, b_t)
 $$
 
 where:
