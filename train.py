@@ -1404,7 +1404,7 @@ def call_models_forward(models, observations, actions, full_maps, device, full_s
     return vmap_fmodel
 
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="meltingpot_new.yaml")
 def main(cfg: DictConfig) -> None:
     """Main entry point for training.
 
