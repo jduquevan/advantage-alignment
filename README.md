@@ -32,17 +32,19 @@ pip install -r requirements.txt
 
 ## Usage
 
-To start training, simply run the main training script:
+This repository uses wandb and hydra, it also stores a replay buffer of past agent policies, agent checkpoints and evaluation videos. To start training, simply run the main training script:
 
 ```bash
-python train.py
+python train.py wandb_dir_arg=path_to_wandb_dir memmap_dir_arg=path_to_memmap_dir hydra_run_dir_arg=path_to_hydra_dir video_dir_arg=path_to_video_dir checkpoint_dir_arg=path_to_save_dir
 ```
+Make sure to create these directories in advance.
+
 ## Advantage Alignment Modification
 
 The core contribution of this work is a modification to the standard PPO advantage. Instead of using only the agent’s advantage $A^1$, our method introduces a term based on the opponent’s advantage $A^2$ as follows:
 
 $$
-A^*(s_t, a_t, b_t) = A^1(s_t, a_t, b_t) + \beta\, \gamma\, \left(\sum_{k < t} \gamma^{t-k} A^1(s_k, a_k, b_k)\right) A^2(s_t, a_t, b_t)
+A^*(s_t, a_t, b_t) = A^1(s_t, a_t, b_t) + \beta\ \gamma\ \left(\sum_{k < t} \gamma^{t-k} A^1(s_k, a_k, b_k)\right) A^2(s_t, a_t, b_t)
 $$
 
 where:
