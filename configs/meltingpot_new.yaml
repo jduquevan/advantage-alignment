@@ -1,43 +1,50 @@
+wandb_dir_arg: ${wandb_dir_arg}          # e.g. "/path/to/wandb/"
+memmap_dir_arg: ${memmap_dir_arg}        # e.g. "/path/to/memmap/"
+hydra_run_dir_arg: ${hydra_run_dir_arg}    # e.g. "/path/to/hydra/"
+video_dir_arg: ${video_dir_arg}            # e.g. "/path/to/videos/"
+checkpoint_dir_arg: ${checkpoint_dir_arg}  # e.g. "/path/to/checkpoints/"
+
 resume: False
 run_id: null
 seed: 42
-batch_size: 512
-wandb: 'offline'
+batch_size: 1024
+wandb: 'online'
 wandb_tags: ['meltingpot', 'PPO', 'aa']
-wandb_dir: /network/scratch/j/juan.duque/wandb/
+wandb_dir: ${wandb_dir_arg}
 use_transformer: True
 sum_rewards: False
-simultaneous: True
-discrete: True
 self_play: True
 share_encoder: True
 use_reward_loss: False
-use_spr_loss: True
 device: cuda
-rb_size: 96
+rb_size: 84000
 use_full_maps: False
-hidden_size: 128
-max_seq_len: 2000
-max_cxt_len: 50
+hidden_size: 192
+max_seq_len: 1000
+max_cxt_len: 15
 run_single_agent: False
 debug_mode: False
-use_ss_loss: False
-agent_rb_size: 100
+use_ss_loss: True
+agent_rb_size: 4000
 agent_rb_mode: 'uniform-from-history'
-
+on_policy_only: True
+use_memmap: True
+memmap_dir: ${memmap_dir_arg}
+store_wandb_video: False
+sampled_agent_rb_size: 100
 
 env:
   type: 'meltingpot'
   batch: 6
   device: ${device}
-  scenario: 'allelopathic_harvest__open'
-  num_agents: 16
-  max_env_steps: 2000
+  scenario: 'commons_harvest__open'
+  num_agents: 7
+  max_env_steps: 1000
 
 hydra:
   output_subdir: null
   run:
-    dir: /network/scratch/j/juan.duque/hydra/
+    dir: ${hydra_run_dir_arg}
 
 # Architecture hyperparameters
 network:
@@ -49,9 +56,10 @@ encoder:
   device: ${device}
   d_model: ${hidden_size}
   dim_feedforward: ${hidden_size}
-  num_layers: 2
+  num_layers: 3
   max_seq_len: ${max_seq_len}
   attention_impl: 'original'
+  init_weights: False
 
 ss_module:
   _target_: train.SelfSupervisedModule
@@ -59,6 +67,8 @@ ss_module:
   hidden_size: ${hidden_size}
   device: ${device}
   num_layers: 3
+  mask_p: 0.15
+  num_spr_preds: 7
 
 mlp_model:
   _target_: train.LinearModel
@@ -67,6 +77,7 @@ mlp_model:
   hidden_size: ${hidden_size}
   num_layers: 3
   out_size: 8
+  init_weights: True
 
 policy:
   _target_: train.CategoricalPolicy
@@ -78,19 +89,20 @@ linear_model:
   hidden_size: ${hidden_size}
   out_size: 1
   device: ${device}
-  num_layers: 2
+  num_layers: 3
+  init_weights: False
 
 optimizer_actor:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 0.00001
 
 optimizer_critic:
   _target_: torch.optim.Adam
-  lr: 0.001
+  lr: 0.00001
 
 optimizer_ss:
   _target_: torch.optim.Adam
-  lr: 1e-05
+  lr: 0.000001
 
 agent:
   _target_: train.AdvantageAlignmentAgent
@@ -100,25 +112,32 @@ training:
   gamma: 0.99
   tau: 0.005
   max_traj_len: ${max_seq_len}
-  batch_size: 128 # Training batch size
-  total_steps: 10000000 # Number of optimization steps to train for
-  eval_every: 500 # Number of optimization steps before evaluation
+  batch_size: 128        # Training batch size
+  total_steps: 10000000  # Number of optimization steps to train for
+  eval_every: 100        # Number of optimization steps before evaluation
   proximal: True
   clip_range: 0.1
-  entropy_beta: 0.0001
+  entropy_beta: 0.1
   updates_per_batch: 2
-  kl_threshold: 0.01
+  kl_threshold: 0.05
   use_mlm: True
   critic_loss_mode: 'td-1'
-  save_every: 500
-  video_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/videos'
-  checkpoint_dir: '/home/mila/j/juan.duque/scratch/advantage-alignment/experiments'
-  aa_weight: 2
+  save_every: 100
+  video_dir: ${video_dir_arg}
+  checkpoint_dir: ${checkpoint_dir_arg}
+  aa_weight: 1
   clip_grad_norm: 10
   ss_epochs: 1
-  id_weight: 1
-  spr_weight: 0
+  id_weight: 0
+  spr_weight: 1
   normalize_advantages: True
   actor_loss_mode: 'integrated_aa'
+  add_to_replay_buffer_every: 20
+  sample_from_replay_buffer_every: 10
   add_to_agent_replay_buffer_every: 20
-  num_on_policy_agents: 12
+  num_on_policy_agents: 5
+  center_rewards: False
+  augment: False
+  lmbda: 0.95
+  student_temp: 0.1
+  teacher_temp: 0.04

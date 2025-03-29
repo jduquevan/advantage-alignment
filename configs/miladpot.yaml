@@ -1,9 +1,0 @@
-defaults:
-  - meltingpot.yaml
-
-hydra:
-  run:
-    dir: /network/scratch/a/aghajohm/hydra_dir
-
-wandb_dir:
-  /network/scratch/a/aghajohm/wandb_dir
