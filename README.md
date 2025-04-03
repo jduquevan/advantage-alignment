@@ -4,6 +4,8 @@
 
 **Advantage Alignment Algorithms** introduces a novel family of opponent shaping methods that modify PPO’s advantage function to foster mutually beneficial strategies in multi-agent reinforcement learning. This repository provides implementations for both Advantage Alignment and its scalable variant, Proximal Advantage Alignment (PAA), along with experiments on environments for the Negotiation Game, and Melting Pot’s Commons Harvest Open. Paper: [link](https://arxiv.org/abs/2406.14662).
 
+![Poster](./poster.png)
+
 ---
 
 ## Table of Contents
